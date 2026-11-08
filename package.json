@@ -1,0 +1,13 @@
+{
+  "name": "mamon-win",
+  "version": "2.0.0",
+  "private": true,
+  "description": "MAMON WIN — Real-time football live scores, 14-factor match analysis, dropping odds, PPG, city weather, and Sure Odds accumulators.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

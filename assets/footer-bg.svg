@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 420" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="glow1" cx="72%" cy="22%" r="55%">
+      <stop offset="0%" stop-color="#13A87E" stop-opacity="0.34"/>
+      <stop offset="50%" stop-color="#0A7B5C" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#07100F" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="88%" cy="68%" r="40%">
+      <stop offset="0%" stop-color="#7CE8C4" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#07100F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pitchFade" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#07100F"/>
+      <stop offset="55%" stop-color="#0B1F1A"/>
+      <stop offset="100%" stop-color="#07100F"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1440" height="420" fill="url(#pitchFade)"/>
+  <rect width="1440" height="420" fill="url(#glow1)"/>
+  <rect width="1440" height="420" fill="url(#glow2)"/>
+
+  <!-- Architectural Stadium Rings -->
+  <g stroke="#29C797" stroke-opacity="0.11" fill="none">
+    <ellipse cx="1060" cy="240" rx="520" ry="210" stroke-width="1.5"/>
+    <ellipse cx="1060" cy="240" rx="440" ry="170" stroke-width="1"/>
+    <ellipse cx="1060" cy="240" rx="355" ry="130" stroke-width="1"/>
+  </g>
+
+  <!-- Subtle Pitch Geometry -->
+  <g stroke="#7CE8C4" stroke-opacity="0.14" fill="none" stroke-width="1.5">
+    <path d="M620 420 L920 110 L1440 110 L1440 420 Z"/>
+    <line x1="1060" y1="110" x2="940" y2="420"/>
+    <ellipse cx="1005" cy="255" rx="76" ry="42" transform="rotate(-12 1005 255)"/>
+    <path d="M1260 170 L1440 170 L1440 350 L1185 350 Z"/>
+  </g>
+
+  <!-- Stadium Floodlight Beams -->
+  <g opacity="0.16">
+    <polygon points="1040,0 1120,0 1320,420 820,420" fill="url(#glow1)"/>
+    <circle cx="1060" cy="36" r="4" fill="#A6F7DC"/>
+    <circle cx="1082" cy="34" r="3" fill="#A6F7DC"/>
+    <circle cx="1102" cy="38" r="3" fill="#A6F7DC"/>
+  </g>
+</svg>

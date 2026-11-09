@@ -47,8 +47,12 @@
       route: "/",
       selectedDate: "UPCOMING_ALL",
       matchFilter: "ALL", // ALL | LIVE | SCHEDULED | DROPS | ALERTS | FOLLOWING | FT
-      activeIntelTab: "DROPS", // DROPS | ALERTS | PPG
-      activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY
+      activeIntelTab: "DROPS", // DROPS | ALERTS
+      activeDropFilter: "ALL", // ALL | HEAVY | MODERATE | INPLAY | PREMATCH
+      activePpgCategory: "ALL", // ALL | HIGH_GAP | HOME_DOMINANT | AWAY_DOMINANT | POINTS_STAKES
+      activeStrongFilter: "ALL", // ALL | STRONG_HOME | STRONG_AWAY
+      activeWorstFilter: "ALL", // ALL | WORST_HOME | WORST_AWAY
+      activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY (backwards compatible)
       activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
       activeAccurateFilter: "ALL", // ALL | SINGLE | DOUBLE | TREBLE | DOUBLE_CHANCE | GOALS
       standingsLeague: "england-premier-league",
@@ -151,7 +155,11 @@
     const h = window.location.hash.replace(/^#/, "");
     if (!h || !h.startsWith("/")) return "/";
     if (h === "/game-points") return "/sure-odds";
-    if (h === "/community") return "/power-picks";
+    if (h === "/community") return "/strong-teams";
+    if (h === "/power-picks" || h === "/strong-teams-today") return "/strong-teams";
+    if (h === "/worst-teams-today") return "/worst-teams";
+    if (h === "/ppg-intelligence" || h === "/points-per-game") return "/ppg";
+    if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/accurate-odds";
     return h;
   }
@@ -171,13 +179,37 @@
     if (route === "/accurate-winning-odds" || route === "/banker-of-the-day") route = "/accurate-odds";
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("filter")) state.activeDropFilter = q.get("filter").toUpperCase();
       if (q.get("tab")) state.activeIntelTab = q.get("tab").toUpperCase();
       route = "/dropping-odds";
     }
+    if (route === "/drops") route = "/dropping-odds";
+    if (route.startsWith("/ppg?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("cat")) state.activePpgCategory = q.get("cat").toUpperCase();
+      route = "/ppg";
+    }
+    if (route === "/ppg-intelligence" || route === "/points-per-game") route = "/ppg";
+    if (route.startsWith("/strong-teams?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("cat")) state.activeStrongFilter = q.get("cat").toUpperCase();
+      route = "/strong-teams";
+    }
+    if (route.startsWith("/worst-teams?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("cat")) state.activeWorstFilter = q.get("cat").toUpperCase();
+      route = "/worst-teams";
+    }
     if (route.startsWith("/power-picks?")) {
       const q = new URLSearchParams(route.split("?")[1]);
-      if (q.get("cat")) state.activePowerCategory = q.get("cat").toUpperCase();
-      route = "/power-picks";
+      const cat = q.get("cat")?.toUpperCase();
+      if (cat === "WORST_HOME" || cat === "WORST_AWAY") {
+        state.activeWorstFilter = cat;
+        route = "/worst-teams";
+      } else {
+        if (cat) state.activeStrongFilter = cat;
+        route = "/strong-teams";
+      }
     }
     if (route.startsWith("/odds-mismatch?")) {
       const q = new URLSearchParams(route.split("?")[1]);
@@ -185,7 +217,8 @@
       route = "/odds-mismatch";
     }
     if (route === "/game-points") route = "/sure-odds";
-    if (route === "/community") route = "/power-picks";
+    if (route === "/community" || route === "/strong-teams-today" || route === "/power-picks") route = "/strong-teams";
+    if (route === "/worst-teams-today") route = "/worst-teams";
     state.route = route;
     if (push) {
       window.location.hash = "#" + route;
@@ -241,8 +274,12 @@
 
     if (mobileEl) {
       const mobileQuick = [
-        { label: "Accurate Odds", route: "/accurate-odds", logo: "/assets/motexiz-mark.svg" },
+        { label: "Accurate", route: "/accurate-odds", logo: "/assets/motexiz-mark.svg" },
         { label: "Sure Odds", route: "/sure-odds", logo: "/assets/motexiz-mark.svg" },
+        { label: "Dropping", route: "/dropping-odds", logo: "/assets/motexiz-mark.svg" },
+        { label: "PPG", route: "/ppg", logo: "/assets/motexiz-mark.svg" },
+        { label: "Strong", route: "/strong-teams", logo: "/assets/motexiz-mark.svg" },
+        { label: "Worst", route: "/worst-teams", logo: "/assets/motexiz-mark.svg" },
         { label: "Mismatch", route: "/odds-mismatch", logo: "/assets/motexiz-mark.svg" },
         { label: "Live/Next", route: "/matches", logo: "/assets/motexiz-mark.svg" },
         ...LEAGUES.filter((l) => l.featured).slice(0, 8)
@@ -1224,8 +1261,11 @@
         <div class="btn-group">
           <a class="btn-full" href="/accurate-odds" data-route="/accurate-odds" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#050b14;font-weight:800;border:none;">👑 Accurate Winning Odds</a>
           <a class="btn-full" href="/sure-odds" data-route="/sure-odds">Open Sure Odds Analyzer</a>
+          <a class="btn-outline" href="/dropping-odds" data-route="/dropping-odds">📉 Dropping Odds Scanner</a>
+          <a class="btn-outline" href="/ppg" data-route="/ppg">📊 PPG Intelligence &amp; Table</a>
+          <a class="btn-outline" href="/strong-teams" data-route="/strong-teams">🦁 Strong Teams Today</a>
+          <a class="btn-outline" href="/worst-teams" data-route="/worst-teams">⚠️ Worst Teams Today</a>
           <a class="btn-outline" href="/odds-mismatch" data-route="/odds-mismatch">Bookmaker Odds Mismatch</a>
-          <a class="btn-outline" href="/dropping-odds" data-route="/dropping-odds">Dropping Odds, Inj &amp; PPG</a>
           <a class="btn-outline" href="/search" data-route="/search">Browse all ${LEAGUES.length} leagues</a>
         </div>
       </div>
@@ -1389,21 +1429,21 @@
         </div>
 
         <div class="intel-summary-grid">
-          <a class="intel-stat-tile" href="/dropping-odds?tab=DROPS" data-route="/dropping-odds?tab=DROPS">
+          <a class="intel-stat-tile" href="/dropping-odds" data-route="/dropping-odds">
             <span class="tile-kicker">BOOKMAKER STEAM</span>
             <span class="tile-val text-brand">${dropMatches.length} Dropping Odds</span>
             <span class="tile-sub">${dropMatches[0] ? `Top ${dropMatches[0].status === "SCHEDULED" ? "Pre-Match" : "Live"}: ${getTeam(dropMatches[0].home).short}v${getTeam(dropMatches[0].away).short} ▼ -${dropMatches[0].droppingOdds.bestDrop.dropPct}%` : "Tracking open -> latest odds"}</span>
           </a>
 
-          <a class="intel-stat-tile" href="/dropping-odds?tab=ALERTS" data-route="/dropping-odds?tab=ALERTS">
-            <span class="tile-kicker">SQUAD AVAILABILITY</span>
-            <span class="tile-val" style="color:var(--live);">${alertMatches.length} Inj &amp; Sus Watch</span>
-            <span class="tile-sub">Red cards, 4+ YC bans &amp; squad reports</span>
+          <a class="intel-stat-tile" href="/dropping-odds?filter=HEAVY" data-route="/dropping-odds?filter=HEAVY">
+            <span class="tile-kicker">HEAVY STEAM SHIFTS</span>
+            <span class="tile-val" style="color:var(--live);">${dropMatches.filter(m => (m.droppingOdds?.bestDrop?.dropPct || 0) >= 5.0).length} Big Moves</span>
+            <span class="tile-sub">Drops greater than 5% sharp volume</span>
           </a>
 
-          <a class="intel-stat-tile" href="/dropping-odds?tab=PPG" data-route="/dropping-odds?tab=PPG">
-            <span class="tile-kicker">POINTS PER GAME</span>
-            <span class="tile-val">${ppgMatches[0]?.ppgSummary ? `${ppgMatches[0].ppgSummary.homeOverall.toFixed(2)} vs ${ppgMatches[0].ppgSummary.awayOverall.toFixed(2)}` : "Live PPG"}</span>
+          <a class="intel-stat-tile" href="/ppg" data-route="/ppg">
+            <span class="tile-kicker">POINTS PER GAME (PPG)</span>
+            <span class="tile-val text-brand">${ppgMatches[0]?.ppgSummary ? `${ppgMatches[0].ppgSummary.homeOverall.toFixed(2)} vs ${ppgMatches[0].ppgSummary.awayOverall.toFixed(2)}` : "Standings Math"}</span>
             <span class="tile-sub">Overall, Home &amp; Away PPG differentials</span>
           </a>
         </div>
@@ -1441,242 +1481,296 @@
     `;
   }
 
-  // ============ DEDICATED /dropping-odds SCANNER VIEW (DROPS, INJURIES, SUSPENSIONS, PPG) ============
+  // ============ DEDICATED /dropping-odds SCANNER VIEW ============
   function renderDroppingOddsView() {
-    const activeTab = state.activeIntelTab || "DROPS";
     const active = liveMatches.filter((m) => m.status !== "FT");
+    const activeFilter = state.activeDropFilter || "ALL";
 
     const dropRank = (m) => (m.status === "SCHEDULED" ? 1000 : 0) + (m.droppingOdds?.bestDrop?.dropPct || 0);
-    const dropList = active
+    const dropListAll = active
       .filter((m) => m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 1.5)
       .sort((a, b) => dropRank(b) - dropRank(a));
 
-    const alertList = active
-      .filter((m) =>
-        Boolean(
-          m.analysis?.factors?.suspensions?.hasAlert ||
-          m.analysis?.factors?.injuries?.home?.length ||
-          m.analysis?.factors?.injuries?.away?.length
-        )
-      )
-      .sort((a, b) => {
-        const score = (m) =>
-          (m.analysis?.factors?.injuries?.home?.length || 0) +
-          (m.analysis?.factors?.injuries?.away?.length || 0) +
-          (m.analysis?.factors?.suspensions?.home?.length || 0) * 2 +
-          (m.analysis?.factors?.suspensions?.away?.length || 0) * 2 +
-          (m.analysis?.factors?.suspensions?.homeRedSeason || 0) +
-          (m.analysis?.factors?.suspensions?.awayRedSeason || 0);
-        return score(b) - score(a);
+    let filteredDrops = dropListAll;
+    if (activeFilter === "HEAVY") {
+      filteredDrops = dropListAll.filter((m) => (m.droppingOdds?.bestDrop?.dropPct || 0) >= 5.0);
+    } else if (activeFilter === "MODERATE") {
+      filteredDrops = dropListAll.filter((m) => {
+        const pct = m.droppingOdds?.bestDrop?.dropPct || 0;
+        return pct >= 1.5 && pct < 5.0;
       });
-
-    const ppgList = [...active].sort(
-      (a, b) => (b.analysis?.factors?.ppg?.gap || 0) - (a.analysis?.factors?.ppg?.gap || 0)
-    );
-
-    let bodyHtml = "";
-    if (activeTab === "DROPS") {
-      bodyHtml = dropList.length === 0
-        ? `<div class="empty-state"><h3>Syncing live open vs close market odds...</h3><p class="text-sm">Active DraftKings open &amp; latest odds movements appear here as pre-match liquidity moves.</p></div>`
-        : dropList
-            .slice(0, 45)
-            .map((m) => {
-              const h = getTeam(m.home, "Home");
-              const a = getTeam(m.away, "Away");
-              const lg = getLeagueInfo(m);
-              const d = m.droppingOdds.bestDrop;
-              const fPpg = m.analysis?.factors?.ppg;
-              return `
-                <div class="intel-row-card" data-match-id="${m.id}">
-                  <div class="flex items-center justify-between gap-2 flex-wrap">
-                    <div class="flex items-center gap-2 min-w-0">
-                      ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                      <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
-                      <span class="text-xs font-mono text-muted">· ${m.status === "LIVE" ? `LIVE ${escapeHtml(m.displayTime)}` : `${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}`}</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="ppg-chip">${m.status === "LIVE" ? "IN-PLAY" : "PRE-MATCH"}</span>
-                      <span class="drop-badge">▼ ${escapeHtml(d.code)} DROPPED -${d.dropPct}%</span>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                      ${crestImg(h.logo, h.name, h.color, 22)}
-                      <span class="font-bold text-sm">${escapeHtml(h.name)}</span>
-                      <span class="text-xs text-muted">vs</span>
-                      <span class="font-bold text-sm">${escapeHtml(a.name)}</span>
-                      ${crestImg(a.logo, a.name, a.color, 22)}
-                    </div>
-                    <div class="flex items-center gap-2">
-                      <span class="ppg-chip">PPG: ${fPpg ? `${fPpg.homeOverall.toFixed(2)} - ${fPpg.awayOverall.toFixed(2)}` : "-"}</span>
-                      <button type="button" class="analyze-inline-btn" data-match-id="${m.id}">Full Analysis</button>
-                    </div>
-                  </div>
-
-                  <div class="sure-pick-box">
-                    <div class="text-xs">
-                      <span class="font-bold text-brand uppercase">Dropping Market:</span>
-                      <strong class="ml-1">${escapeHtml(d.label)}</strong>
-                      <span class="text-muted ml-2">(Implied Prob Shift: <strong class="text-brand">+${d.impliedShiftPct}%</strong> · Provider: ${escapeHtml(m.droppingOdds.provider)})</span>
-                    </div>
-                    <div class="font-mono text-sm">
-                      <span class="text-muted" style="text-decoration:line-through;">${d.openOdd.toFixed(2)}</span>
-                      &nbsp;&rarr;&nbsp;
-                      <strong class="text-brand">${d.currentOdd.toFixed(2)}</strong>
-                    </div>
-                  </div>
-                </div>
-              `;
-            })
-            .join("");
-    } else if (activeTab === "ALERTS") {
-      bodyHtml = alertList.length === 0
-        ? `<div class="empty-state"><h3>Hydrating live team rosters &amp; disciplinary cards...</h3><p class="text-sm">Click any match or tap Sync Live to inspect squad yellow/red card bans &amp; injury watchlists.</p></div>`
-        : alertList
-            .slice(0, 45)
-            .map((m) => {
-              const h = getTeam(m.home, "Home");
-              const a = getTeam(m.away, "Away");
-              const lg = getLeagueInfo(m);
-              const inj = m.analysis?.factors?.injuries || { home: [], away: [] };
-              const susp = m.analysis?.factors?.suspensions || { home: [], away: [], homeRedSeason: 0, awayRedSeason: 0 };
-              return `
-                <div class="intel-row-card" data-match-id="${m.id}">
-                  <div class="flex items-center justify-between gap-2 flex-wrap">
-                    <div class="flex items-center gap-2 min-w-0">
-                      ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                      <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
-                      <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
-                    </div>
-                    <span class="alert-badge">RC: ${susp.homeRedSeason} vs ${susp.awayRedSeason} · ${(inj.home.length + inj.away.length)} Inj / ${(susp.home.length + susp.away.length)} Sus</span>
-                  </div>
-
-                  <div class="flex items-center justify-between gap-2 flex-wrap mt-2">
-                    <div class="flex items-center gap-2">
-                      ${crestImg(h.logo, h.name, h.color, 22)}
-                      <span class="font-bold text-sm">${escapeHtml(h.name)}</span>
-                      <span class="text-xs text-muted">vs</span>
-                      <span class="font-bold text-sm">${escapeHtml(a.name)}</span>
-                      ${crestImg(a.logo, a.name, a.color, 22)}
-                    </div>
-                    <button type="button" class="analyze-inline-btn" data-hydrate-match="${m.id}">↻ Sync Full Roster Cards</button>
-                  </div>
-
-                  <div class="factor-vs-row mt-2">
-                    <div class="factor-side">
-                      <div class="side-lbl">${escapeHtml(h.short)} Injuries &amp; Suspensions</div>
-                      <div class="text-xs"><strong>Injuries:</strong> ${inj.home.length ? inj.home.map(escapeHtml).join(" · ") : "None flagged"}</div>
-                      <div class="text-xs mt-1"><strong>Suspensions / Cards:</strong> ${susp.home.length ? susp.home.map(escapeHtml).join(" · ") : `${susp.homeRedSeason} season red cards`}</div>
-                    </div>
-                    <div class="factor-side">
-                      <div class="side-lbl">${escapeHtml(a.short)} Injuries &amp; Suspensions</div>
-                      <div class="text-xs"><strong>Injuries:</strong> ${inj.away.length ? inj.away.map(escapeHtml).join(" · ") : "None flagged"}</div>
-                      <div class="text-xs mt-1"><strong>Suspensions / Cards:</strong> ${susp.away.length ? susp.away.map(escapeHtml).join(" · ") : `${susp.awayRedSeason} season red cards`}</div>
-                    </div>
-                  </div>
-                </div>
-              `;
-            })
-            .join("");
-    } else {
-      bodyHtml = ppgList
-        .slice(0, 45)
-        .map((m) => {
-          const h = getTeam(m.home, "Home");
-          const a = getTeam(m.away, "Away");
-          const lg = getLeagueInfo(m);
-          const ppg = m.analysis?.factors?.ppg || { homeOverall: 1.5, awayOverall: 1.3, homeHomePpg: 1.7, awayAwayPpg: 1.1, gap: 0.2, edge: h.short };
-          const best = m.analysis?.bestPick;
-          return `
-            <div class="intel-row-card" data-match-id="${m.id}">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div class="flex items-center gap-2 min-w-0">
-                  ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                  <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
-                  <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
-                </div>
-                <span class="factor-edge-pill">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)})</span>
-              </div>
-
-              <div class="factor-vs-row mt-2">
-                <div class="factor-side">
-                  <div class="flex items-center gap-2">
-                    ${crestImg(h.logo, h.name, h.color, 18)}
-                    <span class="font-bold text-sm truncate">${escapeHtml(h.name)}</span>
-                  </div>
-                  <div class="text-xs mt-1">Overall PPG: <strong class="font-mono text-brand">${ppg.homeOverall.toFixed(2)}</strong> · Home PPG: <strong class="font-mono">${ppg.homeHomePpg !== null ? ppg.homeHomePpg.toFixed(2) : "-"}</strong></div>
-                </div>
-                <div class="factor-side">
-                  <div class="flex items-center gap-2">
-                    ${crestImg(a.logo, a.name, a.color, 18)}
-                    <span class="font-bold text-sm truncate">${escapeHtml(a.name)}</span>
-                  </div>
-                  <div class="text-xs mt-1">Overall PPG: <strong class="font-mono text-brand">${ppg.awayOverall.toFixed(2)}</strong> · Away PPG: <strong class="font-mono">${ppg.awayAwayPpg !== null ? ppg.awayAwayPpg.toFixed(2) : "-"}</strong></div>
-                </div>
-              </div>
-
-              ${best ? `<div class="text-xs mt-2 text-text-secondary">Sure Pick aligned with PPG: <strong class="text-brand">${escapeHtml(best.label)} @ ${best.odds.toFixed(2)}</strong> (${Math.round(best.prob * 100)}% prob)</div>` : ""}
-            </div>
-          `;
-        })
-        .join("");
+    } else if (activeFilter === "INPLAY") {
+      filteredDrops = dropListAll.filter((m) => m.status === "LIVE");
+    } else if (activeFilter === "PREMATCH") {
+      filteredDrops = dropListAll.filter((m) => m.status === "SCHEDULED");
     }
+
+    const heavyCount = dropListAll.filter((m) => (m.droppingOdds?.bestDrop?.dropPct || 0) >= 5.0).length;
+    const maxDrop = dropListAll.length > 0 ? Math.max(...dropListAll.map(m => m.droppingOdds?.bestDrop?.dropPct || 0)).toFixed(1) : "0.0";
+
+    const bodyHtml = filteredDrops.length === 0
+      ? `<div class="empty-state"><h3>No matches matching active drop filter (${escapeHtml(activeFilter)})...</h3><p class="text-sm">Click "All Dropping Odds" above to view active price steam.</p></div>`
+      : filteredDrops
+          .slice(0, 50)
+          .map((m) => {
+            const h = getTeam(m.home, "Home");
+            const a = getTeam(m.away, "Away");
+            const lg = getLeagueInfo(m);
+            const d = m.droppingOdds.bestDrop;
+            const isHeavy = d.dropPct >= 5.0;
+            return `
+              <div class="intel-row-card" data-match-id="${m.id}" style="${isHeavy ? "border-left: 3px solid var(--live);" : ""}">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center gap-2 min-w-0">
+                    ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
+                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+                    <span class="text-xs font-mono text-muted">· ${m.status === "LIVE" ? `LIVE ${escapeHtml(m.displayTime)}` : `${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}`}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="ppg-chip">${m.status === "LIVE" ? "IN-PLAY" : "PRE-MATCH"}</span>
+                    <span class="drop-badge font-mono" style="${isHeavy ? "background:rgba(239,68,68,0.18);color:#EF4444;border-color:rgba(239,68,68,0.4);" : ""}">▼ ${escapeHtml(d.code)} DROPPED -${d.dropPct}%</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    ${crestImg(h.logo, h.name, h.color, 22)}
+                    <span class="font-bold text-sm">${escapeHtml(h.name)}</span>
+                    <span class="text-xs text-muted">vs</span>
+                    <span class="font-bold text-sm">${escapeHtml(a.name)}</span>
+                    ${crestImg(a.logo, a.name, a.color, 22)}
+                  </div>
+                  <button type="button" class="analyze-inline-btn" data-match-id="${m.id}">Scouting &amp; Analysis &rarr;</button>
+                </div>
+
+                <div class="sure-pick-box mt-2">
+                  <div class="text-xs">
+                    <span class="font-bold text-brand uppercase">Sharp Market Move:</span>
+                    <strong class="ml-1">${escapeHtml(d.label)}</strong>
+                    <span class="text-muted ml-2">(Implied Shift: <strong class="text-brand">+${d.impliedShiftPct}%</strong> · Provider: ${escapeHtml(m.droppingOdds.provider)})</span>
+                  </div>
+                  <div class="font-mono text-sm mt-1">
+                    <span class="text-muted" style="text-decoration:line-through;">${d.openOdd.toFixed(2)}</span>
+                    &nbsp;&rarr;&nbsp;
+                    <strong class="text-brand text-base">${d.currentOdd.toFixed(2)}</strong>
+                  </div>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
 
     return `
       <div class="hero-banner">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="sure-pill-tag">OPEN -> CURRENT ODDS STEAM</span>
-          <span class="sure-pill-tag">INJURIES · SUSPENSIONS · PPG</span>
+          <span class="sure-pill-tag">MARKET STEAM</span>
+          <span class="sure-pill-tag">OPEN &rarr; LATEST SHIFT</span>
+          <span class="sure-pill-tag">MAX DROP -${maxDrop}% TODAY</span>
         </div>
-        <h1 class="mt-2">Dropping Odds, Injuries, Suspensions &amp; PPG Scanner</h1>
-        <p>Live market steam tracking DraftKings open vs current prices, ESPN roster card bans/suspensions, injury watchlists, and Overall / Home / Away Points Per Game (PPG).</p>
+        <h1 class="mt-2">Live Dropping Odds Scanner</h1>
+        <p>Real-time bookmaker price steam tracking DraftKings open vs current market odds, sharp liquidity movements, and surges in implied win probabilities.</p>
+
+        <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-drop-filter="ALL">All Dropping Odds (${dropListAll.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "HEAVY" ? " is-active" : ""}" data-drop-filter="HEAVY">Heavy Steam &gt; 5% (${heavyCount})</button>
+          <button type="button" class="filter-chip${activeFilter === "MODERATE" ? " is-active" : ""}" data-drop-filter="MODERATE">Moderate Drops (1.5% - 5%)</button>
+          <button type="button" class="filter-chip${activeFilter === "INPLAY" ? " is-active" : ""}" data-drop-filter="INPLAY">In-Play Live Drops</button>
+          <button type="button" class="filter-chip${activeFilter === "PREMATCH" ? " is-active" : ""}" data-drop-filter="PREMATCH">Pre-Match Drops</button>
+        </div>
       </div>
 
       <section class="panel">
-        <div class="intel-tabs">
-          <button type="button" class="filter-chip${activeTab === "DROPS" ? " is-active" : ""}" data-intel-tab="DROPS">Dropping Odds (${dropList.length})</button>
-          <button type="button" class="filter-chip${activeTab === "ALERTS" ? " is-active" : ""}" data-intel-tab="ALERTS">Injuries &amp; Suspensions (${alertList.length})</button>
-          <button type="button" class="filter-chip${activeTab === "PPG" ? " is-active" : ""}" data-intel-tab="PPG">PPG Power Edges (${ppgList.length})</button>
+        <div class="panel-header">
+          <h2>Active Market Price Drops</h2>
+          <span class="count">${filteredDrops.length} Matches</span>
         </div>
         <div>${bodyHtml}</div>
       </section>
     `;
   }
 
-  // ============ STRONG & WORST TEAMS TODAY (REPLACES COMMUNITY SECTION) ============
+  // ============ DEDICATED /ppg INTELLIGENCE & TABLE MECHANICS VIEW ============
+  function renderPpgIntelligenceView() {
+    const active = liveMatches.filter((m) => m.status !== "FT");
+    const activeCat = state.activePpgCategory || "ALL";
+
+    const ppgListAll = [...active].sort(
+      (a, b) => (b.analysis?.factors?.ppg?.gap || 0) - (a.analysis?.factors?.ppg?.gap || 0)
+    );
+
+    let filteredPpg = ppgListAll;
+    if (activeCat === "HIGH_GAP") {
+      filteredPpg = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.gap || 0) >= 0.35);
+    } else if (activeCat === "HOME_DOMINANT") {
+      filteredPpg = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.homeHomePpg || 0) >= 1.70);
+    } else if (activeCat === "AWAY_DOMINANT") {
+      filteredPpg = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.awayAwayPpg || 0) >= 1.35);
+    } else if (activeCat === "POINTS_STAKES") {
+      filteredPpg = ppgListAll.filter((m) => {
+        const a = m.analysis?.factors;
+        return a?.tableStakes || (m.analysis?.factors?.ppg?.gap || 0) >= 0.40;
+      });
+    }
+
+    const highGapCount = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.gap || 0) >= 0.35).length;
+
+    const bodyHtml = filteredPpg.length === 0
+      ? `<div class="empty-state"><h3>No fixtures matching active PPG filter (${escapeHtml(activeCat)})...</h3><p class="text-sm">Click "All PPG Edges" above to view full league standings mathematics.</p></div>`
+      : filteredPpg
+          .slice(0, 45)
+          .map((m) => {
+            const h = getTeam(m.home, "Home");
+            const a = getTeam(m.away, "Away");
+            const lg = getLeagueInfo(m);
+            const ppg = m.analysis?.factors?.ppg || { homeOverall: 1.5, awayOverall: 1.3, homeHomePpg: 1.7, awayAwayPpg: 1.1, gap: 0.2, edge: h.short };
+            const best = m.analysis?.bestPick;
+            const factors = m.analysis?.factors;
+            const formH = factors?.currentForm?.homePts ? `${factors.currentForm.homePts}/15 pts` : "Active";
+            const formA = factors?.currentForm?.awayPts ? `${factors.currentForm.awayPts}/15 pts` : "Active";
+
+            // Points calculation & standings mechanics
+            const isHighGap = ppg.gap >= 0.35;
+            const pointsNeeded = ppg.homeOverall >= ppg.awayOverall + 0.3
+              ? `${h.name} requires full 3 points to maintain title/top-4 chase; ${a.name} in danger zone.`
+              : `${a.name} road powerhouse targeting 3 points; ${h.name} desperate to defend home ground.`;
+            const drawImportance = ppg.homeOverall >= 1.8
+              ? `Draw is unacceptable for ${h.short} (drops 2 points); ${a.short} would celebrate 1 point.`
+              : `High draw risk moment — both sides could settle for 1 point if level at 70'.`;
+            const lossImpact = ppg.homeOverall >= ppg.awayOverall
+              ? `A loss would drop ${h.short} down table standings and shatter home momentum.`
+              : `A loss puts ${h.short} closer to relegation threshold; points calculations critical.`;
+
+            return `
+              <div class="intel-row-card" data-match-id="${m.id}" style="${isHighGap ? "border-left: 3px solid var(--brand);" : ""}">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center gap-2 min-w-0">
+                    ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
+                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+                    <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
+                  </div>
+                  <span class="factor-edge-pill font-mono font-bold">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)} PPG)</span>
+                </div>
+
+                <div class="ppg-matrix-grid mt-2">
+                  <div class="ppg-side-card ${ppg.homeOverall >= ppg.awayOverall ? "is-edge" : ""}">
+                    <div class="flex items-center gap-2">
+                      ${crestImg(h.logo, h.name, h.color, 20)}
+                      <strong class="text-sm truncate">${escapeHtml(h.name)}</strong>
+                      <span class="text-xs text-muted font-mono">(Host)</span>
+                    </div>
+                    <div class="ppg-stat-pills">
+                      <span class="ppg-stat-badge">Overall: <strong>${ppg.homeOverall.toFixed(2)} PPG</strong></span>
+                      <span class="ppg-stat-badge">Home: <strong>${ppg.homeHomePpg !== null ? ppg.homeHomePpg.toFixed(2) : "-"} PPG</strong></span>
+                      <span class="ppg-stat-badge">Form: <strong>${formH}</strong></span>
+                    </div>
+                  </div>
+
+                  <div class="ppg-side-card ${ppg.awayOverall > ppg.homeOverall ? "is-edge" : ""}">
+                    <div class="flex items-center gap-2">
+                      ${crestImg(a.logo, a.name, a.color, 20)}
+                      <strong class="text-sm truncate">${escapeHtml(a.name)}</strong>
+                      <span class="text-xs text-muted font-mono">(Visitor)</span>
+                    </div>
+                    <div class="ppg-stat-pills">
+                      <span class="ppg-stat-badge">Overall: <strong>${ppg.awayOverall.toFixed(2)} PPG</strong></span>
+                      <span class="ppg-stat-badge">Away: <strong>${ppg.awayAwayPpg !== null ? ppg.awayAwayPpg.toFixed(2) : "-"} PPG</strong></span>
+                      <span class="ppg-stat-badge">Form: <strong>${formA}</strong></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="ppg-table-stakes-box mt-2">
+                  <div class="stakes-item">
+                    <span class="stakes-label">Points Needed:</span>
+                    <span class="text-text-secondary">${escapeHtml(pointsNeeded)}</span>
+                  </div>
+                  <div class="stakes-item">
+                    <span class="stakes-label">Draw Importance:</span>
+                    <span class="text-text-secondary">${escapeHtml(drawImportance)}</span>
+                  </div>
+                  <div class="stakes-item">
+                    <span class="stakes-label">Table Loss Impact:</span>
+                    <span class="text-text-secondary">${escapeHtml(lossImpact)}</span>
+                  </div>
+                </div>
+
+                ${best ? `
+                  <div class="flex items-center justify-between gap-2 flex-wrap mt-2 pt-2 border-t border-line-soft">
+                    <div class="text-xs text-text-secondary">
+                      Sure Pick Aligned with PPG: <strong class="text-brand font-mono">${escapeHtml(best.label)} @ ${best.odds.toFixed(2)}</strong> (${Math.round(best.prob * 100)}% modeled probability)
+                    </div>
+                    <button type="button" class="analyze-inline-btn" data-match-id="${m.id}">Scouting Modal &rarr;</button>
+                  </div>
+                ` : ""}
+              </div>
+            `;
+          })
+          .join("");
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="sure-pill-tag">PPG GAP ANALYSIS</span>
+          <span class="sure-pill-tag">HOME &amp; AWAY SPLITS</span>
+          <span class="sure-pill-tag">TABLE POINTS MATHEMATICS</span>
+        </div>
+        <h1 class="mt-2">Points Per Game (PPG) &amp; Table Mechanics</h1>
+        <p>Mathematical scouting measuring Overall, Home, and Away Points Per Game (PPG), points needed for title/survival, draw importance calculations, and standings impact if a loss occurs.</p>
+
+        <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-ppg-cat="ALL">All PPG Edges (${ppgListAll.length})</button>
+          <button type="button" class="filter-chip${activeCat === "HIGH_GAP" ? " is-active" : ""}" data-ppg-cat="HIGH_GAP">Massive PPG Gaps &gt; 0.35 (${highGapCount})</button>
+          <button type="button" class="filter-chip${activeCat === "HOME_DOMINANT" ? " is-active" : ""}" data-ppg-cat="HOME_DOMINANT">Dominant Home PPG</button>
+          <button type="button" class="filter-chip${activeCat === "AWAY_DOMINANT" ? " is-active" : ""}" data-ppg-cat="AWAY_DOMINANT">Road Powerhouses</button>
+          <button type="button" class="filter-chip${activeCat === "POINTS_STAKES" ? " is-active" : ""}" data-ppg-cat="POINTS_STAKES">Crucial Table Stakes</button>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>PPG Hegemony &amp; Standings Calculations</h2>
+          <span class="count">${filteredPpg.length} Fixtures</span>
+        </div>
+        <div>${bodyHtml}</div>
+      </section>
+    `;
+  }
+
+  // ============ STRONG & WORST TEAMS TODAY (SEPARATE SECTIONS) ============
   function renderTodayPowerPreviewCard() {
     if (!RT?.buildTodayPowerRankings || liveMatches.length === 0) return "";
     const p = RT.buildTodayPowerRankings(liveMatches);
     const quads = [
-      { key: "STRONG_HOME", title: "STRONG HOME TODAY", item: p.strongHome[0], isStrong: true },
-      { key: "STRONG_AWAY", title: "STRONG AWAY TODAY", item: p.strongAway[0], isStrong: true },
-      { key: "WORST_HOME", title: "WORST HOME TODAY", item: p.worstHome[0], isStrong: false },
-      { key: "WORST_AWAY", title: "WORST AWAY TODAY", item: p.worstAway[0], isStrong: false }
+      { key: "STRONG_HOME", title: "STRONG HOME TODAY", item: p.strongHome[0], isStrong: true, route: "/strong-teams?cat=STRONG_HOME" },
+      { key: "STRONG_AWAY", title: "STRONG AWAY TODAY", item: p.strongAway[0], isStrong: true, route: "/strong-teams?cat=STRONG_AWAY" },
+      { key: "WORST_HOME", title: "WORST HOME TODAY", item: p.worstHome[0], isStrong: false, route: "/worst-teams?cat=WORST_HOME" },
+      { key: "WORST_AWAY", title: "WORST AWAY TODAY", item: p.worstAway[0], isStrong: false, route: "/worst-teams?cat=WORST_AWAY" }
     ];
     return `
       <section class="panel" id="powerPicksHomeCard">
         <div class="panel-header">
-          <span class="live-dot" style="background:var(--brand);"></span>
-          <h2>Strong &amp; Worst Teams Today</h2>
-          <a class="see-all" href="/power-picks" data-route="/power-picks">
-            All 4 Lists
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-          </a>
+          <div class="flex items-center gap-2">
+            <span class="live-dot" style="background:var(--brand);"></span>
+            <h2>Strong &amp; Worst Teams Today</h2>
+          </div>
+          <div class="flex items-center gap-3">
+            <a class="see-all text-xs font-bold" href="/strong-teams" data-route="/strong-teams" style="color:var(--brand);">🦁 Strong Teams</a>
+            <a class="see-all text-xs font-bold" href="/worst-teams" data-route="/worst-teams" style="color:var(--live);">⚠️ Worst Teams</a>
+          </div>
         </div>
         <div class="power-preview-grid">
           ${quads
             .map((q) => {
               const x = q.item;
               if (!x) {
-                return `<a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="/power-picks?cat=${q.key}" data-route="/power-picks?cat=${q.key}">
+                return `<a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="${q.route}" data-route="${q.route}">
                   <span class="tile-kicker">${q.title}</span>
                   <span class="text-xs text-muted">No clear candidate yet</span>
                 </a>`;
               }
               const scoreVal = q.isStrong ? x.strongScore : x.worstScore;
               return `
-                <a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="/power-picks?cat=${q.key}" data-route="/power-picks?cat=${q.key}">
+                <a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="${q.route}" data-route="${q.route}">
                   <div class="flex items-center justify-between gap-1 w-full">
                     <span class="tile-kicker">${q.title}</span>
                     <span class="power-score-pill${q.isStrong ? " is-strong" : " is-worst"}">${q.isStrong ? "PWR" : "RISK"} ${scoreVal}</span>
@@ -1977,20 +2071,19 @@
     `;
   }
 
-  function renderPowerPicksView() {
+  // ============ DEDICATED /strong-teams VIEW ============
+  function renderStrongTeamsView() {
     if (!RT?.buildTodayPowerRankings) {
       return `<div class="empty-state"><h3>Initializing Team Power Engine...</h3></div>`;
     }
     const power = RT.buildTodayPowerRankings(liveMatches);
-    const activeCat = state.activePowerCategory || "ALL";
+    const activeFilter = state.activeStrongFilter || "ALL";
 
     // Hydrate city weather for visible picks cleanly once per load
     if (!isHydratingPowerWeather && RT.hydrateWeatherForMatches) {
       const visibleMatches = [
         ...power.strongHome.slice(0, 10),
-        ...power.strongAway.slice(0, 10),
-        ...power.worstHome.slice(0, 10),
-        ...power.worstAway.slice(0, 10)
+        ...power.strongAway.slice(0, 10)
       ]
         .map((x) => x.match)
         .filter((m) => m.venueCity && !m.weather?.ok);
@@ -1998,13 +2091,13 @@
         isHydratingPowerWeather = true;
         RT.hydrateWeatherForMatches(visibleMatches).then((changed) => {
           isHydratingPowerWeather = false;
-          if (changed && state.route === "/power-picks") renderMainContent();
+          if (changed && (state.route === "/strong-teams" || state.route === "/power-picks")) renderMainContent();
         });
       }
     }
 
     const blocks = [];
-    if (activeCat === "ALL" || activeCat === "STRONG_HOME") {
+    if (activeFilter === "ALL" || activeFilter === "STRONG_HOME") {
       blocks.push(
         renderPowerSection(
           "Strong Teams to Play Home Today",
@@ -2014,30 +2107,77 @@
         )
       );
     }
-    if (activeCat === "ALL" || activeCat === "STRONG_AWAY") {
+    if (activeFilter === "ALL" || activeFilter === "STRONG_AWAY") {
       blocks.push(
         renderPowerSection(
           "Strong Teams to Play Away Today",
-          "Road clubs dominating on Away PPG, Away Form, Attacking Power, H2H, Squad Fitness, Weather & Title/Qualification Urgency.",
+          "Road powerhouses dominating on Away PPG, Away Form, Attacking Firepower, H2H, Squad Fitness, Weather & Title/Qualification Urgency.",
           power.strongAway,
           true
         )
       );
     }
-    if (activeCat === "ALL" || activeCat === "WORST_HOME") {
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="sure-pill-tag">${escapeHtml(power.scopeLabel)} · ${(power.strongHome.length + power.strongAway.length)} STRONG CANDIDATES</span>
+          <span class="sure-pill-tag">14 CRITERIA + LIVE CITY WEATHER + POINTS MATH</span>
+        </div>
+        <h1 class="mt-2">Strong Teams Today (Home &amp; Away)</h1>
+        <p>Selected and ranked through Form, Goal Scoring Power, PPG, Injuries, Suspensions, Home/Away Advantage, Weather Conditions, Head-to-Head, League Standing, Points Calculations (points needed/not needed, is draw important, will loss affect table standings), and Club Histories.</p>
+
+        <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-strong-filter="ALL">All Strong Teams (${power.strongHome.length + power.strongAway.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "STRONG_HOME" ? " is-active" : ""}" data-strong-filter="STRONG_HOME">Strong Teams to Play Home Today (${power.strongHome.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "STRONG_AWAY" ? " is-active" : ""}" data-strong-filter="STRONG_AWAY">Strong Teams to Play Away Today (${power.strongAway.length})</button>
+        </div>
+      </div>
+
+      ${blocks.join("")}
+    `;
+  }
+
+  // ============ DEDICATED /worst-teams VIEW ============
+  function renderWorstTeamsView() {
+    if (!RT?.buildTodayPowerRankings) {
+      return `<div class="empty-state"><h3>Initializing Team Risk Engine...</h3></div>`;
+    }
+    const power = RT.buildTodayPowerRankings(liveMatches);
+    const activeFilter = state.activeWorstFilter || "ALL";
+
+    // Hydrate city weather for visible picks cleanly once per load
+    if (!isHydratingPowerWeather && RT.hydrateWeatherForMatches) {
+      const visibleMatches = [
+        ...power.worstHome.slice(0, 10),
+        ...power.worstAway.slice(0, 10)
+      ]
+        .map((x) => x.match)
+        .filter((m) => m.venueCity && !m.weather?.ok);
+      if (visibleMatches.length > 0) {
+        isHydratingPowerWeather = true;
+        RT.hydrateWeatherForMatches(visibleMatches).then((changed) => {
+          isHydratingPowerWeather = false;
+          if (changed && state.route === "/worst-teams") renderMainContent();
+        });
+      }
+    }
+
+    const blocks = [];
+    if (activeFilter === "ALL" || activeFilter === "WORST_HOME") {
       blocks.push(
         renderPowerSection(
-          "Worst Teams to Play Home Today",
+          "Worst Team to Play Home Today",
           "Vulnerable home sides flagged by Poor Form, Low Scoring / High Conceding, Low Home PPG, Injuries/Suspensions, Table Danger & Adverse Conditions.",
           power.worstHome,
           false
         )
       );
     }
-    if (activeCat === "ALL" || activeCat === "WORST_AWAY") {
+    if (activeFilter === "ALL" || activeFilter === "WORST_AWAY") {
       blocks.push(
         renderPowerSection(
-          "Worst Teams to Play Away Today",
+          "Worst Team to Play Away Today",
           "Struggling away travelers facing tough home grounds with Poor Away PPG, Leaky Defenses, Squad Absences, Standing Drop Risk & H2H Deficit.",
           power.worstAway,
           false
@@ -2046,25 +2186,28 @@
     }
 
     return `
-      <div class="hero-banner">
+      <div class="hero-banner" style="background: linear-gradient(135deg, rgba(239, 68, 68, 0.12) 0%, rgba(10, 20, 18, 0.95) 100%); border-bottom: 2px solid rgba(239, 68, 68, 0.35);">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="sure-pill-tag">${escapeHtml(power.scopeLabel)} · ${power.totalEvaluated} FIXTURES EVALUATED</span>
-          <span class="sure-pill-tag">13 CRITERIA + LIVE CITY WEATHER + POINTS MATH</span>
+          <span class="sure-pill-tag" style="background:rgba(239,68,68,0.18);color:#EF4444;border-color:rgba(239,68,68,0.4);">${escapeHtml(power.scopeLabel)} · ${(power.worstHome.length + power.worstAway.length)} VULNERABLE SIDES</span>
+          <span class="sure-pill-tag">HIGH OPPONENT EDGE &amp; RELEGATION RISK</span>
         </div>
-        <h1 class="mt-2">Strong &amp; Worst Teams Today (Home &amp; Away)</h1>
-        <p>Evaluated across Form, Goal Scoring Power, PPG, Injuries, Suspensions, Home/Away Advantage, Weather Conditions, Head-to-Head, League Standing, Points Needed, Draw Importance, Loss Table Impact &amp; Club Histories.</p>
+        <h1 class="mt-2" style="color:var(--text);">Worst Teams Today (Home &amp; Away)</h1>
+        <p>Flagged and evaluated across Poor Form, Low Goal Scoring Power, High Concession, Depressed PPG, Squad Absences (Injuries &amp; Suspensions), Home/Away Deficit, Weather Disadvantage, Head-to-Head Deficits, League Standing Drop Threat, Points Desperation, and Club Histories.</p>
 
         <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
-          <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-power-cat="ALL">All 4 Lists</button>
-          <button type="button" class="filter-chip${activeCat === "STRONG_HOME" ? " is-active" : ""}" data-power-cat="STRONG_HOME">Strong Home (${power.strongHome.length})</button>
-          <button type="button" class="filter-chip${activeCat === "STRONG_AWAY" ? " is-active" : ""}" data-power-cat="STRONG_AWAY">Strong Away (${power.strongAway.length})</button>
-          <button type="button" class="filter-chip${activeCat === "WORST_HOME" ? " is-active" : ""}" data-power-cat="WORST_HOME">Worst Home (${power.worstHome.length})</button>
-          <button type="button" class="filter-chip${activeCat === "WORST_AWAY" ? " is-active" : ""}" data-power-cat="WORST_AWAY">Worst Away (${power.worstAway.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-worst-filter="ALL">All Worst Teams (${power.worstHome.length + power.worstAway.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "WORST_HOME" ? " is-active" : ""}" data-worst-filter="WORST_HOME">Worst Team to Play Home Today (${power.worstHome.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "WORST_AWAY" ? " is-active" : ""}" data-worst-filter="WORST_AWAY">Worst Team to Play Away Today (${power.worstAway.length})</button>
         </div>
       </div>
 
       ${blocks.join("")}
     `;
+  }
+
+  // Backwards compatibility alias
+  function renderPowerPicksView() {
+    return renderStrongTeamsView();
   }
 
   // ============ SPORTYBET & FOOTBALL.COM BOOKMAKER TRAP & MISTAKE ODDS SCANNER VIEW ============
@@ -2914,12 +3057,16 @@
     } else if (r === "/sure-odds" || r === "/game-points") {
       main.innerHTML = renderSureOddsView();
       bindSureCalculatorEvents();
-    } else if (r === "/dropping-odds") {
+    } else if (r === "/dropping-odds" || r === "/drops") {
       main.innerHTML = renderDroppingOddsView();
+    } else if (r === "/ppg" || r === "/ppg-intelligence" || r === "/points-per-game") {
+      main.innerHTML = renderPpgIntelligenceView();
     } else if (r === "/matches") {
       main.innerHTML = renderMatchesView();
-    } else if (r === "/power-picks" || r === "/community") {
-      main.innerHTML = renderPowerPicksView();
+    } else if (r === "/strong-teams" || r === "/strong-teams-today" || r === "/power-picks" || r === "/community") {
+      main.innerHTML = renderStrongTeamsView();
+    } else if (r === "/worst-teams" || r === "/worst-teams-today") {
+      main.innerHTML = renderWorstTeamsView();
     } else if (r === "/odds-mismatch") {
       main.innerHTML = renderOddsMismatchView();
     } else if (r === "/search") {
@@ -3411,7 +3558,43 @@
       return;
     }
 
-    // Switch Dropping Odds / Injuries / PPG Intelligence Tab
+    // Switch Dropping Odds Filter
+    const dropFilterBtn = e.target.closest("[data-drop-filter]");
+    if (dropFilterBtn) {
+      state.activeDropFilter = dropFilterBtn.getAttribute("data-drop-filter");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch PPG Intelligence Category
+    const ppgCatBtn = e.target.closest("[data-ppg-cat]");
+    if (ppgCatBtn) {
+      state.activePpgCategory = ppgCatBtn.getAttribute("data-ppg-cat");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Strong Teams Today Filter
+    const strongFilterBtn = e.target.closest("[data-strong-filter]");
+    if (strongFilterBtn) {
+      state.activeStrongFilter = strongFilterBtn.getAttribute("data-strong-filter");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Worst Teams Today Filter
+    const worstFilterBtn = e.target.closest("[data-worst-filter]");
+    if (worstFilterBtn) {
+      state.activeWorstFilter = worstFilterBtn.getAttribute("data-worst-filter");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Dropping Odds / Injuries / PPG Intelligence Tab (legacy)
     const intelTabBtn = e.target.closest("[data-intel-tab]");
     if (intelTabBtn) {
       state.activeIntelTab = intelTabBtn.getAttribute("data-intel-tab");
@@ -3420,7 +3603,7 @@
       return;
     }
 
-    // Switch Strong & Worst Teams Today Category
+    // Switch Strong & Worst Teams Today Category (legacy)
     const powerCatBtn = e.target.closest("[data-power-cat]");
     if (powerCatBtn) {
       state.activePowerCategory = powerCatBtn.getAttribute("data-power-cat");

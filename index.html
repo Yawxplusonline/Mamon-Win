@@ -36,13 +36,16 @@
               <span class="accurate-pulse-dot" aria-hidden="true"></span>
               Accurate Odds
             </a>
-            <a href="/dropping-odds" data-route="/dropping-odds">Drops &amp; PPG</a>
-            <a href="/power-picks" data-route="/power-picks">Strong &amp; Worst</a>
+            <a href="/dropping-odds" data-route="/dropping-odds">Dropping Odds</a>
+            <a href="/ppg" data-route="/ppg">PPG</a>
+            <a href="/strong-teams" data-route="/strong-teams">Strong Teams</a>
+            <a href="/worst-teams" data-route="/worst-teams">Worst Teams</a>
             <a href="/odds-mismatch" data-route="/odds-mismatch">Odds Mismatch</a>
           </nav>
 
           <div class="topbar-actions">
-            <div class="search-wrap">
+            <!-- Search bar hidden from top menu per user request -->
+            <div class="search-wrap" style="display: none !important;">
               <div class="search-box" role="search">
                 <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                   <circle cx="11" cy="11" r="6.5"></circle>
@@ -53,7 +56,7 @@
               <div id="searchDropdown" class="search-dropdown hidden" role="listbox" aria-label="Search results"></div>
             </div>
 
-            <a class="search-mobile" href="/search" data-route="/search" aria-label="Search">
+            <a class="search-mobile" href="/search" data-route="/search" aria-label="Search" style="display: none !important;">
               <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="11" cy="11" r="6.5"></circle>
                 <path d="m16 16 4 4"></path>
@@ -160,8 +163,10 @@
               <li><a href="/" data-route="/">Home Hub</a></li>
               <li><a href="/accurate-odds" data-route="/accurate-odds">Accurate Winning Odds</a></li>
               <li><a href="/sure-odds" data-route="/sure-odds">Sure Odds &amp; 11 Factors</a></li>
-              <li><a href="/dropping-odds" data-route="/dropping-odds">Dropping Odds, Injuries &amp; PPG</a></li>
-              <li><a href="/power-picks" data-route="/power-picks">Strong &amp; Worst Teams Today</a></li>
+              <li><a href="/dropping-odds" data-route="/dropping-odds">Dropping Odds Scanner</a></li>
+              <li><a href="/ppg" data-route="/ppg">PPG Intelligence &amp; Table</a></li>
+              <li><a href="/strong-teams" data-route="/strong-teams">Strong Teams Today</a></li>
+              <li><a href="/worst-teams" data-route="/worst-teams">Worst Teams Today</a></li>
               <li><a href="/odds-mismatch" data-route="/odds-mismatch">SportyBet &amp; Football.com Mismatch</a></li>
               <li><a href="/matches" data-route="/matches">Live &amp; Upcoming</a></li>
               <li><a href="/search" data-route="/search">Directory Search</a></li>
@@ -262,13 +267,25 @@
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17l-6-6-4 4-6-6"/><path d="M16 17h6v-6"/></svg>
           </span>
-          <span class="tabbar-label">Drops/PPG</span>
+          <span class="tabbar-label">Drops</span>
         </a>
-        <a class="tabbar-item" href="/power-picks" data-route="/power-picks">
+        <a class="tabbar-item" href="/ppg" data-route="/ppg">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+          </span>
+          <span class="tabbar-label">PPG</span>
+        </a>
+        <a class="tabbar-item" href="/strong-teams" data-route="/strong-teams">
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.2L22 9.2l-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 7.1-1z"/></svg>
           </span>
-          <span class="tabbar-label">Strong/Worst</span>
+          <span class="tabbar-label">Strong</span>
+        </a>
+        <a class="tabbar-item" href="/worst-teams" data-route="/worst-teams">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01"/></svg>
+          </span>
+          <span class="tabbar-label">Worst</span>
         </a>
         <a class="tabbar-item" href="/odds-mismatch" data-route="/odds-mismatch">
           <span class="tabbar-icon">

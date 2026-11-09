@@ -3637,3 +3637,80 @@ ul {
   border: 1px solid var(--line-soft);
   font-size: 12px;
 }
+
+/* ============ HIDE TOP MENU SEARCH BAR ============ */
+.topbar-actions .search-wrap,
+.topbar-actions .search-mobile {
+  display: none !important;
+}
+
+/* ============ PPG INTELLIGENCE & TABLE MECHANICS ============ */
+.ppg-matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .ppg-matrix-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ppg-side-card {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--ground);
+  border: 1px solid var(--line);
+}
+
+.ppg-side-card.is-edge {
+  border-color: rgba(10, 123, 92, 0.4);
+  background: var(--brand-soft);
+}
+
+.ppg-stat-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.ppg-stat-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  border: 1px solid var(--line-soft);
+  color: var(--text);
+}
+
+.ppg-table-stakes-box {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--ground);
+  border-left: 3px solid var(--brand);
+  font-size: 12px;
+}
+
+.ppg-table-stakes-box .stakes-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ppg-table-stakes-box .stakes-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--brand);
+  min-width: 110px;
+  shrink: 0;
+}

@@ -4,6 +4,8 @@
   "rewrites": [
     { "source": "/matches", "destination": "/index.html" },
     { "source": "/sure-odds", "destination": "/index.html" },
+    { "source": "/accurate-odds", "destination": "/index.html" },
+    { "source": "/accurate-winning-odds", "destination": "/index.html" },
     { "source": "/game-points", "destination": "/index.html" },
     { "source": "/dropping-odds", "destination": "/index.html" },
     { "source": "/power-picks", "destination": "/index.html" },

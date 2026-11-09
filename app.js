@@ -1690,25 +1690,49 @@
     const sc = bookmakerScan;
     const totalCount = sc?.totalGamesScraped || 0;
     const quads = [
-      { key: "STRONG_HOME", title: "STRONG HOME + BIG ODDS", item: sc?.strongHomeMismatch?.[0], isStrong: true },
-      { key: "STRONG_AWAY", title: "STRONG AWAY + BIG ODDS", item: sc?.strongAwayMismatch?.[0], isStrong: true },
-      { key: "WORST_HOME", title: "WORST HOME + BIG ODDS", item: sc?.worstHomeMismatch?.[0], isStrong: false },
-      { key: "WORST_AWAY", title: "WORST AWAY + BIG ODDS", item: sc?.worstAwayMismatch?.[0], isStrong: false }
+      {
+        key: "STRONG_HOME",
+        title: "STRONG HOME · MISTAKE BIG ODDS",
+        subLabel: "Strong Team Big Odd vs Opp Low Odd",
+        item: sc?.strongHomeMismatch?.[0],
+        isStrong: true
+      },
+      {
+        key: "STRONG_AWAY",
+        title: "STRONG AWAY · MISTAKE BIG ODDS",
+        subLabel: "Strong Team Big Odd vs Opp Low Odd",
+        item: sc?.strongAwayMismatch?.[0],
+        isStrong: true
+      },
+      {
+        key: "WORST_HOME",
+        title: "WORST HOME · MISTAKE LOW ODDS",
+        subLabel: "Worst Team Low Odd vs Opp Big Odd",
+        item: sc?.worstHomeMismatch?.[0],
+        isStrong: false
+      },
+      {
+        key: "WORST_AWAY",
+        title: "WORST AWAY · MISTAKE LOW ODDS",
+        subLabel: "Worst Team Low Odd vs Opp Big Odd",
+        item: sc?.worstAwayMismatch?.[0],
+        isStrong: false
+      }
     ];
 
     return `
       <section class="panel" id="mismatchHomeCard">
         <div class="panel-header">
           <span class="live-dot" style="background:#D97706;"></span>
-          <h2>SportyBet &amp; Football.com Odds Mismatch (${totalCount ? `${totalCount} Games Scraped` : "Scanning..."})</h2>
+          <h2>Bookmaker Trap &amp; Mistake Odds Scanner · SportyBet &amp; Football.com (${totalCount ? `${totalCount} Games Scraped` : "Scanning..."})</h2>
           <a class="see-all" href="/odds-mismatch" data-route="/odds-mismatch">
-            Open Mismatch Scanner
+            Open Full Trap Scanner
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </a>
         </div>
         <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle flex items-center justify-between flex-wrap gap-2">
-          <span>Live scraper across <strong>football.com</strong> &amp; <strong>sportybet.com</strong> spotting Strong &amp; Worst teams Today with inflated Big Odds.</span>
-          <a href="/odds-mismatch" data-route="/odds-mismatch" class="text-brand font-bold">View all 4 Mismatch Lists &rarr;</a>
+          <span>Exposes <strong>Strong Teams given Mistake Big Odds (Opponent Low Odds)</strong> &amp; <strong>Worst Teams given Mistake Low Odds (Opponent Big Odds)</strong> on <strong>football.com</strong> &amp; <strong>sportybet.com</strong>.</span>
+          <a href="/odds-mismatch" data-route="/odds-mismatch" class="text-brand font-bold">View All Trap &amp; Mistake Games &rarr;</a>
         </div>
         <div class="power-preview-grid">
           ${quads
@@ -1722,15 +1746,18 @@
               }
               const sbCode = x.sportybet?.gameId || "-";
               const fbCode = x.footballCom?.gameId || "-";
+              const oddBadge = q.isStrong
+                ? `Big @ ${Number(x.mistakeBigOdd || x.mismatchBigOdd).toFixed(2)} vs Low @ ${Number(x.opponentLowOdd || 1.9).toFixed(2)}`
+                : `Low Trap @ ${Number(x.mistakeLowOdd || x.worstTeamOdd).toFixed(2)} -> Opp Big @ ${Number(x.opponentBigOdd || x.mismatchBigOdd).toFixed(2)}`;
               return `
                 <a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="/odds-mismatch?cat=${q.key}" data-route="/odds-mismatch?cat=${q.key}">
                   <div class="flex items-center justify-between gap-1 w-full">
                     <span class="tile-kicker">${q.title}</span>
-                    <span class="power-score-pill${q.isStrong ? " is-strong" : " is-worst"}">@ ${x.mismatchBigOdd.toFixed(2)}</span>
+                    <span class="power-score-pill${q.isStrong ? " is-strong" : " is-worst"}">WIN @ ${x.mismatchBigOdd.toFixed(2)}</span>
                   </div>
                   <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(x.targetTeam)} <span class="text-xs font-normal text-muted">(${x.side === "HOME" ? "Home" : "Away"})</span></div>
-                  <div class="text-xs text-text-secondary truncate mt-1">${x.side === "HOME" ? "vs" : "@"} ${escapeHtml(x.opponentTeam)} · ${escapeHtml(x.kickoffUtc)} UTC</div>
-                  <div class="text-xs text-muted truncate mt-1">SB #${escapeHtml(String(sbCode))} · FB #${escapeHtml(String(fbCode))} · PPG ${x.homeStats.ppg.toFixed(2)}v${x.awayStats.ppg.toFixed(2)}</div>
+                  <div class="text-xs font-mono ${q.isStrong ? "text-brand" : "text-live"} truncate mt-0.5">${escapeHtml(oddBadge)}</div>
+                  <div class="text-xs text-muted truncate mt-1">vs ${escapeHtml(x.opponentTeam)} · SB #${escapeHtml(String(sbCode))} · FB #${escapeHtml(String(fbCode))}</div>
                 </a>
               `;
             })
@@ -1958,7 +1985,7 @@
     `;
   }
 
-  // ============ SPORTYBET & FOOTBALL.COM ODDS MISMATCH SCANNER VIEW ============
+  // ============ SPORTYBET & FOOTBALL.COM BOOKMAKER TRAP & MISTAKE ODDS SCANNER VIEW ============
   function renderMismatchGameCard(item, idx, isStrong) {
     const hs = item.homeStats;
     const as = item.awayStats;
@@ -1973,6 +2000,60 @@
     const sbGameId = sb?.gameId && sb.gameId !== "-" ? sb.gameId : null;
     const fbGameId = fb?.gameId && fb.gameId !== "-" ? fb.gameId : null;
 
+    const focusStats = item.side === "HOME" ? hs : as;
+    const oppStats = item.side === "HOME" ? as : hs;
+    const oppSideLabel = item.side === "HOME" ? "AWAY" : "HOME";
+
+    const trapComparisonHtml = isStrong
+      ? `
+        <div class="power-criteria-grid mt-2">
+          <div class="factor-side" style="border-color:var(--brand);background:var(--brand-soft);">
+            <div class="side-lbl" style="color:var(--brand);">STRONG TEAM GIVEN MISTAKE BIG ODDS (WILL WIN)</div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <strong class="text-sm">${escapeHtml(item.targetTeam)} (${item.side})</strong>
+              <span class="sure-odds-chip">MISTAKE BIG ODD @ ${fmtOdd(item.mistakeBigOdd || item.mismatchBigOdd)}</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-1">
+              <strong>Why They Are Strong:</strong> ${focusStats.ppg.toFixed(2)} PPG (${item.side === "HOME" ? `Home ${focusStats.homePpg.toFixed(2)}` : `Away ${focusStats.awayPpg.toFixed(2)}`} PPG) · Form <strong>${escapeHtml(focusStats.form.join("-"))}</strong> (${focusStats.formPts}/15 pts) · ${focusStats.gfAvg} GF/g
+            </div>
+          </div>
+          <div class="factor-side" style="border-color:rgba(229,57,53,0.35);background:rgba(229,57,53,0.06);">
+            <div class="side-lbl" style="color:var(--live);">OPPONENT GIVEN LOW ODDS TO TRICK BETTORS</div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <strong class="text-sm">${escapeHtml(item.opponentTeam)} (${oppSideLabel})</strong>
+              <span class="alert-badge font-mono">OPPONENT LOW ODD @ ${fmtOdd(item.opponentLowOdd)}</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-1">
+              <strong>Why Opponent Is Weaker:</strong> ${oppStats.ppg.toFixed(2)} PPG (${oppSideLabel === "HOME" ? `Home ${oppStats.homePpg.toFixed(2)}` : `Away ${oppStats.awayPpg.toFixed(2)}`} PPG) · Form <strong>${escapeHtml(oppStats.form.join("-"))}</strong> (${oppStats.formPts}/15 pts) · Concedes ${oppStats.gaAvg} GA/g
+            </div>
+          </div>
+        </div>
+      `
+      : `
+        <div class="power-criteria-grid mt-2">
+          <div class="factor-side" style="border-color:rgba(229,57,53,0.45);background:rgba(229,57,53,0.08);">
+            <div class="side-lbl" style="color:var(--live);">WORST TEAM GIVEN MISTAKE LOW ODDS (TRAP — WILL LOSE!)</div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <strong class="text-sm">${escapeHtml(item.targetTeam)} (${item.side})</strong>
+              <span class="alert-badge font-mono">MISTAKE LOW ODD @ ${fmtOdd(item.mistakeLowOdd || item.worstTeamOdd)} (AVOID!)</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-1">
+              <strong>Why They Will Lose:</strong> Poor ${focusStats.ppg.toFixed(2)} PPG (${item.side === "HOME" ? `Home ${focusStats.homePpg.toFixed(2)}` : `Away ${focusStats.awayPpg.toFixed(2)}`} PPG) · Form <strong>${escapeHtml(focusStats.form.join("-"))}</strong> (${focusStats.formPts}/15 pts) · Leaky ${focusStats.gaAvg} GA/g
+            </div>
+          </div>
+          <div class="factor-side" style="border-color:var(--brand);background:var(--brand-soft);">
+            <div class="side-lbl" style="color:var(--brand);">OPPONENT GIVEN BIG ODDS (REAL WINNER — BET THIS!)</div>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <strong class="text-sm">${escapeHtml(item.opponentTeam)} (${oppSideLabel})</strong>
+              <span class="sure-odds-chip">OPPONENT BIG ODD @ ${fmtOdd(item.opponentBigOdd || item.mismatchBigOdd)}</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-1">
+              <strong>Why Opponent Wins:</strong> Stronger ${oppStats.ppg.toFixed(2)} PPG (${oppSideLabel === "HOME" ? `Home ${oppStats.homePpg.toFixed(2)}` : `Away ${oppStats.awayPpg.toFixed(2)}`} PPG) · Form <strong>${escapeHtml(oppStats.form.join("-"))}</strong> (${oppStats.formPts}/15 pts) · ${oppStats.gfAvg} GF/g
+            </div>
+          </div>
+        </div>
+      `;
+
     return `
       <article class="power-team-card mismatch-card">
         <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -1980,37 +2061,39 @@
             <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
             <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(item.country)} · ${escapeHtml(item.league)}</span>
             <span class="text-xs font-mono ${item.isLive ? "text-live font-bold" : "text-muted"}">· ${item.isLive ? `● LIVE (${escapeHtml(item.matchStatus)})` : `${escapeHtml(item.isoDate)} ${escapeHtml(item.kickoffUtc)} UTC`}</span>
+            ${item.isInvertedTrap ? `<span class="alert-badge">INVERTED BOOKIE TRAP</span>` : ""}
           </div>
           <div class="flex items-center gap-1.5 flex-wrap">
             ${sbGameId ? `<button type="button" class="bookie-id-chip is-sporty" data-copy-gameid="${escapeHtml(String(sbGameId))}" data-bookie="SportyBet" title="Click to copy SportyBet Game ID">SportyBet ID: #${escapeHtml(String(sbGameId))} ⧉</button>` : ""}
             ${fbGameId ? `<button type="button" class="bookie-id-chip is-fb" data-copy-gameid="${escapeHtml(String(fbGameId))}" data-bookie="Football.com" title="Click to copy Football.com Game ID">Football.com ID: #${escapeHtml(String(fbGameId))} ⧉</button>` : ""}
-            <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">Mismatch ${item.mismatchScore}/100</span>
+            <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">Trap Score ${item.mismatchScore}/100</span>
           </div>
         </div>
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
           <div class="min-w-0">
             <div class="font-bold text-base">
-              <span class="${item.side === "HOME" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.homeTeamName)} (Home)</span>
+              <span class="${item.side === "HOME" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.homeTeamName)} (Home @ ${fmtOdd(item.bestOdds.home)})</span>
               <span class="text-xs font-mono text-muted mx-1">vs</span>
-              <span class="${item.side === "AWAY" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.awayTeamName)} (Away)</span>
+              <span class="${item.side === "AWAY" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.awayTeamName)} (Away @ ${fmtOdd(item.bestOdds.away)})</span>
             </div>
             <div class="text-xs text-text-secondary mt-0.5">
-              Focus Team: <strong>${escapeHtml(item.targetTeam)} (${item.side})</strong>
-              ${item.venue ? ` · Venue: ${escapeHtml(item.venue)}` : ""}
-              · Value Edge: <strong class="text-brand">${item.edgePct >= 0 ? `+${item.edgePct}%` : `${item.edgePct}%`} vs Bookie Implied</strong>
+              ${isStrong ? `Strong Team w/ Mistake Big Odds: <strong>${escapeHtml(item.targetTeam)} (${item.side} @ ${fmtOdd(item.mistakeBigOdd)})</strong> vs Opponent Low Odds (${escapeHtml(item.opponentTeam)} @ ${fmtOdd(item.opponentLowOdd)})` : `Worst Team w/ Mistake Low Odds: <strong>${escapeHtml(item.targetTeam)} (${item.side} @ ${fmtOdd(item.mistakeLowOdd)})</strong> vs Opponent Big Odds (${escapeHtml(item.opponentTeam)} @ ${fmtOdd(item.opponentBigOdd)})`}
+              · Value Edge: <strong class="text-brand">${item.edgePct >= 0 ? `+${item.edgePct}%` : `${item.edgePct}%`}</strong>
             </div>
           </div>
           <div class="flex items-center gap-2">
-            <span class="sure-odds-chip">@ ${item.mismatchBigOdd.toFixed(2)}</span>
+            <span class="sure-odds-chip">WIN PICK @ ${item.mismatchBigOdd.toFixed(2)}</span>
           </div>
         </div>
 
-        <!-- Big Odds Mismatch Callout -->
+        ${trapComparisonHtml}
+
+        <!-- Winning Action & Reality Callout -->
         <div class="sure-pick-box mt-2">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="text-xs font-bold uppercase ${isStrong ? "text-brand" : "text-live"}">${isStrong ? "Strong Team Big-Odds Mismatch:" : "Worst Team Big-Odds Mismatch:"}</span>
+              <span class="text-xs font-bold uppercase ${isStrong ? "text-brand" : "text-live"}">${isStrong ? "REALITY — STRONG TEAM WINS:" : "REALITY — WORST TEAM LOSES:"}</span>
               <strong class="text-sm text-text">${escapeHtml(item.mismatchMarket)} @ ${item.mismatchBigOdd.toFixed(2)}</strong>
               <span class="ppg-chip">Safeguard: ${escapeHtml(item.backupMarket)}</span>
             </div>
@@ -2194,8 +2277,8 @@
       if (activeCat === "ALL" || activeCat === "STRONG_HOME") {
         blocks.push(
           renderMismatchSection(
-            "Strong Teams Playing Home Today with Mismatch Big Odds",
-            "Dominant Home teams (High PPG, Strong Form, Superior GF/GA & Home Split) given inflated Big Odds on SportyBet.com & Football.com.",
+            "Strong Teams Playing Home Today — Given Mistake Big Odds (Opponent Has Low Odds)",
+            "Bookmakers gave these Strong Home Teams BIG ODDS while giving their weaker Away opponent LOW ODDS to trick people into believing the Strong Home Team will lose — in reality, the Strong Home Team will WIN!",
             sh,
             true
           )
@@ -2204,8 +2287,8 @@
       if (activeCat === "ALL" || activeCat === "STRONG_AWAY") {
         blocks.push(
           renderMismatchSection(
-            "Strong Teams Playing Away Today with Mismatch Big Odds",
-            "High-performing Road clubs out-scoring & out-earning their hosts in PPG & Form, yet priced at generous Away Win (2) & X2 odds.",
+            "Strong Teams Playing Away Today — Given Mistake Big Odds (Opponent Has Low Odds)",
+            "Bookmakers gave these Strong Away Teams BIG ODDS while giving their weaker Home opponent LOW ODDS to trick people into believing the Strong Away Team will lose — in reality, the Strong Away Team will WIN!",
             sa,
             true
           )
@@ -2214,8 +2297,8 @@
       if (activeCat === "ALL" || activeCat === "WORST_HOME") {
         blocks.push(
           renderMismatchSection(
-            "Worst Teams Playing Home Today with Mismatch Big Odds",
-            "Collapsing Home sides (Low PPG, Losing Streaks, Leaky Defenses) where bookmakers misprice the game — exposing high-odds Away Win (2) & X2 value.",
+            "Worst Teams Playing Home Today — Given Mistake Low Odds (Opponent Has Big Odds)",
+            "Bookmakers gave these Worst Home Teams LOW ODDS while giving their stronger Away opponent BIG ODDS to trick people into believing the Worst Home Team will win — in reality, they will LOSE to their Away opponent!",
             wh,
             false
           )
@@ -2224,8 +2307,8 @@
       if (activeCat === "ALL" || activeCat === "WORST_AWAY") {
         blocks.push(
           renderMismatchSection(
-            "Worst Teams Playing Away Today with Mismatch Big Odds",
-            "Vulnerable Away travelers (Poor Road PPG, High Goals Conceded, Losing Form) facing stronger hosts with generous Mismatch Odds.",
+            "Worst Teams Playing Away Today — Given Mistake Low Odds (Opponent Has Big Odds)",
+            "Bookmakers gave these Worst Away Teams LOW ODDS while giving their stronger Home opponent BIG ODDS to trick people into believing the Worst Away Team will win — in reality, they will LOSE to their Home opponent!",
             wa,
             false
           )
@@ -2244,15 +2327,15 @@
             ${isLoadingBookmakers ? "⟳ Scanning Bookmakers..." : "↻ Rescan SportyBet & Football.com Live"}
           </button>
         </div>
-        <h1 class="mt-2">Bookmaker Odds Mismatch Scanner (SportyBet &amp; Football.com)</h1>
-        <p>Scrapes all today's games from <strong>https://www.football.com</strong> and <strong>https://www.sportybet.com</strong>, cross-checks 10-match Club Form, PPG, Goals Scored/Conceded, Clean Sheets &amp; H2H, and isolates Strong &amp; Worst teams playing Home or Away with Mismatch Big Odds.</p>
+        <h1 class="mt-2">Bookmaker Trap &amp; Mistake Odds Scanner (SportyBet &amp; Football.com)</h1>
+        <p>Scrapes the entire catalog from <strong>https://www.football.com</strong> and <strong>https://www.sportybet.com</strong> to spot: <strong>(1) Strong Teams given Mistake Big Odds (while their opponent has Low Odds)</strong> to trick people into thinking they will lose when in reality they will win, and <strong>(2) Worst Teams given Mistake Low Odds (while their opponent has Big Odds)</strong> to trick people into thinking they will win when in reality they will lose.</p>
 
         <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
-          <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-mismatch-cat="ALL">All 4 Mismatch Lists</button>
-          <button type="button" class="filter-chip${activeCat === "STRONG_HOME" ? " is-active" : ""}" data-mismatch-cat="STRONG_HOME">Strong Home + Big Odds (${sh.length})</button>
-          <button type="button" class="filter-chip${activeCat === "STRONG_AWAY" ? " is-active" : ""}" data-mismatch-cat="STRONG_AWAY">Strong Away + Big Odds (${sa.length})</button>
-          <button type="button" class="filter-chip${activeCat === "WORST_HOME" ? " is-active" : ""}" data-mismatch-cat="WORST_HOME">Worst Home + Big Odds (${wh.length})</button>
-          <button type="button" class="filter-chip${activeCat === "WORST_AWAY" ? " is-active" : ""}" data-mismatch-cat="WORST_AWAY">Worst Away + Big Odds (${wa.length})</button>
+          <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-mismatch-cat="ALL">All 4 Trap &amp; Mistake Lists</button>
+          <button type="button" class="filter-chip${activeCat === "STRONG_HOME" ? " is-active" : ""}" data-mismatch-cat="STRONG_HOME">Strong Home · Mistake Big Odds (${sh.length})</button>
+          <button type="button" class="filter-chip${activeCat === "STRONG_AWAY" ? " is-active" : ""}" data-mismatch-cat="STRONG_AWAY">Strong Away · Mistake Big Odds (${sa.length})</button>
+          <button type="button" class="filter-chip${activeCat === "WORST_HOME" ? " is-active" : ""}" data-mismatch-cat="WORST_HOME">Worst Home · Mistake Low Odds (${wh.length})</button>
+          <button type="button" class="filter-chip${activeCat === "WORST_AWAY" ? " is-active" : ""}" data-mismatch-cat="WORST_AWAY">Worst Away · Mistake Low Odds (${wa.length})</button>
           <button type="button" class="filter-chip${activeCat === "ALL_GAMES" ? " is-active" : ""}" data-mismatch-cat="ALL_GAMES">All Scraped Games (${allG.length})</button>
         </div>
       </div>

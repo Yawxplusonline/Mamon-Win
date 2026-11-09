@@ -87,21 +87,28 @@ function parseBookieMarkets(markets = []) {
   return out;
 }
 
-async function fetchJsonSafe(url, timeoutMs = 6000, referer = "https://www.sportybet.com/") {
-  try {
-    const r = await fetch(url, {
-      headers: {
-        "User-Agent": UA,
-        Accept: "application/json",
-        Referer: referer
-      },
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
-    return null;
+async function fetchJsonSafe(url, timeoutMs = 8000, referer = "https://www.sportybet.com/", retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": UA,
+          Accept: "application/json",
+          Referer: referer
+        },
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      if (r.ok) {
+        return await r.json();
+      }
+    } catch {
+      // retry after short backoff
+    }
+    if (attempt < retries) {
+      await new Promise((res) => setTimeout(res, 350 * (attempt + 1)));
+    }
   }
+  return null;
 }
 
 function extractEventsFromFactCenter(json) {
@@ -129,13 +136,14 @@ async function fetchTeamLast10Stats(uid) {
   if (cached && now < cached.expiresAt) return cached.data;
 
   const url = `https://stats.fn.sportradar.com/sportybet/en/Europe:London/gismo/stats_team_lastx/${encodeURIComponent(key)}/10`;
-  const json = await fetchJsonSafe(url, 3200);
+  const json = await fetchJsonSafe(url, 6000);
+  if (!json) return null;
   const rawMatches = (json?.doc?.[0]?.data?.matches || []).filter(
     (m) => m && m.result && typeof m.result.home === "number" && typeof m.result.away === "number"
   );
 
   if (rawMatches.length === 0) {
-    teamStatsCache.set(key, { data: null, expiresAt: now + 600000 });
+    teamStatsCache.set(key, { data: null, expiresAt: now + 300000 });
     return null;
   }
 
@@ -231,13 +239,14 @@ async function fetchH2hStats(homeUid, awayUid) {
   if (cached && now < cached.expiresAt) return cached.data;
 
   const url = `https://stats.fn.sportradar.com/sportybet/en/Europe:London/gismo/stats_team_versusrecent/${encodeURIComponent(homeUid)}/${encodeURIComponent(awayUid)}`;
-  const json = await fetchJsonSafe(url, 3000);
+  const json = await fetchJsonSafe(url, 5000);
+  if (!json) return null;
   const ms = (json?.doc?.[0]?.data?.matches || []).filter(
     (m) => m && m.result && typeof m.result.home === "number" && typeof m.result.away === "number"
   );
 
   if (ms.length === 0) {
-    h2hCache.set(key, { data: null, expiresAt: now + 900000 });
+    h2hCache.set(key, { data: null, expiresAt: now + 300000 });
     return null;
   }
 
@@ -335,69 +344,77 @@ function evaluateGameMismatch(game, hStats, aStats, h2h) {
   const homeEdgePct = Math.round((modelProbHome - bookieProbHome) * 100);
   const awayEdgePct = Math.round((modelProbAway - bookieProbAway) * 100);
 
+  // 1. Strong Home Team Given Mistake Big Odds (Opponent Has Low Odds)
+  const homeInverted = b.home >= b.away;
   const strongHomeScore = Math.round(
     clamp(
-      24 +
-        (hasVerifiedStats ? 10 : -8) +
-        hs.ppg * 14 +
-        hs.homePpg * 9 +
-        (hs.formPts / 15) * 14 +
-        clamp(hs.ppg - as.ppg, -1, 2.2) * 14 +
-        clamp(hs.gfAvg - as.gfAvg, -1, 2) * 7 +
-        clamp(as.gaAvg - hs.gaAvg, -1, 2) * 6 +
-        clamp(homeEdgePct * 0.95, -6, 22) +
-        (b.home >= 1.75 && b.home <= 3.8 ? 8 : b.home >= 1.55 ? 4 : -6),
+      26 +
+        (hasVerifiedStats ? 12 : -10) +
+        (homeInverted ? 16 : b.home >= 2.0 ? 8 : 0) +
+        clamp(b.home - b.away, -0.6, 2.5) * 9 +
+        hs.ppg * 13 +
+        hs.homePpg * 8 +
+        (hs.formPts / 15) * 13 +
+        clamp(hs.ppg - as.ppg, -0.5, 2.2) * 15 +
+        clamp(hs.gfAvg - as.gfAvg, -1, 2) * 6 +
+        clamp(homeEdgePct * 0.9, -6, 24),
       10,
       99
     )
   );
 
+  // 2. Strong Away Team Given Mistake Big Odds (Opponent Has Low Odds)
+  const awayInverted = b.away >= b.home;
   const strongAwayScore = Math.round(
     clamp(
-      24 +
-        (hasVerifiedStats ? 10 : -8) +
-        as.ppg * 14 +
-        as.awayPpg * 10 +
-        (as.formPts / 15) * 14 +
-        clamp(as.ppg - hs.ppg, -1, 2.2) * 15 +
-        clamp(as.gfAvg - hs.gfAvg, -1, 2) * 7 +
-        clamp(hs.gaAvg - as.gaAvg, -1, 2) * 6 +
-        clamp(awayEdgePct * 0.95, -6, 24) +
-        (b.away >= 1.80 && b.away <= 4.5 ? 9 : b.away >= 1.60 ? 5 : -6),
+      26 +
+        (hasVerifiedStats ? 12 : -10) +
+        (awayInverted ? 16 : b.away >= 2.0 ? 8 : 0) +
+        clamp(b.away - b.home, -0.6, 2.8) * 9 +
+        as.ppg * 13 +
+        as.awayPpg * 9 +
+        (as.formPts / 15) * 13 +
+        clamp(as.ppg - hs.ppg, -0.5, 2.2) * 16 +
+        clamp(as.gfAvg - hs.gfAvg, -1, 2) * 6 +
+        clamp(awayEdgePct * 0.9, -6, 24),
       10,
       99
     )
   );
 
-  // Worst Home Team Mismatch Score: how weak the Home team is + how big the odds mismatch is
+  // 3. Worst Home Team Given Mistake Low Odds (Opponent Has Big Odds)
+  const worstHomeLowTrap = b.home < b.away;
   const worstHomeScore = Math.round(
     clamp(
-      22 +
-        (hasVerifiedStats ? 10 : -8) +
-        clamp(2.1 - hs.ppg, 0, 2.1) * 16 +
-        clamp(2.0 - hs.homePpg, 0, 2.0) * 9 +
-        ((15 - hs.formPts) / 15) * 16 +
-        clamp(as.ppg - hs.ppg, -0.5, 2.2) * 13 +
-        clamp(hs.gaAvg - 1.0, 0, 2.5) * 9 +
-        clamp(awayEdgePct * 0.85, -4, 20) +
-        (b.away >= 1.65 ? 8 : b.home >= 3.0 ? 5 : 2),
+      26 +
+        (hasVerifiedStats ? 12 : -10) +
+        (worstHomeLowTrap ? 18 : b.home <= 2.45 ? 8 : -6) +
+        clamp(b.away - b.home, -0.4, 3.5) * 8 +
+        clamp(2.1 - hs.ppg, 0, 2.1) * 14 +
+        clamp(2.0 - hs.homePpg, 0, 2.0) * 8 +
+        ((15 - hs.formPts) / 15) * 14 +
+        clamp(as.ppg - hs.ppg, -0.3, 2.2) * 15 +
+        clamp(hs.gaAvg - 1.0, 0, 2.5) * 7 +
+        clamp(awayEdgePct * 0.85, -4, 22),
       10,
       99
     )
   );
 
-  // Worst Away Team Mismatch Score: how weak the Away team is + how big the odds mismatch is
+  // 4. Worst Away Team Given Mistake Low Odds (Opponent Has Big Odds)
+  const worstAwayLowTrap = b.away < b.home;
   const worstAwayScore = Math.round(
     clamp(
-      22 +
-        (hasVerifiedStats ? 10 : -8) +
-        clamp(2.1 - as.ppg, 0, 2.1) * 16 +
-        clamp(2.0 - as.awayPpg, 0, 2.0) * 9 +
-        ((15 - as.formPts) / 15) * 16 +
-        clamp(hs.ppg - as.ppg, -0.5, 2.2) * 13 +
-        clamp(as.gaAvg - 1.0, 0, 2.5) * 9 +
-        clamp(homeEdgePct * 0.85, -4, 20) +
-        (b.home >= 1.55 ? 8 : b.away >= 3.2 ? 5 : 2),
+      26 +
+        (hasVerifiedStats ? 12 : -10) +
+        (worstAwayLowTrap ? 18 : b.away <= 2.50 ? 8 : -6) +
+        clamp(b.home - b.away, -0.4, 3.5) * 8 +
+        clamp(2.1 - as.ppg, 0, 2.1) * 14 +
+        clamp(2.0 - as.awayPpg, 0, 2.0) * 8 +
+        ((15 - as.formPts) / 15) * 14 +
+        clamp(hs.ppg - as.ppg, -0.3, 2.2) * 15 +
+        clamp(as.gaAvg - 1.0, 0, 2.5) * 7 +
+        clamp(homeEdgePct * 0.85, -4, 22),
       10,
       99
     )
@@ -441,10 +458,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
       const fbTodayNgUrl = "https://www.football.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=1";
 
       const [sbTodayJson, sbLiveJson, fbGhJson, fbNgJson] = await Promise.all([
-        fetchJsonSafe(sbTodayUrl, 6500, "https://www.sportybet.com/"),
-        fetchJsonSafe(sbLiveUrl, 5000, "https://www.sportybet.com/"),
-        fetchJsonSafe(fbTodayGhUrl, 6500, "https://www.football.com/"),
-        fetchJsonSafe(fbTodayNgUrl, 6500, "https://www.football.com/")
+        fetchJsonSafe(sbTodayUrl, 8500, "https://www.sportybet.com/"),
+        fetchJsonSafe(sbLiveUrl, 6500, "https://www.sportybet.com/"),
+        fetchJsonSafe(fbTodayGhUrl, 8500, "https://www.football.com/"),
+        fetchJsonSafe(fbTodayNgUrl, 8500, "https://www.football.com/")
       ]);
 
       const sbEvents = [
@@ -456,14 +473,14 @@ async function runFullBookmakerScan(forceRefresh = false) {
         ...extractEventsFromFactCenter(fbNgJson)
       ];
 
-      // If today has very few matches (< 25), also pull upcoming page 1 from both bookmakers
-      if (sbEvents.length < 25) {
-        const [sbUp, fbUp] = await Promise.all([
-          fetchJsonSafe("https://www.sportybet.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&pageSize=100&pageNum=1", 6000, "https://www.sportybet.com/"),
-          fetchJsonSafe("https://www.football.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&pageSize=100&pageNum=1", 6000, "https://www.football.com/")
+      // If todayGames has a second page (>100 games today), fetch page 2 sequentially to avoid CloudFront burst blocks
+      if ((sbTodayJson?.data?.totalNum || 0) > 100) {
+        const [sbP2, fbP2] = await Promise.all([
+          fetchJsonSafe("https://www.sportybet.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=2", 7500, "https://www.sportybet.com/"),
+          fetchJsonSafe("https://www.football.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=2", 7500, "https://www.football.com/")
         ]);
-        sbEvents.push(...extractEventsFromFactCenter(sbUp));
-        fbEvents.push(...extractEventsFromFactCenter(fbUp));
+        sbEvents.push(...extractEventsFromFactCenter(sbP2));
+        fbEvents.push(...extractEventsFromFactCenter(fbP2));
       }
 
       const mergedMap = new Map();
@@ -567,8 +584,11 @@ async function runFullBookmakerScan(forceRefresh = false) {
         };
       });
 
-      // Sort priority games first (professional leagues, topTeam, non-youth first, then remaining)
+      // Sort priority games first (earlier today games, professional leagues, topTeam)
       games.sort((a, b) => {
+        const aToday = a.estimateStartTime - Date.now() < 24 * 3600 * 1000 ? 0 : 1;
+        const bToday = b.estimateStartTime - Date.now() < 24 * 3600 * 1000 ? 0 : 1;
+        if (aToday !== bToday) return aToday - bToday;
         const aYouth = /\bu2[013]\b|reserve/i.test(`${a.homeTeamName} ${a.league}`) ? 1 : 0;
         const bYouth = /\bu2[013]\b|reserve/i.test(`${b.homeTeamName} ${b.league}`) ? 1 : 0;
         if (aYouth !== bYouth) return aYouth - bYouth;
@@ -576,9 +596,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
         return a.estimateStartTime - b.estimateStartTime;
       });
 
-      // Hydrate team stats for first 48 games immediately, and trigger background hydration for the rest
-      const immediateGames = games.slice(0, 48);
-      const deferredGames = games.slice(48);
+      // Hydrate team stats for first 60 games immediately, and trigger background hydration for the rest
+      const immediateGames = games.slice(0, 60);
+      const deferredGames = games.slice(60);
 
       const immediateUids = [
         ...new Set(
@@ -586,10 +606,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
         )
       ];
 
-      await runPool(immediateUids, 36, (uid) => fetchTeamLast10Stats(uid));
+      await runPool(immediateUids, 24, (uid) => fetchTeamLast10Stats(uid));
 
       // Hydrate H2H for top 24 matches in parallel
-      await runPool(immediateGames.slice(0, 24), 16, (g) => fetchH2hStats(g.homeUid, g.awayUid));
+      await runPool(immediateGames.slice(0, 24), 14, (g) => fetchH2hStats(g.homeUid, g.awayUid));
 
       // Background-hydrate remaining games so subsequent requests have 100% of teams + H2H
       if (deferredGames.length > 0) {
@@ -597,8 +617,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const remUids = [
             ...new Set(deferredGames.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean))
           ];
-          await runPool(remUids, 25, (uid) => fetchTeamLast10Stats(uid));
-          await runPool(games.slice(24, 65), 12, (g) => fetchH2hStats(g.homeUid, g.awayUid));
+          await runPool(remUids, 20, (uid) => fetchTeamLast10Stats(uid));
+          await runPool(games.slice(24, 120), 12, (g) => fetchH2hStats(g.homeUid, g.awayUid));
           cachedScanExpiresAt = 0; // allow next request to pick up 100% hydrated cache
         })().catch(() => {});
       }
@@ -612,26 +632,37 @@ async function runFullBookmakerScan(forceRefresh = false) {
         })
         .filter(Boolean);
 
-      // 1. STRONG TEAMS PLAYING HOME TODAY WITH MISMATCH BIG ODDS
+      // 1. STRONG TEAMS PLAYING HOME TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)
       const strongHomeMismatch = evaluated
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
           const odd1 = g.bestOdds.home || 0;
+          const odd2 = g.bestOdds.away || 0;
+          const homeStronger =
+            hs.ppg >= as.ppg + 0.12 ||
+            hs.homePpg >= as.awayPpg + 0.25 ||
+            hs.formPts >= as.formPts + 2;
+          const mistakeBigOddsGiven =
+            odd1 >= odd2 ||
+            (odd1 >= 1.95 && odd2 <= 3.50 && (hs.ppg >= as.ppg + 0.25 || hs.formPts >= as.formPts + 3));
           return (
             g.hasVerifiedStats &&
-            odd1 >= 1.52 &&
-            odd1 <= 4.20 &&
-            hs.ppg >= 1.45 &&
-            hs.formPts >= 8 &&
-            (hs.ppg >= as.ppg || hs.homePpg >= as.awayPpg + 0.15)
+            odd1 >= 1.90 &&
+            odd1 <= 6.80 &&
+            hs.ppg >= 1.30 &&
+            hs.formPts >= 7 &&
+            homeStronger &&
+            mistakeBigOddsGiven
           );
         })
         .map((g) => {
           const odd1 = g.bestOdds.home;
+          const odd2 = g.bestOdds.away;
           const dc1X = g.bestOdds.dc1X;
           const hs = g.homeStats;
           const as = g.awayStats;
+          const isInvertedTrap = odd1 >= odd2;
           return {
             ...g,
             mismatchCategory: "STRONG_HOME",
@@ -639,36 +670,52 @@ async function runFullBookmakerScan(forceRefresh = false) {
             targetTeam: g.homeTeamName,
             opponentTeam: g.awayTeamName,
             side: "HOME",
+            isInvertedTrap,
+            mistakeBigOdd: odd1,
+            opponentLowOdd: odd2,
             mismatchBigOdd: odd1,
-            mismatchMarket: `${g.homeTeamName} Win (1)`,
+            mismatchMarket: `Back Strong Home (${g.homeTeamName}) Win (1)`,
             backupMarket: dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`,
             bestBookmaker: g.bestOdds.homeBookie,
             edgePct: g.model.homeEdgePct,
-            headlineReason: `${g.homeTeamName} averages ${hs.ppg.toFixed(2)} PPG (${hs.form.join("-")} · ${hs.gfAvg} GF/g) vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · ${as.gaAvg} GA/g), yet bookmakers offer a generous ${odd1.toFixed(2)} Home Win odd.`
+            trickSummary: `BOOKIE TRICK: ${g.homeTeamName} (Strong Home) given Mistake BIG Odds @ ${odd1.toFixed(2)} while weaker opponent ${g.awayTeamName} has LOW Odds @ ${odd2.toFixed(2)} to make you think ${g.homeTeamName} will lose.`,
+            realityVerdict: `REALITY: ${g.homeTeamName} will WIN — Superior ${hs.ppg.toFixed(2)} PPG (Home ${hs.homePpg.toFixed(2)} PPG · Form ${hs.form.join("-")}) vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · Away ${as.awayPpg.toFixed(2)} PPG).`,
+            headlineReason: `Bookmaker Trap Exposed: ${g.homeTeamName} is the stronger team (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")} · ${hs.gfAvg} GF/g) against ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · ${as.gaAvg} GA/g), yet bookies gave ${g.homeTeamName} MISTAKE BIG ODDS of ${odd1.toFixed(2)} (and ${g.awayTeamName} low odds of ${odd2.toFixed(2)}) to trick bettors into thinking ${g.homeTeamName} will lose!`
           };
         })
-        .sort((a, b) => b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
+        .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
-      // 2. STRONG TEAMS PLAYING AWAY TODAY WITH MISMATCH BIG ODDS
+      // 2. STRONG TEAMS PLAYING AWAY TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)
       const strongAwayMismatch = evaluated
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
+          const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
+          const awayStronger =
+            as.ppg >= hs.ppg + 0.10 ||
+            as.awayPpg >= hs.homePpg + 0.20 ||
+            as.formPts >= hs.formPts + 2;
+          const mistakeBigOddsGiven =
+            odd2 >= odd1 ||
+            (odd2 >= 1.95 && odd1 <= 3.60 && (as.ppg >= hs.ppg + 0.25 || as.formPts >= hs.formPts + 3));
           return (
             g.hasVerifiedStats &&
-            odd2 >= 1.65 &&
-            odd2 <= 4.80 &&
-            as.ppg >= 1.40 &&
-            as.formPts >= 9 &&
-            (as.ppg >= hs.ppg || as.awayPpg >= hs.homePpg)
+            odd2 >= 1.90 &&
+            odd2 <= 7.00 &&
+            as.ppg >= 1.30 &&
+            as.formPts >= 7 &&
+            awayStronger &&
+            mistakeBigOddsGiven
           );
         })
         .map((g) => {
+          const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
           const dcX2 = g.bestOdds.dcX2;
           const hs = g.homeStats;
           const as = g.awayStats;
+          const isInvertedTrap = odd2 >= odd1;
           return {
             ...g,
             mismatchCategory: "STRONG_AWAY",
@@ -676,29 +723,40 @@ async function runFullBookmakerScan(forceRefresh = false) {
             targetTeam: g.awayTeamName,
             opponentTeam: g.homeTeamName,
             side: "AWAY",
+            isInvertedTrap,
+            mistakeBigOdd: odd2,
+            opponentLowOdd: odd1,
             mismatchBigOdd: odd2,
-            mismatchMarket: `${g.awayTeamName} Away Win (2)`,
+            mismatchMarket: `Back Strong Away (${g.awayTeamName}) Win (2)`,
             backupMarket: dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.28).toFixed(2)}`,
             bestBookmaker: g.bestOdds.awayBookie,
             edgePct: g.model.awayEdgePct,
-            headlineReason: `${g.awayTeamName} carries ${as.ppg.toFixed(2)} PPG (${as.form.join("-")} · ${as.gfAvg} GF/g) on the road against ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · ${hs.gaAvg} GA/g), creating a big ${odd2.toFixed(2)} Away Win mismatch.`
+            trickSummary: `BOOKIE TRICK: ${g.awayTeamName} (Strong Away) given Mistake BIG Odds @ ${odd2.toFixed(2)} while weaker host ${g.homeTeamName} has LOW Odds @ ${odd1.toFixed(2)} to trick people into thinking ${g.awayTeamName} will lose.`,
+            realityVerdict: `REALITY: ${g.awayTeamName} will WIN — Superior ${as.ppg.toFixed(2)} PPG (Away ${as.awayPpg.toFixed(2)} PPG · Form ${as.form.join("-")}) vs ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}).`,
+            headlineReason: `Bookmaker Trap Exposed: ${g.awayTeamName} is the stronger side (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")} · ${as.gfAvg} GF/g) visiting ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · ${hs.gaAvg} GA/g), yet bookies gave ${g.awayTeamName} MISTAKE BIG ODDS of ${odd2.toFixed(2)} (and ${g.homeTeamName} low odds of ${odd1.toFixed(2)}) to trick bettors into thinking ${g.awayTeamName} will lose!`
           };
         })
-        .sort((a, b) => b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
+        .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
-      // 3. WORST TEAMS PLAYING HOME TODAY WITH MISMATCH BIG ODDS
+      // 3. WORST TEAMS PLAYING HOME TODAY WITH MISTAKE LOW ODDS (WHILE OPPONENT HAS BIG ODDS)
       const worstHomeMismatch = evaluated
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
-          const odd2 = g.bestOdds.away || 0;
           const odd1 = g.bestOdds.home || 0;
+          const odd2 = g.bestOdds.away || 0;
+          const homeIsTrulyWeak =
+            hs.ppg <= 1.25 &&
+            hs.formPts <= 7 &&
+            (hs.ppg <= as.ppg || hs.formPts <= as.formPts || hs.homePpg <= as.awayPpg);
+          const mistakeLowOddGivenToWorstHome =
+            odd1 < odd2 || (odd1 <= 2.45 && odd2 >= 2.50);
           return (
             g.hasVerifiedStats &&
-            hs.ppg <= 1.20 &&
-            (hs.formPts <= 6 || hs.gaAvg >= 1.6) &&
-            (as.ppg >= hs.ppg + 0.15 || as.formPts >= hs.formPts + 2) &&
-            (odd2 >= 1.50 || odd1 >= 2.80)
+            homeIsTrulyWeak &&
+            mistakeLowOddGivenToWorstHome &&
+            odd1 <= 2.55 &&
+            odd2 >= 2.15
           );
         })
         .map((g) => {
@@ -707,7 +765,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
           const dcX2 = g.bestOdds.dcX2;
-          const isTrapFavorite = odd1 < odd2;
+          const isInvertedTrap = odd1 < odd2;
           return {
             ...g,
             mismatchCategory: "WORST_HOME",
@@ -715,32 +773,41 @@ async function runFullBookmakerScan(forceRefresh = false) {
             targetTeam: g.homeTeamName,
             opponentTeam: g.awayTeamName,
             side: "HOME",
+            isInvertedTrap,
             worstTeamOdd: odd1,
-            mismatchBigOdd: odd2 >= 1.50 ? odd2 : odd1,
-            mismatchMarket: isTrapFavorite
-              ? `Fade False Home Fav (${g.homeTeamName} @ ${odd1.toFixed(2)}) -> Back ${g.awayTeamName} (2)`
-              : `Weak Home Underdog (${g.homeTeamName} @ ${odd1.toFixed(2)}) -> Back ${g.awayTeamName} (2)`,
+            mistakeLowOdd: odd1,
+            opponentBigOdd: odd2,
+            mismatchBigOdd: odd2,
+            mismatchMarket: `Fade Worst Home (${g.homeTeamName} @ ${odd1.toFixed(2)}) -> Back ${g.awayTeamName} Win (2)`,
             backupMarket: dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 2.5 Goals @ ${(g.bestOdds.over25 || 1.85).toFixed(2)}`,
             bestBookmaker: g.bestOdds.awayBookie,
             edgePct: g.model.awayEdgePct,
-            headlineReason: `${g.homeTeamName} is struggling at home (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")} · ${hs.gaAvg} GA/g) while ${g.awayTeamName} holds ${as.ppg.toFixed(2)} PPG (${as.form.join("-")}) — ${isTrapFavorite ? `bookmakers falsely priced ${g.homeTeamName} at ${odd1.toFixed(2)}, leaving ${g.awayTeamName} at a massive ${odd2.toFixed(2)} mismatch!` : `visitor ${g.awayTeamName} pays ${odd2.toFixed(2)} against a leaky home defense.`}`
+            trickSummary: `BOOKIE TRICK: Worst Home Team ${g.homeTeamName} given Mistake LOW Odds @ ${odd1.toFixed(2)} to trick people into thinking they will win, while opponent ${g.awayTeamName} has BIG Odds @ ${odd2.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.homeTeamName} will LOSE — Weak ${hs.ppg.toFixed(2)} PPG (Form ${hs.form.join("-")} · ${hs.gaAvg} GA/g) vs stronger opponent ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")}).`,
+            headlineReason: `Low-Odd Favorite Trap: ${g.homeTeamName} has poor metrics (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")} · ${hs.gaAvg} GA/g) yet bookmakers gave them MISTAKE LOW ODDS of ${odd1.toFixed(2)} to trick bettors into thinking they will win — in reality they are set to lose to ${g.awayTeamName} (@ ${odd2.toFixed(2)} Big Odds · ${as.ppg.toFixed(2)} PPG)!`
           };
         })
-        .sort((a, b) => b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
+        .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
-      // 4. WORST TEAMS PLAYING AWAY TODAY WITH MISMATCH BIG ODDS
+      // 4. WORST TEAMS PLAYING AWAY TODAY WITH MISTAKE LOW ODDS (WHILE OPPONENT HAS BIG ODDS)
       const worstAwayMismatch = evaluated
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
           const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
+          const awayIsTrulyWeak =
+            as.ppg <= 1.25 &&
+            as.formPts <= 7 &&
+            (as.ppg <= hs.ppg || as.formPts <= hs.formPts || as.awayPpg <= hs.homePpg);
+          const mistakeLowOddGivenToWorstAway =
+            odd2 < odd1 || (odd2 <= 2.65 && odd1 >= 2.25);
           return (
             g.hasVerifiedStats &&
-            as.ppg <= 1.15 &&
-            (as.formPts <= 6 || as.gaAvg >= 1.6) &&
-            (hs.ppg >= as.ppg + 0.15 || hs.formPts >= as.formPts + 2) &&
-            (odd1 >= 1.42 || odd2 >= 3.00)
+            awayIsTrulyWeak &&
+            mistakeLowOddGivenToWorstAway &&
+            odd2 <= 2.75 &&
+            odd1 >= 2.05
           );
         })
         .map((g) => {
@@ -749,7 +816,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
           const dc1X = g.bestOdds.dc1X;
-          const isTrapAway = odd2 < odd1;
+          const isInvertedTrap = odd2 < odd1;
           return {
             ...g,
             mismatchCategory: "WORST_AWAY",
@@ -757,18 +824,21 @@ async function runFullBookmakerScan(forceRefresh = false) {
             targetTeam: g.awayTeamName,
             opponentTeam: g.homeTeamName,
             side: "AWAY",
+            isInvertedTrap,
             worstTeamOdd: odd2,
-            mismatchBigOdd: odd1 >= 1.45 ? odd1 : odd2,
-            mismatchMarket: isTrapAway
-              ? `Fade False Away Fav (${g.awayTeamName} @ ${odd2.toFixed(2)}) -> Back ${g.homeTeamName} (1)`
-              : `Punish Weak Traveler (${g.awayTeamName} @ ${odd2.toFixed(2)}) -> Back ${g.homeTeamName} (1)`,
+            mistakeLowOdd: odd2,
+            opponentBigOdd: odd1,
+            mismatchBigOdd: odd1,
+            mismatchMarket: `Fade Worst Away (${g.awayTeamName} @ ${odd2.toFixed(2)}) -> Back ${g.homeTeamName} Win (1)`,
             backupMarket: dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 2.5 Goals @ ${(g.bestOdds.over25 || 1.80).toFixed(2)}`,
             bestBookmaker: g.bestOdds.homeBookie,
             edgePct: g.model.homeEdgePct,
-            headlineReason: `${g.awayTeamName} has poor away metrics (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")} · ${as.gaAvg} GA/g) visiting ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · ${hs.form.join("-")}) — ${isTrapAway ? `bookmakers overpriced ${g.homeTeamName} at ${odd1.toFixed(2)}!` : `${g.homeTeamName} Win @ ${odd1.toFixed(2)} punishes a vulnerable road team.`}`
+            trickSummary: `BOOKIE TRICK: Worst Away Team ${g.awayTeamName} given Mistake LOW Odds @ ${odd2.toFixed(2)} to trick people into thinking they will win, while host ${g.homeTeamName} has BIG Odds @ ${odd1.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.awayTeamName} will LOSE — Weak ${as.ppg.toFixed(2)} PPG (Away ${as.awayPpg.toFixed(2)} PPG · Form ${as.form.join("-")}) visiting ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}).`,
+            headlineReason: `Low-Odd Favorite Trap: ${g.awayTeamName} is struggling (${as.ppg.toFixed(2)} PPG · Away ${as.awayPpg.toFixed(2)} PPG · Form ${as.form.join("-")}) yet bookmakers gave them MISTAKE LOW ODDS of ${odd2.toFixed(2)} to trick bettors into thinking they will win — in reality they are set to lose to ${g.homeTeamName} (@ ${odd1.toFixed(2)} Big Odds · ${hs.ppg.toFixed(2)} PPG)!`
           };
         })
-        .sort((a, b) => b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
+        .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
       const payload = {
         ok: true,
@@ -779,15 +849,15 @@ async function runFullBookmakerScan(forceRefresh = false) {
         ],
         totalGamesScraped: evaluated.length,
         verifiedTeamsCount: evaluated.filter((x) => x.hasVerifiedStats).length,
-        strongHomeMismatch: strongHomeMismatch.slice(0, 18),
-        strongAwayMismatch: strongAwayMismatch.slice(0, 18),
-        worstHomeMismatch: worstHomeMismatch.slice(0, 18),
-        worstAwayMismatch: worstAwayMismatch.slice(0, 18),
-        allGames: evaluated.slice(0, 100)
+        strongHomeMismatch: strongHomeMismatch.slice(0, 20),
+        strongAwayMismatch: strongAwayMismatch.slice(0, 20),
+        worstHomeMismatch: worstHomeMismatch.slice(0, 20),
+        worstAwayMismatch: worstAwayMismatch.slice(0, 20),
+        allGames: evaluated.slice(0, 160)
       };
 
       cachedScan = payload;
-      cachedScanExpiresAt = Date.now() + 300000; // 5 min cache
+      cachedScanExpiresAt = Date.now() + (evaluated.length >= 40 ? 300000 : 15000);
       return payload;
     } finally {
       scanInFlight = null;

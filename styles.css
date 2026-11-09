@@ -3387,3 +3387,84 @@ ul {
 .factor-side.is-wide {
   grid-column: 1 / -1;
 }
+
+/* Bookmaker Odds Mismatch (SportyBet & Football.com) */
+.mismatch-card {
+  cursor: default;
+}
+
+.bookie-id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: var(--ground);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.bookie-id-chip.is-sporty {
+  border-color: rgba(10, 123, 92, 0.4);
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.bookie-id-chip.is-fb {
+  border-color: rgba(217, 119, 6, 0.4);
+  color: #B45309;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+[data-theme="dark"] .bookie-id-chip.is-fb {
+  color: #FBBF24;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.bookie-compare-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.bookie-compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 580px;
+}
+
+.bookie-compare-table th,
+.bookie-compare-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+.bookie-compare-table th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--ground-subtle);
+}
+
+.bookie-compare-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.bookie-compare-table td.is-highlight-odd {
+  font-weight: 700;
+  color: var(--brand);
+  background: var(--brand-soft);
+}

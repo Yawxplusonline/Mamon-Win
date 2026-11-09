@@ -49,6 +49,7 @@
       matchFilter: "ALL", // ALL | LIVE | SCHEDULED | DROPS | ALERTS | FOLLOWING | FT
       activeIntelTab: "DROPS", // DROPS | ALERTS | PPG
       activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY
+      activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
       standingsLeague: "england-premier-league",
       followedMatches: [],
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
@@ -86,6 +87,8 @@
   let activeModalMatchId = null;
   let activeModalTab = "overview";
   let isHydratingPowerWeather = false;
+  let bookmakerScan = null;
+  let isLoadingBookmakers = true;
 
   function saveState() {
     try {
@@ -168,6 +171,11 @@
       if (q.get("cat")) state.activePowerCategory = q.get("cat").toUpperCase();
       route = "/power-picks";
     }
+    if (route.startsWith("/odds-mismatch?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("cat")) state.activeMismatchCategory = q.get("cat").toUpperCase();
+      route = "/odds-mismatch";
+    }
     if (route === "/game-points") route = "/sure-odds";
     if (route === "/community") route = "/power-picks";
     state.route = route;
@@ -226,6 +234,7 @@
     if (mobileEl) {
       const mobileQuick = [
         { label: "Sure Odds", route: "/sure-odds", logo: "/assets/motexiz-mark.svg" },
+        { label: "Mismatch", route: "/odds-mismatch", logo: "/assets/motexiz-mark.svg" },
         { label: "Live/Next", route: "/matches", logo: "/assets/motexiz-mark.svg" },
         ...LEAGUES.filter((l) => l.featured).slice(0, 8)
       ];
@@ -1287,6 +1296,7 @@
         </div>
         <div class="btn-group">
           <a class="btn-full" href="/sure-odds" data-route="/sure-odds">Inspect Factors &amp; Stake</a>
+          <a class="btn-outline" href="/odds-mismatch" data-route="/odds-mismatch">SportyBet &amp; Football.com Mismatch</a>
           <a class="btn-outline" href="/power-picks" data-route="/power-picks">Strong &amp; Worst Teams Today</a>
         </div>
       </div>
@@ -1675,12 +1685,68 @@
     `;
   }
 
+  function renderHomeBookmakerMismatchCard() {
+    if (!bookmakerScan && !isLoadingBookmakers) return "";
+    const sc = bookmakerScan;
+    const totalCount = sc?.totalGamesScraped || 0;
+    const quads = [
+      { key: "STRONG_HOME", title: "STRONG HOME + BIG ODDS", item: sc?.strongHomeMismatch?.[0], isStrong: true },
+      { key: "STRONG_AWAY", title: "STRONG AWAY + BIG ODDS", item: sc?.strongAwayMismatch?.[0], isStrong: true },
+      { key: "WORST_HOME", title: "WORST HOME + BIG ODDS", item: sc?.worstHomeMismatch?.[0], isStrong: false },
+      { key: "WORST_AWAY", title: "WORST AWAY + BIG ODDS", item: sc?.worstAwayMismatch?.[0], isStrong: false }
+    ];
+
+    return `
+      <section class="panel" id="mismatchHomeCard">
+        <div class="panel-header">
+          <span class="live-dot" style="background:#D97706;"></span>
+          <h2>SportyBet &amp; Football.com Odds Mismatch (${totalCount ? `${totalCount} Games Scraped` : "Scanning..."})</h2>
+          <a class="see-all" href="/odds-mismatch" data-route="/odds-mismatch">
+            Open Mismatch Scanner
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          </a>
+        </div>
+        <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle flex items-center justify-between flex-wrap gap-2">
+          <span>Live scraper across <strong>football.com</strong> &amp; <strong>sportybet.com</strong> spotting Strong &amp; Worst teams Today with inflated Big Odds.</span>
+          <a href="/odds-mismatch" data-route="/odds-mismatch" class="text-brand font-bold">View all 4 Mismatch Lists &rarr;</a>
+        </div>
+        <div class="power-preview-grid">
+          ${quads
+            .map((q) => {
+              const x = q.item;
+              if (!x) {
+                return `<a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="/odds-mismatch?cat=${q.key}" data-route="/odds-mismatch?cat=${q.key}">
+                  <span class="tile-kicker">${q.title}</span>
+                  <span class="text-xs text-muted">${isLoadingBookmakers ? "Scraping SportyBet & Football.com..." : "Open scanner"}</span>
+                </a>`;
+              }
+              const sbCode = x.sportybet?.gameId || "-";
+              const fbCode = x.footballCom?.gameId || "-";
+              return `
+                <a class="power-preview-tile${q.isStrong ? " is-strong" : " is-worst"}" href="/odds-mismatch?cat=${q.key}" data-route="/odds-mismatch?cat=${q.key}">
+                  <div class="flex items-center justify-between gap-1 w-full">
+                    <span class="tile-kicker">${q.title}</span>
+                    <span class="power-score-pill${q.isStrong ? " is-strong" : " is-worst"}">@ ${x.mismatchBigOdd.toFixed(2)}</span>
+                  </div>
+                  <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(x.targetTeam)} <span class="text-xs font-normal text-muted">(${x.side === "HOME" ? "Home" : "Away"})</span></div>
+                  <div class="text-xs text-text-secondary truncate mt-1">${x.side === "HOME" ? "vs" : "@"} ${escapeHtml(x.opponentTeam)} · ${escapeHtml(x.kickoffUtc)} UTC</div>
+                  <div class="text-xs text-muted truncate mt-1">SB #${escapeHtml(String(sbCode))} · FB #${escapeHtml(String(fbCode))} · PPG ${x.homeStats.ppg.toFixed(2)}v${x.awayStats.ppg.toFixed(2)}</div>
+                </a>
+              `;
+            })
+            .join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Live & Upcoming Matches" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
     return `
       ${renderHomeSureOddsBanner()}
+      ${renderHomeBookmakerMismatchCard()}
       ${renderMarketIntelligenceStrip()}
       ${renderTodayPowerPreviewCard()}
       ${renderMustWatchSection()}
@@ -1892,6 +1958,309 @@
     `;
   }
 
+  // ============ SPORTYBET & FOOTBALL.COM ODDS MISMATCH SCANNER VIEW ============
+  function renderMismatchGameCard(item, idx, isStrong) {
+    const hs = item.homeStats;
+    const as = item.awayStats;
+    const sb = item.sportybet;
+    const fb = item.footballCom;
+    const h2h = item.h2h;
+    const m = item.model;
+
+    const formDots = (arr) => `<div class="form-dots">${(arr || []).map((x) => `<span class="form-dot ${x}">${x}</span>`).join("")}</div>`;
+    const fmtOdd = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "-");
+
+    const sbGameId = sb?.gameId && sb.gameId !== "-" ? sb.gameId : null;
+    const fbGameId = fb?.gameId && fb.gameId !== "-" ? fb.gameId : null;
+
+    return `
+      <article class="power-team-card mismatch-card">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 min-w-0 flex-wrap">
+            <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
+            <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(item.country)} · ${escapeHtml(item.league)}</span>
+            <span class="text-xs font-mono ${item.isLive ? "text-live font-bold" : "text-muted"}">· ${item.isLive ? `● LIVE (${escapeHtml(item.matchStatus)})` : `${escapeHtml(item.isoDate)} ${escapeHtml(item.kickoffUtc)} UTC`}</span>
+          </div>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${sbGameId ? `<button type="button" class="bookie-id-chip is-sporty" data-copy-gameid="${escapeHtml(String(sbGameId))}" data-bookie="SportyBet" title="Click to copy SportyBet Game ID">SportyBet ID: #${escapeHtml(String(sbGameId))} ⧉</button>` : ""}
+            ${fbGameId ? `<button type="button" class="bookie-id-chip is-fb" data-copy-gameid="${escapeHtml(String(fbGameId))}" data-bookie="Football.com" title="Click to copy Football.com Game ID">Football.com ID: #${escapeHtml(String(fbGameId))} ⧉</button>` : ""}
+            <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">Mismatch ${item.mismatchScore}/100</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
+          <div class="min-w-0">
+            <div class="font-bold text-base">
+              <span class="${item.side === "HOME" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.homeTeamName)} (Home)</span>
+              <span class="text-xs font-mono text-muted mx-1">vs</span>
+              <span class="${item.side === "AWAY" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.awayTeamName)} (Away)</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-0.5">
+              Focus Team: <strong>${escapeHtml(item.targetTeam)} (${item.side})</strong>
+              ${item.venue ? ` · Venue: ${escapeHtml(item.venue)}` : ""}
+              · Value Edge: <strong class="text-brand">${item.edgePct >= 0 ? `+${item.edgePct}%` : `${item.edgePct}%`} vs Bookie Implied</strong>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="sure-odds-chip">@ ${item.mismatchBigOdd.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <!-- Big Odds Mismatch Callout -->
+        <div class="sure-pick-box mt-2">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-xs font-bold uppercase ${isStrong ? "text-brand" : "text-live"}">${isStrong ? "Strong Team Big-Odds Mismatch:" : "Worst Team Big-Odds Mismatch:"}</span>
+              <strong class="text-sm text-text">${escapeHtml(item.mismatchMarket)} @ ${item.mismatchBigOdd.toFixed(2)}</strong>
+              <span class="ppg-chip">Safeguard: ${escapeHtml(item.backupMarket)}</span>
+            </div>
+            <div class="text-xs text-text-secondary mt-1">${escapeHtml(item.headlineReason)}</div>
+          </div>
+          <div class="text-xs font-mono text-right shrink-0">
+            <div class="text-muted">Best Price On</div>
+            <strong class="text-brand">${escapeHtml(item.bestBookmaker)}</strong>
+          </div>
+        </div>
+
+        <!-- Side-by-Side Bookmaker Odds Comparison Table (SportyBet vs Football.com) -->
+        <div class="bookie-compare-wrap mt-2">
+          <table class="bookie-compare-table">
+            <thead>
+              <tr>
+                <th>Bookmaker API</th>
+                <th>Game ID</th>
+                <th>1 (Home)</th>
+                <th>X (Draw)</th>
+                <th>2 (Away)</th>
+                <th>1X</th>
+                <th>X2</th>
+                <th>O 1.5</th>
+                <th>O 2.5</th>
+                <th>GG (BTTS)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><a href="https://www.sportybet.com" target="_blank" rel="noopener noreferrer" class="font-bold text-brand">SportyBet.com ↗</a></td>
+                <td class="font-mono">${escapeHtml(String(sb?.gameId || "-"))}</td>
+                <td class="font-mono ${item.side === "HOME" && isStrong ? "is-highlight-odd" : ""}">${fmtOdd(sb?.home)}</td>
+                <td class="font-mono">${fmtOdd(sb?.draw)}</td>
+                <td class="font-mono ${(item.side === "AWAY" && isStrong) || (item.side === "HOME" && !isStrong) ? "is-highlight-odd" : ""}">${fmtOdd(sb?.away)}</td>
+                <td class="font-mono">${fmtOdd(sb?.dc1X)}</td>
+                <td class="font-mono">${fmtOdd(sb?.dcX2)}</td>
+                <td class="font-mono">${fmtOdd(sb?.over15)}</td>
+                <td class="font-mono">${fmtOdd(sb?.over25)}</td>
+                <td class="font-mono">${fmtOdd(sb?.bttsYes)}</td>
+              </tr>
+              <tr>
+                <td><a href="https://www.football.com" target="_blank" rel="noopener noreferrer" class="font-bold" style="color:#D97706;">Football.com ↗</a></td>
+                <td class="font-mono">${escapeHtml(String(fb?.gameId || "-"))}</td>
+                <td class="font-mono ${item.side === "HOME" && isStrong ? "is-highlight-odd" : ""}">${fmtOdd(fb?.home)}</td>
+                <td class="font-mono">${fmtOdd(fb?.draw)}</td>
+                <td class="font-mono ${(item.side === "AWAY" && isStrong) || (item.side === "HOME" && !isStrong) ? "is-highlight-odd" : ""}">${fmtOdd(fb?.away)}</td>
+                <td class="font-mono">${fmtOdd(fb?.dc1X)}</td>
+                <td class="font-mono">${fmtOdd(fb?.dcX2)}</td>
+                <td class="font-mono">${fmtOdd(fb?.over15)}</td>
+                <td class="font-mono">${fmtOdd(fb?.over25)}</td>
+                <td class="font-mono">${fmtOdd(fb?.bttsYes)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Club Performance & Mismatch Proof Grid -->
+        <div class="power-criteria-grid mt-2">
+          <div class="factor-side">
+            <div class="side-lbl">${escapeHtml(item.homeTeamName)} (Home) · Last ${hs.mp} Games</div>
+            <div class="flex items-center gap-2 flex-wrap">${formDots(hs.form)}<span class="font-mono text-xs font-bold">${hs.formPts}/15 pts (${hs.w}W-${hs.d}D-${hs.l}L)</span></div>
+            <div class="text-xs mt-1">Overall PPG: <strong class="font-mono text-brand">${hs.ppg.toFixed(2)}</strong> · Home PPG: <strong class="font-mono">${hs.homePpg.toFixed(2)}</strong> (${escapeHtml(hs.homeRecord)})</div>
+            <div class="text-xs text-muted mt-0.5">Scored: <strong class="font-mono text-text">${hs.gfAvg}/g</strong> · Conceded: <strong class="font-mono text-text">${hs.gaAvg}/g</strong> · Home CS: <strong class="font-mono">${hs.homeCsPct}%</strong></div>
+          </div>
+
+          <div class="factor-side">
+            <div class="side-lbl">${escapeHtml(item.awayTeamName)} (Away) · Last ${as.mp} Games</div>
+            <div class="flex items-center gap-2 flex-wrap">${formDots(as.form)}<span class="font-mono text-xs font-bold">${as.formPts}/15 pts (${as.w}W-${as.d}D-${as.l}L)</span></div>
+            <div class="text-xs mt-1">Overall PPG: <strong class="font-mono text-brand">${as.ppg.toFixed(2)}</strong> · Away PPG: <strong class="font-mono">${as.awayPpg.toFixed(2)}</strong> (${escapeHtml(as.awayRecord)})</div>
+            <div class="text-xs text-muted mt-0.5">Scored: <strong class="font-mono text-text">${as.gfAvg}/g</strong> · Conceded: <strong class="font-mono text-text">${as.gaAvg}/g</strong> · Away CS: <strong class="font-mono">${as.awayCsPct}%</strong></div>
+          </div>
+
+          <div class="factor-side is-wide">
+            <div class="side-lbl">True Model Probability vs Bookmaker Implied Probability &amp; Head-to-Head</div>
+            <div class="text-xs">
+              <strong>Model Fair Odds vs Bookmaker Implied:</strong>
+              Home Win: <strong class="font-mono text-brand">${m.probHomePct}%</strong> (Bookie ${m.bookieHomePct}% @ ${fmtOdd(item.bestOdds.home)}) ·
+              Draw: <strong class="font-mono">${m.probDrawPct}%</strong> (Bookie ${m.bookieDrawPct}% @ ${fmtOdd(item.bestOdds.draw)}) ·
+              Away Win: <strong class="font-mono text-brand">${m.probAwayPct}%</strong> (Bookie ${m.bookieAwayPct}% @ ${fmtOdd(item.bestOdds.away)})
+            </div>
+            <div class="text-xs text-muted mt-1">
+              <strong>Head-to-Head (H2H):</strong>
+              ${h2h?.meetings ? `${h2h.meetings} meetings — Home ${h2h.homeWins}W · ${h2h.draws}D · Away ${h2h.awayWins}W · Avg ${h2h.avgGoals} goals${h2h.lastMeeting ? ` (Last: ${escapeHtml(h2h.lastMeeting)})` : ""}` : "First recent meeting in Sportradar dataset · Evaluated via 10-game Home/Away form & PPG splits"}
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderMismatchSection(title, subtitle, list, isStrong) {
+    return `
+      <section class="panel">
+        <div class="panel-header">
+          <span class="live-dot" style="background:${isStrong ? "var(--brand)" : "var(--live)"};"></span>
+          <h2>${title}</h2>
+          <span class="count">${list.length} mismatch games</span>
+        </div>
+        <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle">${subtitle}</div>
+        ${
+          list.length === 0
+            ? `<div class="empty-state"><h3>${isLoadingBookmakers ? "Scraping SportyBet &amp; Football.com live markets..." : "No matches in this filter right now"}</h3><p class="text-sm">Real-time bookmaker odds and Sportradar 10-match form histories populate automatically.</p></div>`
+            : `<div>${list.map((item, idx) => renderMismatchGameCard(item, idx, isStrong)).join("")}</div>`
+        }
+      </section>
+    `;
+  }
+
+  function renderAllBookmakerGamesTable(games = []) {
+    const fmtOdd = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "-");
+    return `
+      <section class="panel">
+        <div class="panel-header">
+          <span class="live-dot" style="background:#D97706;"></span>
+          <h2>All Scraped Games Today · SportyBet.com &amp; Football.com (${games.length})</h2>
+          <span class="count">Full Catalog</span>
+        </div>
+        <div class="bookie-compare-wrap">
+          <table class="bookie-compare-table">
+            <thead>
+              <tr>
+                <th>Time (UTC)</th>
+                <th>Fixture &amp; Competition</th>
+                <th>SB ID / FB ID</th>
+                <th>PPG (H vs A)</th>
+                <th>Form (H / A)</th>
+                <th>1 (SB/FB)</th>
+                <th>X (SB/FB)</th>
+                <th>2 (SB/FB)</th>
+                <th>1X / X2</th>
+                <th>O 2.5</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${games
+                .map((g) => {
+                  const hs = g.homeStats;
+                  const as = g.awayStats;
+                  const sb = g.sportybet;
+                  const fb = g.footballCom;
+                  return `
+                    <tr>
+                      <td class="font-mono text-xs">${g.isLive ? `<span class="text-live font-bold">LIVE</span>` : escapeHtml(g.kickoffUtc)}</td>
+                      <td>
+                        <div class="font-bold text-xs">${escapeHtml(g.homeTeamName)} vs ${escapeHtml(g.awayTeamName)}</div>
+                        <div class="text-muted" style="font-size:11px;">${escapeHtml(g.country)} · ${escapeHtml(g.league)}</div>
+                      </td>
+                      <td class="font-mono text-xs">#${escapeHtml(String(sb?.gameId || "-"))} / #${escapeHtml(String(fb?.gameId || "-"))}</td>
+                      <td class="font-mono text-xs"><strong class="text-brand">${hs.ppg.toFixed(2)}</strong> vs <strong>${as.ppg.toFixed(2)}</strong></td>
+                      <td class="font-mono text-xs">${escapeHtml(hs.form.join(""))} / ${escapeHtml(as.form.join(""))}</td>
+                      <td class="font-mono text-xs font-bold">${fmtOdd(sb?.home)} / ${fmtOdd(fb?.home)}</td>
+                      <td class="font-mono text-xs">${fmtOdd(sb?.draw)} / ${fmtOdd(fb?.draw)}</td>
+                      <td class="font-mono text-xs font-bold">${fmtOdd(sb?.away)} / ${fmtOdd(fb?.away)}</td>
+                      <td class="font-mono text-xs">${fmtOdd(g.bestOdds.dc1X)} / ${fmtOdd(g.bestOdds.dcX2)}</td>
+                      <td class="font-mono text-xs">${fmtOdd(g.bestOdds.over25)}</td>
+                    </tr>
+                  `;
+                })
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderOddsMismatchView() {
+    const sc = bookmakerScan;
+    const activeCat = state.activeMismatchCategory || "ALL";
+    const sh = sc?.strongHomeMismatch || [];
+    const sa = sc?.strongAwayMismatch || [];
+    const wh = sc?.worstHomeMismatch || [];
+    const wa = sc?.worstAwayMismatch || [];
+    const allG = sc?.allGames || [];
+
+    const blocks = [];
+    if (activeCat === "ALL_GAMES") {
+      blocks.push(renderAllBookmakerGamesTable(allG));
+    } else {
+      if (activeCat === "ALL" || activeCat === "STRONG_HOME") {
+        blocks.push(
+          renderMismatchSection(
+            "Strong Teams Playing Home Today with Mismatch Big Odds",
+            "Dominant Home teams (High PPG, Strong Form, Superior GF/GA & Home Split) given inflated Big Odds on SportyBet.com & Football.com.",
+            sh,
+            true
+          )
+        );
+      }
+      if (activeCat === "ALL" || activeCat === "STRONG_AWAY") {
+        blocks.push(
+          renderMismatchSection(
+            "Strong Teams Playing Away Today with Mismatch Big Odds",
+            "High-performing Road clubs out-scoring & out-earning their hosts in PPG & Form, yet priced at generous Away Win (2) & X2 odds.",
+            sa,
+            true
+          )
+        );
+      }
+      if (activeCat === "ALL" || activeCat === "WORST_HOME") {
+        blocks.push(
+          renderMismatchSection(
+            "Worst Teams Playing Home Today with Mismatch Big Odds",
+            "Collapsing Home sides (Low PPG, Losing Streaks, Leaky Defenses) where bookmakers misprice the game — exposing high-odds Away Win (2) & X2 value.",
+            wh,
+            false
+          )
+        );
+      }
+      if (activeCat === "ALL" || activeCat === "WORST_AWAY") {
+        blocks.push(
+          renderMismatchSection(
+            "Worst Teams Playing Away Today with Mismatch Big Odds",
+            "Vulnerable Away travelers (Poor Road PPG, High Goals Conceded, Losing Form) facing stronger hosts with generous Mismatch Odds.",
+            wa,
+            false
+          )
+        );
+      }
+    }
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag">LIVE APIS: FOOTBALL.COM + SPORTYBET.COM</span>
+            <span class="sure-pill-tag">${sc ? `${sc.totalGamesScraped} GAMES SCRAPED · ${sc.verifiedTeamsCount} VERIFIED STAT PROFILES` : "SCANNING LIVE CATALOG..."}</span>
+          </div>
+          <button type="button" class="analyze-inline-btn" data-rescan-bookmakers="1" style="background:#13A87E;color:#07100F;border-color:#7CE8C4;font-weight:700;">
+            ${isLoadingBookmakers ? "⟳ Scanning Bookmakers..." : "↻ Rescan SportyBet & Football.com Live"}
+          </button>
+        </div>
+        <h1 class="mt-2">Bookmaker Odds Mismatch Scanner (SportyBet &amp; Football.com)</h1>
+        <p>Scrapes all today's games from <strong>https://www.football.com</strong> and <strong>https://www.sportybet.com</strong>, cross-checks 10-match Club Form, PPG, Goals Scored/Conceded, Clean Sheets &amp; H2H, and isolates Strong &amp; Worst teams playing Home or Away with Mismatch Big Odds.</p>
+
+        <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-mismatch-cat="ALL">All 4 Mismatch Lists</button>
+          <button type="button" class="filter-chip${activeCat === "STRONG_HOME" ? " is-active" : ""}" data-mismatch-cat="STRONG_HOME">Strong Home + Big Odds (${sh.length})</button>
+          <button type="button" class="filter-chip${activeCat === "STRONG_AWAY" ? " is-active" : ""}" data-mismatch-cat="STRONG_AWAY">Strong Away + Big Odds (${sa.length})</button>
+          <button type="button" class="filter-chip${activeCat === "WORST_HOME" ? " is-active" : ""}" data-mismatch-cat="WORST_HOME">Worst Home + Big Odds (${wh.length})</button>
+          <button type="button" class="filter-chip${activeCat === "WORST_AWAY" ? " is-active" : ""}" data-mismatch-cat="WORST_AWAY">Worst Away + Big Odds (${wa.length})</button>
+          <button type="button" class="filter-chip${activeCat === "ALL_GAMES" ? " is-active" : ""}" data-mismatch-cat="ALL_GAMES">All Scraped Games (${allG.length})</button>
+        </div>
+      </div>
+
+      ${blocks.join("")}
+    `;
+  }
+
   function renderCompetitionView(slug) {
     const lg = getLeagueInfo(slug);
     const isFollowed = state.followedLeagues.includes(slug);
@@ -2014,6 +2383,8 @@
       main.innerHTML = renderMatchesView();
     } else if (r === "/power-picks" || r === "/community") {
       main.innerHTML = renderPowerPicksView();
+    } else if (r === "/odds-mismatch") {
+      main.innerHTML = renderOddsMismatchView();
     } else if (r === "/search") {
       main.innerHTML = renderSearchView();
       const pageSearch = document.getElementById("pageSearchInput");
@@ -2411,6 +2782,35 @@
   }
 
   // ============ REAL-TIME HYDRATION BOOTSTRAP ============
+  async function syncBookmakerMismatchFeed(forceRefresh = false, showSuccessToast = false) {
+    isLoadingBookmakers = true;
+    if (state.route === "/odds-mismatch") renderMainContent();
+    try {
+      const url = `/api/bookmakers${forceRefresh ? "?refresh=1" : ""}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(18000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.ok) {
+          bookmakerScan = data;
+        }
+      }
+    } catch {
+      // Keep previous scan if any
+    } finally {
+      isLoadingBookmakers = false;
+      if (
+        document.activeElement?.id !== "sureStakeInput" &&
+        document.activeElement?.id !== "desktopSearchInput" &&
+        document.activeElement?.id !== "pageSearchInput"
+      ) {
+        renderMainContent();
+      }
+      if (showSuccessToast && bookmakerScan) {
+        showToast(`Scraped ${bookmakerScan.totalGamesScraped} games from SportyBet & Football.com.`);
+      }
+    }
+  }
+
   async function syncRealtimeFeed(showSuccessToast = false) {
     if (!RT) return;
     try {
@@ -2489,6 +2889,34 @@
       state.activePowerCategory = powerCatBtn.getAttribute("data-power-cat");
       saveState();
       renderMainContent();
+      return;
+    }
+
+    // Switch SportyBet & Football.com Odds Mismatch Category
+    const mismatchCatBtn = e.target.closest("[data-mismatch-cat]");
+    if (mismatchCatBtn) {
+      state.activeMismatchCategory = mismatchCatBtn.getAttribute("data-mismatch-cat");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Rescan SportyBet & Football.com live feed
+    if (e.target.closest("[data-rescan-bookmakers]")) {
+      syncBookmakerMismatchFeed(true, true);
+      return;
+    }
+
+    // Copy SportyBet / Football.com Game ID
+    const copyIdBtn = e.target.closest("[data-copy-gameid]");
+    if (copyIdBtn) {
+      e.stopPropagation();
+      const gid = copyIdBtn.getAttribute("data-copy-gameid");
+      const bk = copyIdBtn.getAttribute("data-bookie") || "Bookmaker";
+      if (navigator.clipboard && gid) {
+        navigator.clipboard.writeText(gid).catch(() => {});
+      }
+      showToast(`Copied ${bk} Game ID #${gid} to clipboard!`);
       return;
     }
 
@@ -2806,4 +3234,5 @@
   }
   renderAll();
   syncRealtimeFeed(false);
+  syncBookmakerMismatchFeed(false, false);
 })();

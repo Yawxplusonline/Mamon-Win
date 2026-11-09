@@ -7,6 +7,7 @@
     { "source": "/game-points", "destination": "/index.html" },
     { "source": "/dropping-odds", "destination": "/index.html" },
     { "source": "/power-picks", "destination": "/index.html" },
+    { "source": "/odds-mismatch", "destination": "/index.html" },
     { "source": "/community", "destination": "/index.html" },
     { "source": "/search", "destination": "/index.html" },
     { "source": "/competitions/:path*", "destination": "/index.html" }

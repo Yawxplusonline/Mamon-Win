@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const handleEspnProxy = require("./api/espn");
 const handleWeatherProxy = require("./api/weather");
+const handleBookmakersProxy = require("./api/bookmakers");
 
 const PORT = 8080;
 const HOST = "127.0.0.1";
@@ -29,6 +30,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (reqUrl.pathname === "/api/weather") {
       await handleWeatherProxy(req, res);
+      return;
+    }
+    if (reqUrl.pathname === "/api/bookmakers") {
+      await handleBookmakersProxy(req, res);
       return;
     }
 
@@ -70,4 +75,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`MAMON WIN server running at http://${HOST}:${PORT}/`);
+  if (typeof handleBookmakersProxy.runFullBookmakerScan === "function") {
+    handleBookmakersProxy.runFullBookmakerScan(false).catch(() => {});
+  }
 });

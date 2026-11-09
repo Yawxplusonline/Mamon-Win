@@ -68,6 +68,41 @@ window.MAMON_REALTIME = (() => {
     [/spanish-liga-f/i, "esp.w.1"]
   ];
 
+  function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
+    const text = `${league || ""} ${homeTeam || ""} ${awayTeam || ""}`.toLowerCase();
+    const chaosPatterns = [
+      /\breserve(s)?\b/i,
+      /\bu2[0-3]\b/i,
+      /\bu1[5-9]\b/i,
+      /\btercera\b/i,
+      /\bdevelopment league\b/i,
+      /\bregional\b/i,
+      /\bamateur\b/i,
+      /\bserie b2\b/i,
+      /\bserie c\b/i,
+      /\bserie d\b/i,
+      /\bsub-20\b/i,
+      /\bsub 20\b/i,
+      /\bsub-23\b/i,
+      /\bsub 23\b/i,
+      /\byouth\b/i,
+      /\bcup u\d\d\b/i,
+      /\bvtora liga\b/i,
+      /\bdivision b\b/i,
+      /\bsrpska liga\b/i,
+      /\bcarioca\b/i,
+      /\bfares lopes\b/i,
+      /\btaca\b/i,
+      /\bdivision de honor\b/i,
+      /\bsouthern league\b/i,
+      /\bisthmian\b/i,
+      /\bnorthern premier\b/i,
+      /\bnational league south\b/i,
+      /\bnational league north\b/i
+    ];
+    return chaosPatterns.some((p) => p.test(text));
+  }
+
   const summaryCache = new Map();
   const teamScheduleCache = new Map();
   const teamRosterCache = new Map();
@@ -1486,10 +1521,11 @@ window.MAMON_REALTIME = (() => {
   function allowedMarketsForPool(match, pool) {
     const all = match.analysis?.markets || [];
     if (pool === "SAFE") {
-      return all.filter((m) => ["1X", "X2", "O15", "U35"].includes(m.code) || (["HOME", "AWAY"].includes(m.code) && m.odds <= 1.55));
+      // 100% Multi-Outcome Safeguards ONLY: Double Chance (1X, X2) & Over 1.5 Goals
+      return all.filter((m) => ["1X", "X2", "O15"].includes(m.code));
     }
     if (pool === "SAFE_CORE") {
-      return all.filter((m) => ["1X", "X2", "O15", "U35", "HOME", "AWAY", "H_O15", "O25"].includes(m.code) && m.odds <= 2.15);
+      return all.filter((m) => ["1X", "X2", "O15", "U35", "H_O15"].includes(m.code) || (["HOME", "AWAY"].includes(m.code) && m.odds <= 1.45));
     }
     if (pool === "CORE") {
       return all.filter((m) => ["1X", "X2", "O15", "HOME", "AWAY", "O25", "BTTS", "H_O15", "A_O15"].includes(m.code) && m.odds <= 2.35);
@@ -1511,6 +1547,14 @@ window.MAMON_REALTIME = (() => {
     // Only use LIVE (<= 65') or UPCOMING matches — NEVER finished/dead past games
     const playable = matchesPool
       .filter((m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) <= 68))
+      .filter((m) => {
+        if (tier.id === "2" || tier.id === "5" || tier.pool === "SAFE" || tier.pool === "SAFE_CORE") {
+          const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
+          const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
+          return !isChaosOrReserveMatch(m.leagueName, hName, aName);
+        }
+        return true;
+      })
       .map((m) => {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
         const topProb = m.analysis?.bestPick?.prob || 0.6;
@@ -1862,12 +1906,23 @@ window.MAMON_REALTIME = (() => {
 
   function buildTodayPowerRankings(matches = []) {
     // Only rank actionable live (< 75') and scheduled upcoming fixtures so near-FT 90'+ games don't top Power lists
-    const playableAll = (matches || []).filter(
-      (m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) < 75)
-    );
+    // Filter out youth, reserve, and low-tier amateur chaos leagues
+    const playableAll = (matches || [])
+      .filter((m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) < 75))
+      .filter((m) => {
+        const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
+        const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
+        return !isChaosOrReserveMatch(m.leagueName, hName, aName);
+      });
     const activeAll = playableAll.length >= 6
       ? playableAll
-      : (matches || []).filter((m) => m.status !== "FT");
+      : (matches || [])
+          .filter((m) => m.status !== "FT")
+          .filter((m) => {
+            const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
+            const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
+            return !isChaosOrReserveMatch(m.leagueName, hName, aName);
+          });
     const todayIso = DATA.todayIso;
     let pool = activeAll.filter((m) => m.date === todayIso);
     const isTodayOnly = pool.length >= 4;
@@ -2150,6 +2205,7 @@ window.MAMON_REALTIME = (() => {
     // 1. Audit Bookmaker Scraped Games (SportyBet & Football.com factsCenter)
     for (const g of bkGames) {
       if (!g.hasVerifiedStats) continue;
+      if (isChaosOrReserveMatch(g.league, g.homeTeamName, g.awayTeamName)) continue;
       const key = `${g.homeTeamName}::${g.awayTeamName}`.toLowerCase();
       if (usedKeys.has(key)) continue;
 
@@ -2287,11 +2343,12 @@ window.MAMON_REALTIME = (() => {
 
     // 2. Audit Real-Time Matches from ESPN / live telemetry
     for (const m of matches) {
+      const hName = (DATA.TEAMS[m.home]?.name || m.homeTeamName || "Home");
+      const aName = (DATA.TEAMS[m.away]?.name || m.awayTeamName || "Away");
+      if (isChaosOrReserveMatch(m.leagueName, hName, aName)) continue;
       const a = m.analysis || buildMatchAnalysis(m);
       const f = a?.factors;
       if (!f) continue;
-      const hName = (DATA.TEAMS[m.home]?.name || m.homeTeamName || "Home");
-      const aName = (DATA.TEAMS[m.away]?.name || m.awayTeamName || "Away");
       const key = `${hName}::${aName}`.toLowerCase();
       if (usedKeys.has(key)) continue;
 

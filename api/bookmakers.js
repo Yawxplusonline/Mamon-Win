@@ -289,9 +289,48 @@ async function runPool(items, concurrency, fn) {
   return results;
 }
 
+function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
+  const text = `${league || ""} ${homeTeam || ""} ${awayTeam || ""}`.toLowerCase();
+  const chaosPatterns = [
+    /\breserve(s)?\b/i,
+    /\bu2[0-3]\b/i,
+    /\bu1[5-9]\b/i,
+    /\btercera\b/i,
+    /\bdevelopment league\b/i,
+    /\bregional\b/i,
+    /\bamateur\b/i,
+    /\bserie b2\b/i,
+    /\bserie c\b/i,
+    /\bserie d\b/i,
+    /\bsub-20\b/i,
+    /\bsub 20\b/i,
+    /\bsub-23\b/i,
+    /\bsub 23\b/i,
+    /\byouth\b/i,
+    /\bcup u\d\d\b/i,
+    /\bvtora liga\b/i,
+    /\bdivision b\b/i,
+    /\bsrpska liga\b/i,
+    /\bcarioca\b/i,
+    /\bfares lopes\b/i,
+    /\btaca\b/i,
+    /\bdivision de honor\b/i,
+    /\bsouthern league\b/i,
+    /\bisthmian\b/i,
+    /\bnorthern premier\b/i,
+    /\bnational league south\b/i,
+    /\bnational league north\b/i
+  ];
+  return chaosPatterns.some((p) => p.test(text));
+}
+
 function evaluateGameMismatch(game, hStats, aStats, h2h) {
   const b = game.bestOdds;
   if (!b.home || !b.away) return null;
+
+  // Reject unpredictable youth, reserve, and low-tier amateur chaos leagues
+  const isChaos = isChaosOrReserveMatch(game.league, game.homeTeamName, game.awayTeamName);
+  if (isChaos) return null;
 
   // Fallback baseline stats when Sportradar doesn't have 10-game history for a club
   const hs = hStats || {
@@ -344,43 +383,41 @@ function evaluateGameMismatch(game, hStats, aStats, h2h) {
   const homeEdgePct = Math.round((modelProbHome - bookieProbHome) * 100);
   const awayEdgePct = Math.round((modelProbAway - bookieProbAway) * 100);
 
-  // 1. Strong Home Team Given Mistake Big Odds (Opponent Has Low Odds)
-  const homeInverted = b.home >= b.away;
-  const strongHomeScore = Math.round(
-    clamp(
-      26 +
-        (hasVerifiedStats ? 12 : -10) +
-        (homeInverted ? 16 : b.home >= 2.0 ? 8 : 0) +
-        clamp(b.home - b.away, -0.6, 2.5) * 9 +
-        hs.ppg * 13 +
-        hs.homePpg * 8 +
-        (hs.formPts / 15) * 13 +
-        clamp(hs.ppg - as.ppg, -0.5, 2.2) * 15 +
-        clamp(hs.gfAvg - as.gfAvg, -1, 2) * 6 +
-        clamp(homeEdgePct * 0.9, -6, 24),
-      10,
-      99
-    )
-  );
+  // 1. Strong Home Team (MUST have legitimate dominance, never reckless 3.00+ underdog)
+  const homeIsDominant = hs.ppg >= 1.45 && hs.formPts >= 8 && hs.ppg >= as.ppg && b.home <= 2.25;
+  const strongHomeScore = homeIsDominant
+    ? Math.round(
+        clamp(
+          55 +
+            (hasVerifiedStats ? 12 : 0) +
+            hs.ppg * 12 +
+            hs.homePpg * 8 +
+            (hs.formPts / 15) * 10 +
+            clamp(hs.ppg - as.ppg, 0, 2.0) * 12 +
+            clamp(homeEdgePct * 0.8, -4, 18),
+          45,
+          99
+        )
+      )
+    : Math.round(clamp(20 + hs.ppg * 10, 10, 45));
 
-  // 2. Strong Away Team Given Mistake Big Odds (Opponent Has Low Odds)
-  const awayInverted = b.away >= b.home;
-  const strongAwayScore = Math.round(
-    clamp(
-      26 +
-        (hasVerifiedStats ? 12 : -10) +
-        (awayInverted ? 16 : b.away >= 2.0 ? 8 : 0) +
-        clamp(b.away - b.home, -0.6, 2.8) * 9 +
-        as.ppg * 13 +
-        as.awayPpg * 9 +
-        (as.formPts / 15) * 13 +
-        clamp(as.ppg - hs.ppg, -0.5, 2.2) * 16 +
-        clamp(as.gfAvg - hs.gfAvg, -1, 2) * 6 +
-        clamp(awayEdgePct * 0.9, -6, 24),
-      10,
-      99
-    )
-  );
+  // 2. Strong Away Team (MUST have legitimate away dominance, never reckless 3.00+ underdog)
+  const awayIsDominant = as.ppg >= 1.45 && as.formPts >= 8 && as.ppg >= hs.ppg && b.away <= 2.35;
+  const strongAwayScore = awayIsDominant
+    ? Math.round(
+        clamp(
+          55 +
+            (hasVerifiedStats ? 12 : 0) +
+            as.ppg * 12 +
+            as.awayPpg * 8 +
+            (as.formPts / 15) * 10 +
+            clamp(as.ppg - hs.ppg, 0, 2.0) * 12 +
+            clamp(awayEdgePct * 0.8, -4, 18),
+          45,
+          99
+        )
+      )
+    : Math.round(clamp(20 + as.ppg * 10, 10, 45));
 
   // 3. Worst Home Team Given Mistake Low Odds (Opponent Has Big Odds)
   const worstHomeLowTrap = b.home < b.away;
@@ -648,9 +685,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
             (odd1 >= 1.95 && odd2 <= 3.50 && (hs.ppg >= as.ppg + 0.25 || hs.formPts >= as.formPts + 3));
           return (
             g.hasVerifiedStats &&
-            odd1 >= 1.90 &&
-            odd1 <= 6.80 &&
-            hs.ppg >= 1.30 &&
+            odd1 >= 1.70 &&
+            odd1 <= 2.85 &&
+            hs.ppg >= 1.40 &&
             hs.formPts >= 7 &&
             homeStronger &&
             mistakeBigOddsGiven
@@ -659,7 +696,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .map((g) => {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
-          const dc1X = g.bestOdds.dc1X;
+          const dc1X = g.bestOdds.dc1X || (g.bestOdds.home && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.home + 1/g.bestOdds.draw)) * 100) / 100 : null);
           const hs = g.homeStats;
           const as = g.awayStats;
           const isInvertedTrap = odd1 >= odd2;
@@ -674,12 +711,12 @@ async function runFullBookmakerScan(forceRefresh = false) {
             mistakeBigOdd: odd1,
             opponentLowOdd: odd2,
             mismatchBigOdd: odd1,
-            mismatchMarket: `Back Strong Home (${g.homeTeamName}) Win (1)`,
+            mismatchMarket: dc1X ? `1X Double Chance (Home or Draw) @ ${dc1X.toFixed(2)}` : `Home Win (1) @ ${odd1.toFixed(2)}`,
             backupMarket: dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`,
             bestBookmaker: g.bestOdds.homeBookie,
             edgePct: g.model.homeEdgePct,
             trickSummary: `BOOKIE TRICK: ${g.homeTeamName} (Strong Home) given Mistake BIG Odds @ ${odd1.toFixed(2)} while weaker opponent ${g.awayTeamName} has LOW Odds @ ${odd2.toFixed(2)} to make you think ${g.homeTeamName} will lose.`,
-            realityVerdict: `REALITY: ${g.homeTeamName} will WIN — Superior ${hs.ppg.toFixed(2)} PPG (Home ${hs.homePpg.toFixed(2)} PPG · Form ${hs.form.join("-")}) vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · Away ${as.awayPpg.toFixed(2)} PPG).`,
+            realityVerdict: `REALITY: ${g.homeTeamName} will NOT lose — Superior ${hs.ppg.toFixed(2)} PPG (Home ${hs.homePpg.toFixed(2)} PPG · Form ${hs.form.join("-")}) vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · Away ${as.awayPpg.toFixed(2)} PPG). Protected with 1X Double Chance safeguard.`,
             headlineReason: `Bookmaker Trap Exposed: ${g.homeTeamName} is the stronger team (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")} · ${hs.gfAvg} GF/g) against ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG · ${as.gaAvg} GA/g), yet bookies gave ${g.homeTeamName} MISTAKE BIG ODDS of ${odd1.toFixed(2)} (and ${g.awayTeamName} low odds of ${odd2.toFixed(2)}) to trick bettors into thinking ${g.homeTeamName} will lose!`
           };
         })
@@ -701,9 +738,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
             (odd2 >= 1.95 && odd1 <= 3.60 && (as.ppg >= hs.ppg + 0.25 || as.formPts >= hs.formPts + 3));
           return (
             g.hasVerifiedStats &&
-            odd2 >= 1.90 &&
-            odd2 <= 7.00 &&
-            as.ppg >= 1.30 &&
+            odd2 >= 1.70 &&
+            odd2 <= 2.85 &&
+            as.ppg >= 1.40 &&
             as.formPts >= 7 &&
             awayStronger &&
             mistakeBigOddsGiven
@@ -712,7 +749,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .map((g) => {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
-          const dcX2 = g.bestOdds.dcX2;
+          const dcX2 = g.bestOdds.dcX2 || (g.bestOdds.away && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.away + 1/g.bestOdds.draw)) * 100) / 100 : null);
           const hs = g.homeStats;
           const as = g.awayStats;
           const isInvertedTrap = odd2 >= odd1;
@@ -727,12 +764,12 @@ async function runFullBookmakerScan(forceRefresh = false) {
             mistakeBigOdd: odd2,
             opponentLowOdd: odd1,
             mismatchBigOdd: odd2,
-            mismatchMarket: `Back Strong Away (${g.awayTeamName}) Win (2)`,
+            mismatchMarket: dcX2 ? `X2 Double Chance (Away or Draw) @ ${dcX2.toFixed(2)}` : `Away Win (2) @ ${odd2.toFixed(2)}`,
             backupMarket: dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.28).toFixed(2)}`,
             bestBookmaker: g.bestOdds.awayBookie,
             edgePct: g.model.awayEdgePct,
             trickSummary: `BOOKIE TRICK: ${g.awayTeamName} (Strong Away) given Mistake BIG Odds @ ${odd2.toFixed(2)} while weaker host ${g.homeTeamName} has LOW Odds @ ${odd1.toFixed(2)} to trick people into thinking ${g.awayTeamName} will lose.`,
-            realityVerdict: `REALITY: ${g.awayTeamName} will WIN — Superior ${as.ppg.toFixed(2)} PPG (Away ${as.awayPpg.toFixed(2)} PPG · Form ${as.form.join("-")}) vs ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}).`,
+            realityVerdict: `REALITY: ${g.awayTeamName} will NOT lose — Superior ${as.ppg.toFixed(2)} PPG (Away ${as.awayPpg.toFixed(2)} PPG · Form ${as.form.join("-")}) vs ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}). Protected with X2 Double Chance safeguard.`,
             headlineReason: `Bookmaker Trap Exposed: ${g.awayTeamName} is the stronger side (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")} · ${as.gfAvg} GF/g) visiting ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG · ${hs.gaAvg} GA/g), yet bookies gave ${g.awayTeamName} MISTAKE BIG ODDS of ${odd2.toFixed(2)} (and ${g.homeTeamName} low odds of ${odd1.toFixed(2)}) to trick bettors into thinking ${g.awayTeamName} will lose!`
           };
         })

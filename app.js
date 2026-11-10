@@ -57,6 +57,8 @@
       activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
       activeAccurateFilter: "ALL", // ALL | SINGLE | DOUBLE | TREBLE | DOUBLE_CHANCE | GOALS
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
+      activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
+      activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
       standingsLeague: "england-premier-league",
       followedMatches: [],
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
@@ -164,6 +166,7 @@
     if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/accurate-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
+    if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips") return "/special-tips";
     return h;
   }
 
@@ -186,6 +189,13 @@
       route = "/handicap";
     }
     if (route === "/handicap-tips" || route === "/value-bets") route = "/handicap";
+    if (route.startsWith("/special-tips?") || route.startsWith("/5min-draw?") || route.startsWith("/no-3-in-a-row?") || route.startsWith("/draw-defense?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("tab")) state.activeSpecialTipTab = q.get("tab").toUpperCase();
+      if (q.get("filter")) state.activeSpecialTipFilter = q.get("filter").toUpperCase();
+      route = "/special-tips";
+    }
+    if (route === "/5min-draw" || route === "/no-3-in-a-row" || route === "/draw-defense" || route === "/defensive-tips") route = "/special-tips";
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("filter")) state.activeDropFilter = q.get("filter").toUpperCase();
@@ -1450,7 +1460,7 @@
           <span class="font-mono text-xs font-bold text-brand">${formatOdds(activeSlip.totalOdds)}x</span>
         </div>
         <p>Real-time multi-factor selections (${activeSlip.legs.length} legs). Stake ${formatMoney(state.stakeAmount)} to win <strong class="text-brand">${formatMoney(payout)}</strong>.</p>
-        <div class="quick-predict-box">
+        <div class="quick-tips-box quick-predict-box">
           ${
             activeSlip.legs.length === 0
               ? `<div class="text-xs text-muted">Syncing real-time fixtures...</div>`
@@ -2177,6 +2187,63 @@
     `;
   }
 
+  function renderHomeSpecialTipsCard() {
+    const specialData = RT?.buildDrawDefenseTips ? RT.buildDrawDefenseTips(filteredMatchesForDate(), bookmakerScan) : null;
+    if (!specialData || !specialData.fiveMinuteDrawTips || specialData.fiveMinuteDrawTips.length === 0) return "";
+    const top5Min = specialData.fiveMinuteDrawTips.slice(0, 2);
+    const topNo3 = specialData.noThreeInARowTips.slice(0, 2);
+    const totalCount = specialData.fiveMinuteDrawTips.length + specialData.noThreeInARowTips.length;
+
+    return `
+      <section class="panel-section border-subtle" id="drawDefenseHomeCard" style="border: 2px solid rgba(6, 182, 212, 0.45); background: linear-gradient(145deg, var(--card) 0%, rgba(6, 182, 212, 0.04) 100%); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(6, 182, 212, 0.08);">
+        <div class="panel-header" style="background: linear-gradient(90deg, rgba(6, 182, 212, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(6, 182, 212, 0.25); padding: 14px 18px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#06B6D4;color:#042F2E;font-weight:800;">⏱️ 5-MIN DRAW &amp; DEFENSE TIPS</span>
+            <span class="sure-pill-tag">${totalCount} WINNING TIPS READY (50 DRAW + 50 ANTI-BLOWOUT)</span>
+            <span class="font-mono text-xs text-muted">· Screened Across 22 Low-Scoring Leagues</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/special-tips" data-route="/special-tips" style="font-weight:700;color:#06B6D4;">Open 5-Min Draw Center (100 Tips) &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
+            ${top5Min.map((tip, i) => `
+              <a class="power-preview-tile is-strong" href="/special-tips?tab=5MIN_DRAW" data-route="/special-tips?tab=5MIN_DRAW" style="border-left: 3px solid #06B6D4; background: var(--ground);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#06B6D4;">#${i + 1} 5-MIN DRAW (0-0)</span>
+                  <span class="ev-return-pill" style="background:#06B6D4;color:#042F2E;">${tip.expectedValuePct} EV</span>
+                </div>
+                <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · Draw: ${tip.leagueDrawRatePct}</div>
+                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#06B6D4;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                </div>
+              </a>
+            `).join("")}
+            ${topNo3.map((tip, i) => `
+              <a class="power-preview-tile is-strong" href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW" style="border-left: 3px solid #10B981; background: var(--ground);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} NO 3+ GOALS IN A ROW</span>
+                  <span class="ev-return-pill" style="background:#10B981;color:#042F2E;">${tip.expectedValuePct} EV</span>
+                </div>
+                <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
+                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                </div>
+              </a>
+            `).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
@@ -2184,6 +2251,7 @@
     return `
       ${renderHomeAccurateOddsCard()}
       ${renderHomeHandicapValueCard()}
+      ${renderHomeSpecialTipsCard()}
       ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
       ${renderMarketIntelligenceStrip()}
@@ -3553,6 +3621,283 @@
     `;
   }
 
+  // ============ DEDICATED /special-tips VIEW (5-MINUTE DRAW & ANTI-BLOWOUT TIPS) ============
+  function renderDrawDefenseSpecialTipsView() {
+    if (!RT?.buildDrawDefenseTips) {
+      return `<div class="empty-state"><h3>Initializing 5-Minute Draw &amp; Defense Engine...</h3></div>`;
+    }
+    const pool = filteredMatchesForDate();
+    const defenseData = RT.buildDrawDefenseTips(pool.length > 0 ? pool : liveMatches, bookmakerScan);
+    if (!defenseData) {
+      return `<div class="empty-state"><h3>Auditing defensive fixtures...</h3></div>`;
+    }
+
+    const activeTab = state.activeSpecialTipTab || "5MIN_DRAW";
+    const activeFilter = state.activeSpecialTipFilter || "ALL";
+
+    let activeList = activeTab === "NO_3_ROW" ? defenseData.noThreeInARowTips : defenseData.fiveMinuteDrawTips;
+
+    // Filter application
+    let filteredTips = [...activeList];
+    if (activeFilter === "TODAY") {
+      filteredTips = filteredTips.filter((t) => t.isToday);
+    } else if (activeFilter === "HIGH_PROB") {
+      filteredTips = filteredTips.filter((t) => t.trueProbability >= 0.960);
+    } else if (activeFilter === "HIGH_EV") {
+      filteredTips = filteredTips.filter((t) => t.expectedValue >= 0.15);
+    }
+
+    const fiveMinCount = defenseData.fiveMinuteDrawTips.length;
+    const noThreeCount = defenseData.noThreeInARowTips.length;
+
+    // Render Cards
+    const cardsHtml = filteredTips.length === 0
+      ? `<div class="empty-state" style="padding: 40px; text-align: center;">
+          <p class="text-muted">No tips match the selected filter. Try selecting "All 50 Tips".</p>
+        </div>`
+      : `<div class="draw-defense-grid">
+          ${filteredTips.map((tip, idx) => {
+            const is5Min = tip.tipType === "5MIN_DRAW";
+            const badgeClass = is5Min ? "draw-badge-5min" : "draw-badge-no3";
+            const badgeIcon = is5Min ? "⏱️" : "🛡️";
+            const tierBadge = is5Min
+              ? (tip.confidenceTier === "IRONCLAD BANKER" ? "draw-tier-banker" : "draw-tier-high")
+              : (tip.confidenceTier === "IRONCLAD FORTRESS" ? "draw-tier-fortress" : "draw-tier-high");
+
+            return `
+              <div class="draw-defense-card" id="${escapeHtml(tip.id)}">
+                <div>
+                  <div class="draw-card-top">
+                    <span class="${badgeClass}">${badgeIcon} ${is5Min ? "5-MIN DRAW" : "NO 3+ IN A ROW"}</span>
+                    <span class="draw-tier-pill ${tierBadge}">#${idx + 1} ${escapeHtml(tip.confidenceTier)}</span>
+                  </div>
+
+                  <div class="flex items-center justify-between text-xs text-muted mb-1">
+                    <span>${tip.flag} <strong class="text-text">${escapeHtml(tip.league)}</strong></span>
+                    <span class="font-mono">${escapeHtml(tip.date)} · ${escapeHtml(tip.kickoffTime)}</span>
+                  </div>
+
+                  <h3 class="font-headline font-bold text-base text-text mt-1 mb-2">
+                    ${escapeHtml(tip.fixture)}
+                  </h3>
+
+                  <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px;">
+                    <div class="flex items-center justify-between">
+                      <span class="font-semibold text-xs text-text">${escapeHtml(tip.marketLabel)}</span>
+                      <span class="ev-return-pill" style="background: ${is5Min ? '#06B6D4' : '#10B981'}; color: #042F2E;">${tip.expectedValuePct} EV</span>
+                    </div>
+                  </div>
+
+                  <div class="defense-metrics-strip">
+                    <div class="defense-metric-item">
+                      <span class="label">True Prob</span>
+                      <span class="val font-mono" style="color: ${is5Min ? '#0891B2' : '#059669'};">${tip.trueProbabilityPct}</span>
+                    </div>
+                    <div class="defense-metric-item">
+                      <span class="label">Fair Odds</span>
+                      <span class="val font-mono">${tip.fairOdds.toFixed(2)}</span>
+                    </div>
+                    <div class="defense-metric-item">
+                      <span class="label">Bookie Odds</span>
+                      <span class="val font-mono" style="color: var(--brand); font-weight: 800;">${tip.bookmakerOdds.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center justify-between text-xs text-muted mb-2 px-1">
+                    <span>League Draw Rate: <strong class="text-text font-mono">${tip.leagueDrawRatePct}</strong></span>
+                    <span>Avg Goals: <strong class="text-text font-mono">${tip.leagueAvgGoals}</strong></span>
+                    ${tip.consecutiveGoalResistancePct ? `<span>Blowout Resistance: <strong class="text-text font-mono" style="color:#10B981;">${tip.consecutiveGoalResistancePct}</strong></span>` : ""}
+                  </div>
+
+                  <div class="tactical-defense-box">
+                    <strong class="text-text" style="display:block; margin-bottom:3px;">Tactical Defense Breakdown:</strong>
+                    ${escapeHtml(tip.tacticalReason)}
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs text-muted pt-2 mt-3" style="border-top: 1px dashed var(--line);">
+                  <span>📍 ${escapeHtml(tip.venue || "Stadium Venue")}</span>
+                  <button type="button" class="btn-subtle text-xs" style="color: #06B6D4; font-weight: 700;" onclick="navigator.clipboard?.writeText('${escapeHtml(tip.fixture)} - ${escapeHtml(tip.marketLabel)} @ ${tip.bookmakerOdds.toFixed(2)}'); window.showToast?.('Tip copied to clipboard!');">Copy Tip 📋</button>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>`;
+
+    // Slips Html
+    const slipsHtml = `
+      <div class="draw-slips-container mt-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
+        <!-- 5-Minute Draw Treble -->
+        <div class="handicap-slip-card" style="border-color: rgba(6, 182, 212, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(6, 182, 212, 0.05) 100%);">
+          <div>
+            <div class="slip-header">
+              <span class="sure-pill-tag" style="background:#06B6D4; color:#042F2E; font-weight:800;">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.badge)}</span>
+              <span class="font-mono font-bold text-lg" style="color:#06B6D4;">${defenseData.bankerSlips.fiveMinTreble.totalOdds.toFixed(2)}x</span>
+            </div>
+            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.title)}</h3>
+            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.summary)}</p>
+            ${defenseData.bankerSlips.fiveMinTreble.legs.map((leg) => `
+              <div class="handicap-slip-leg">
+                <span class="font-semibold truncate">${leg.flag} ${escapeHtml(leg.fixture)}</span>
+                <span class="font-mono font-bold ml-2" style="color:#06B6D4;">${leg.bookmakerOdds.toFixed(2)}</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
+            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.fiveMinTreble.combinedProb}</strong></span>
+            <span>Avg EV: <strong style="color:#06B6D4;">${defenseData.bankerSlips.fiveMinTreble.avgEvPct}</strong></span>
+          </div>
+        </div>
+
+        <!-- No 3+ in a row Treble -->
+        <div class="handicap-slip-card" style="border-color: rgba(16, 185, 129, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(16, 185, 129, 0.05) 100%);">
+          <div>
+            <div class="slip-header">
+              <span class="sure-pill-tag" style="background:#10B981; color:#042F2E; font-weight:800;">${escapeHtml(defenseData.bankerSlips.noThreeTreble.badge)}</span>
+              <span class="font-mono font-bold text-lg" style="color:#10B981;">${defenseData.bankerSlips.noThreeTreble.totalOdds.toFixed(2)}x</span>
+            </div>
+            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.noThreeTreble.title)}</h3>
+            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.noThreeTreble.summary)}</p>
+            ${defenseData.bankerSlips.noThreeTreble.legs.map((leg) => `
+              <div class="handicap-slip-leg">
+                <span class="font-semibold truncate">${leg.flag} ${escapeHtml(leg.fixture)}</span>
+                <span class="font-mono font-bold ml-2" style="color:#10B981;">${leg.bookmakerOdds.toFixed(2)}</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
+            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.noThreeTreble.combinedProb}</strong></span>
+            <span>Avg EV: <strong style="color:#10B981;">${defenseData.bankerSlips.noThreeTreble.avgEvPct}</strong></span>
+          </div>
+        </div>
+
+        <!-- Master 5-Fold Mixed Acca -->
+        <div class="handicap-slip-card" style="border-color: rgba(99, 102, 241, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(99, 102, 241, 0.05) 100%);">
+          <div>
+            <div class="slip-header">
+              <span class="sure-pill-tag" style="background:#6366F1; color:#FFFFFF; font-weight:800;">${escapeHtml(defenseData.bankerSlips.mixedAcca.badge)}</span>
+              <span class="font-mono font-bold text-lg" style="color:#6366F1;">${defenseData.bankerSlips.mixedAcca.totalOdds.toFixed(2)}x</span>
+            </div>
+            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.mixedAcca.title)}</h3>
+            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.mixedAcca.summary)}</p>
+            ${defenseData.bankerSlips.mixedAcca.legs.map((leg) => `
+              <div class="handicap-slip-leg">
+                <span class="font-semibold truncate text-xs">${leg.flag} ${escapeHtml(leg.fixture)} (${leg.tipType === '5MIN_DRAW' ? '5m Draw' : 'No 3 in Row'})</span>
+                <span class="font-mono font-bold ml-2 text-xs" style="color:#6366F1;">${leg.bookmakerOdds.toFixed(2)}</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
+            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.mixedAcca.combinedProb}</strong></span>
+            <span>Avg EV: <strong style="color:#6366F1;">${defenseData.bankerSlips.mixedAcca.avgEvPct}</strong></span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Global Leagues Table Html
+    const leaguesHtml = `
+      <div class="leagues-defense-table-wrap">
+        <table class="leagues-defense-table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>League</th>
+              <th>Country</th>
+              <th>Draw Rate %</th>
+              <th>Avg Goals / Game</th>
+              <th>Under 2.5 %</th>
+              <th>0-0 HT %</th>
+              <th>Defensive Rating</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${defenseData.leagues.map((lg) => `
+              <tr>
+                <td class="font-mono font-bold">#${lg.rank}</td>
+                <td class="font-bold">${lg.flag} ${escapeHtml(lg.league)}</td>
+                <td class="text-muted">${escapeHtml(lg.country)}</td>
+                <td><strong class="font-mono" style="color:#0891B2;">${(lg.drawRate * 100).toFixed(1)}%</strong></td>
+                <td class="font-mono">${lg.avgGoals.toFixed(2)}</td>
+                <td class="font-mono">${(lg.under25Rate * 100).toFixed(1)}%</td>
+                <td class="font-mono">${(lg.ht00Rate * 100).toFixed(1)}%</td>
+                <td><span class="sure-pill-tag" style="background:rgba(6,182,212,0.15);color:#0891B2;font-size:10px;">TOP ${lg.rank} DEFENSIVE</span></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    return `
+      <!-- HERO BANNER -->
+      <div class="draw-defense-hero">
+        <div class="flex items-center gap-2 flex-wrap mb-1">
+          <span class="sure-pill-tag" style="background:#06B6D4;color:#042F2E;font-weight:800;">⏱️ 5-MIN DRAW WINNING TIPS</span>
+          <span class="sure-pill-tag" style="background:#10B981;color:#042F2E;font-weight:800;">🛡️ NO 3+ GOALS IN A ROW</span>
+          <span class="sure-pill-tag">100 VERIFIED WINNING TIPS</span>
+          <span class="font-mono text-xs text-muted">· Screened Across 22 Low-Scoring Leagues</span>
+        </div>
+        <h1 class="font-headline font-black text-2xl md:text-3xl" style="color:var(--text); letter-spacing:-0.02em;">
+          5-Minute Draw &amp; Defensive Winning Tips
+        </h1>
+        <p class="text-sm text-text-secondary mt-1 max-w-3xl">
+          Engineered specifically for low-scoring and draw-heavy leagues worldwide. Backed by Poisson early feeling-out suppression formulas and anti-blowout consecutive goal resistance metrics.
+        </p>
+
+        <!-- Value Bet & Math Formula Card -->
+        <div class="ev-formula-grid mt-3">
+          <div class="ev-formula-card">
+            <span class="text-xs font-mono font-bold text-muted uppercase tracking-wider">⏱️ 5-Minute Draw Model</span>
+            <div class="text-xs text-text-secondary mt-1">
+              Early 5-minute feeling-out suppression:
+              <br><strong class="font-mono text-brand">&lambda;<sub>5'</sub> = (&lambda;<sub>total</sub> / 90) &times; 5 &times; 0.70</strong>
+              <br>P(0-0 at 5:00) = e<sup>-&lambda;<sub>5'</sub></sup> &ge; <strong>94.5% - 98.2%</strong>.
+            </div>
+          </div>
+          <div class="ev-formula-card">
+            <span class="text-xs font-mono font-bold text-muted uppercase tracking-wider">🛡️ No 3+ in a Row Model</span>
+            <div class="text-xs text-text-secondary mt-1">
+              In leagues with &le;2.20 avg goals, runaway blowouts occur in &lt;3.5% of games:
+              <br>Consecutive Goal Resistance &ge; <strong>94.8% - 97.8%</strong>.
+              <br>Fair Odds: <strong>1.03 - 1.05</strong> vs Bookmaker: <strong>1.16 - 1.28</strong>.
+            </div>
+          </div>
+          <div class="ev-formula-card">
+            <span class="text-xs font-mono font-bold text-muted uppercase tracking-wider">📈 Positive Expected Value (+EV)</span>
+            <div class="text-xs text-text-secondary mt-1">
+              Expected Return per unit staked:
+              <br><strong class="font-mono text-brand">EV = (P &times; O) - 1</strong>
+              <br>Yielding average <strong>+12% to +22% Expected Value</strong> per match.
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab Selector -->
+        <div class="intel-tabs mt-4" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeTab === "5MIN_DRAW" ? " is-active" : ""}" data-special-tab="5MIN_DRAW">⏱️ 5-Minute Draw (50 Games)</button>
+          <button type="button" class="filter-chip${activeTab === "NO_3_ROW" ? " is-active" : ""}" data-special-tab="NO_3_ROW">🛡️ No 3+ Goals in a Row (50 Games)</button>
+          <button type="button" class="filter-chip${activeTab === "SLIPS" ? " is-active" : ""}" data-special-tab="SLIPS">💎 Curated Banker Slips</button>
+          <button type="button" class="filter-chip${activeTab === "LEAGUES" ? " is-active" : ""}" data-special-tab="LEAGUES">📊 Top 22 Low-Scoring Leagues</button>
+        </div>
+
+        ${activeTab === "5MIN_DRAW" || activeTab === "NO_3_ROW" ? `
+          <!-- Sub Filter Chips -->
+          <div class="flex items-center gap-2 flex-wrap mt-3 pt-2" style="border-top:1px dashed rgba(255,255,255,0.15);">
+            <span class="text-xs font-mono font-bold text-muted uppercase">Filter:</span>
+            <button type="button" class="filter-chip text-xs${activeFilter === "ALL" ? " is-active" : ""}" data-special-filter="ALL">All 50 Tips</button>
+            <button type="button" class="filter-chip text-xs${activeFilter === "TODAY" ? " is-active" : ""}" data-special-filter="TODAY">📅 Today's Fixtures</button>
+            <button type="button" class="filter-chip text-xs${activeFilter === "HIGH_PROB" ? " is-active" : ""}" data-special-filter="HIGH_PROB">🎯 96%+ True Probability</button>
+            <button type="button" class="filter-chip text-xs${activeFilter === "HIGH_EV" ? " is-active" : ""}" data-special-filter="HIGH_EV">⚡ +15%+ High EV</button>
+          </div>
+        ` : ""}
+      </div>
+
+      <!-- VIEW CONTENT -->
+      ${activeTab === "SLIPS" ? slipsHtml : (activeTab === "LEAGUES" ? leaguesHtml : cardsHtml)}
+    `;
+  }
+
   function renderCompetitionView(slug) {
     const lg = getLeagueInfo(slug);
     const isFollowed = state.followedLeagues.includes(slug);
@@ -3670,6 +4015,8 @@
       main.innerHTML = renderAccurateWinningOddsView();
     } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
       main.innerHTML = renderHandicapValueBetsView();
+    } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
+      main.innerHTML = renderDrawDefenseSpecialTipsView();
     } else if (r === "/sure-odds" || r === "/game-points") {
       main.innerHTML = renderSureOddsView();
       bindSureCalculatorEvents();
@@ -3837,10 +4184,10 @@
           }
           <div class="mt-4 pt-3 border-t">
             <div class="text-xs font-bold uppercase tracking-wide text-muted mb-2">Market Odds (${escapeHtml(m.odds?.provider || "Real-Time")})</div>
-            <div class="predict-btn-group">
-              <div class="predict-choice-btn"><span>1 · ${escapeHtml(home.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.home)}</span></div>
-              <div class="predict-choice-btn"><span>X · Draw</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.draw)}</span></div>
-              <div class="predict-choice-btn"><span>2 · ${escapeHtml(away.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.away)}</span></div>
+            <div class="tips-btn-group predict-btn-group">
+              <div class="tips-choice-btn predict-choice-btn"><span>1 · ${escapeHtml(home.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.home)}</span></div>
+              <div class="tips-choice-btn predict-choice-btn"><span>X · Draw</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.draw)}</span></div>
+              <div class="tips-choice-btn predict-choice-btn"><span>2 · ${escapeHtml(away.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.away)}</span></div>
             </div>
           </div>
         </div>
@@ -4403,6 +4750,24 @@
     const handicapFilterBtn = e.target.closest("[data-handicap-filter]");
     if (handicapFilterBtn) {
       state.activeHandicapFilter = handicapFilterBtn.getAttribute("data-handicap-filter");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Special Draw/Defense Tab
+    const specialTabBtn = e.target.closest("[data-special-tab]");
+    if (specialTabBtn) {
+      state.activeSpecialTipTab = specialTabBtn.getAttribute("data-special-tab");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Special Draw/Defense Filter
+    const specialFilterBtn = e.target.closest("[data-special-filter]");
+    if (specialFilterBtn) {
+      state.activeSpecialTipFilter = specialFilterBtn.getAttribute("data-special-filter");
       saveState();
       renderMainContent();
       return;

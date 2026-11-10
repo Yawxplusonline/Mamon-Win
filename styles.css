@@ -4123,3 +4123,195 @@ ul {
 .sport-tag-darts { background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid rgba(239, 68, 68, 0.3); }
 .sport-tag-hockey { background: rgba(6, 182, 212, 0.15); color: #06B6D4; border: 1px solid rgba(6, 182, 212, 0.3); }
 .sport-tag-football { background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid rgba(16, 185, 129, 0.3); }
+
+/* ============ 5-MINUTE DRAW & LOW-SCORING DEFENSE WINNING TIPS ============ */
+.special-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #06B6D4;
+  box-shadow: 0 0 8px #06B6D4;
+  animation: pulseCyan 1.8s infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes pulseCyan {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(6, 182, 212, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0); }
+}
+
+.nav-special-tips {
+  position: relative;
+  font-weight: 600;
+}
+
+.draw-defense-hero {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(16, 185, 129, 0.08) 50%, rgba(99, 102, 241, 0.06) 100%);
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+.draw-defense-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.draw-defense-card {
+  background: var(--surface);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.draw-defense-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(6, 182, 212, 0.14);
+  border-color: rgba(6, 182, 212, 0.55);
+}
+
+.draw-defense-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, #06B6D4 0%, #10B981 100%);
+}
+
+.draw-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.draw-badge-5min {
+  background: rgba(6, 182, 212, 0.15);
+  color: #0891B2;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.draw-badge-no3 {
+  background: rgba(16, 185, 129, 0.15);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.draw-tier-pill {
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.draw-tier-banker { background: #10B981; color: #042F2E; }
+.draw-tier-fortress { background: #06B6D4; color: #083344; }
+.draw-tier-high { background: rgba(59, 130, 246, 0.15); color: #2563EB; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+.defense-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+  background: var(--ground);
+  padding: 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.defense-metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.defense-metric-item .label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.defense-metric-item .val {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--text);
+  margin-top: 2px;
+}
+
+.tactical-defense-box {
+  background: rgba(6, 182, 212, 0.05);
+  border: 1px dashed rgba(6, 182, 212, 0.25);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-top: 10px;
+}
+
+.leagues-defense-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-top: 16px;
+}
+
+.leagues-defense-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+.leagues-defense-table th {
+  background: var(--ground);
+  padding: 12px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+.leagues-defense-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.leagues-defense-table tr:hover td {
+  background: var(--ground-subtle);
+}

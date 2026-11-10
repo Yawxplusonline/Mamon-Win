@@ -371,7 +371,17 @@ function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
     /\bisthmian\b/i,
     /\bnorthern premier\b/i,
     /\bnational league south\b/i,
-    /\bnational league north\b/i
+    /\bnational league north\b/i,
+    /\bncaa\b/i,
+    /\bnacca\b/i,
+    /\bwomen('s)?\b/i,
+    /\b(w)\b/i,
+    /\bwbb\b/i,
+    /\bcollege\b/i,
+    /\bladies\b/i,
+    /\bfemenil\b/i,
+    /\bfeminina\b/i,
+    /\bfem\b/i
   ];
   return chaosPatterns.some((p) => p.test(text));
 }

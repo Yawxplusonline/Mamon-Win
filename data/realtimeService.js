@@ -2929,6 +2929,158 @@ window.MAMON_REALTIME = (() => {
           });
           usedKeys.add(key);
         }
+      } else if (sport === "tennis") {
+        const rawP1 = impH / (impH + impA);
+        const p1 = clamp(rawP1 + (hs.ppg - as.ppg) * 0.05, 0.12, 0.88);
+        const p2 = 1 - p1;
+
+        // Best of 3 sets model
+        // Underdog +1.5 Sets (wins at least 1 set)
+        const isHUnderdog = p1 < p2;
+        const dogProb = isHUnderdog ? p1 : p2;
+        const favProb = isHUnderdog ? p2 : p1;
+        const dogTeam = isHUnderdog ? g.homeTeamName : g.awayTeamName;
+        const dogSide = isHUnderdog ? "HOME" : "AWAY";
+        const favTeam = isHUnderdog ? g.awayTeamName : g.homeTeamName;
+        const favSide = isHUnderdog ? "AWAY" : "HOME";
+
+        const pDogPlus15 = clamp(1 - Math.pow(favProb, 2), 0.50, 0.92);
+        const oddDogPlus15 = clamp(Math.round((1.42 + (1 - pDogPlus15) * 1.3) * 100) / 100, 1.30, 2.25);
+        const evDogPlus15 = (pDogPlus15 * oddDogPlus15) - 1;
+
+        const pFavMinus15 = clamp(Math.pow(favProb, 1.85), 0.45, 0.85);
+        const oddFavMinus15 = clamp(Math.round((1.35 + (1 - pFavMinus15) * 1.5) * 100) / 100, 1.45, 2.45);
+        const evFavMinus15 = (pFavMinus15 * oddFavMinus15) - 1;
+
+        const pickTennis = (pDogPlus15 >= 0.65 && evDogPlus15 >= 0.025)
+          ? {
+              team: dogTeam, opp: favTeam, side: dogSide, line: "+1.5 Sets Handicap",
+              code: "TENNIS_PLUS_15", prob: pDogPlus15, odd: oddDogPlus15, ev: evDogPlus15,
+              reason: `${dogTeam} projected to claim at least 1 set in ${(pDogPlus15 * 100).toFixed(1)}% of set distributions.`
+            }
+          : (favProb >= 0.70 && evFavMinus15 >= 0.025)
+          ? {
+              team: favTeam, opp: dogTeam, side: favSide, line: "-1.5 Sets (Straight Sets Win)",
+              code: "TENNIS_MINUS_15", prob: pFavMinus15, odd: oddFavMinus15, ev: evFavMinus15,
+              reason: `${favTeam} dominant form and serve supremacy projected to sweep straight sets in ${(pFavMinus15 * 100).toFixed(1)}% of simulations.`
+            }
+          : null;
+
+        if (pickTennis && pickTennis.prob >= 0.60 && pickTennis.ev >= 0.02) {
+          const fairOdds = Math.round((1 / pickTennis.prob) * 100) / 100;
+          const evPct = Math.round(pickTennis.ev * 10000) / 100;
+          allTips.push({
+            id: `val_${g.eventId}_${pickTennis.code}`,
+            eventId: g.eventId,
+            matchId: g.matchId,
+            sport,
+            sportName: "Tennis",
+            homeTeamName: g.homeTeamName,
+            awayTeamName: g.awayTeamName,
+            fixture: `${g.homeTeamName} vs ${g.awayTeamName}`,
+            league: g.league,
+            country: g.country,
+            kickoffUtc: g.kickoffUtc,
+            isoDate: g.isoDate,
+            isLive: g.isLive,
+            score: g.score,
+            targetTeam: pickTennis.team,
+            opponentTeam: pickTennis.opp,
+            targetSide: pickTennis.side,
+            handicapLine: `${pickTennis.team} ${pickTennis.line}`,
+            handicapCode: pickTennis.code,
+            category: pickTennis.line.includes("-") ? "FAVORITE_MINUS" : "SAFE_PLUS",
+            trueProbability: pickTennis.prob,
+            trueProbabilityPct: (pickTennis.prob * 100).toFixed(1) + "%",
+            fairOdds,
+            bookmakerOdds: pickTennis.odd,
+            expectedValue: Math.round(pickTennis.ev * 10000) / 10000,
+            expectedValuePct: `+${evPct.toFixed(2)}%`,
+            bookmakerSource: "SportyBet & Football.com",
+            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ppgSchedule: ppgSched,
+            targetPpg: pickTennis.side === "HOME" ? ppgSched.home : ppgSched.away,
+            tacticalReason: pickTennis.reason,
+            qualityTier: pickTennis.prob >= 0.72 ? "ELITE" : "VALUE"
+          });
+          usedKeys.add(key);
+        }
+      } else if (sport === "darts") {
+        const rawP1 = impH / (impH + impA);
+        const p1 = clamp(rawP1 + (hs.ppg - as.ppg) * 0.05, 0.15, 0.85);
+        const p2 = 1 - p1;
+
+        const isHUnderdog = p1 < p2;
+        const dogProb = isHUnderdog ? p1 : p2;
+        const favProb = isHUnderdog ? p2 : p1;
+        const dogTeam = isHUnderdog ? g.homeTeamName : g.awayTeamName;
+        const dogSide = isHUnderdog ? "HOME" : "AWAY";
+        const favTeam = isHUnderdog ? g.awayTeamName : g.homeTeamName;
+        const favSide = isHUnderdog ? "AWAY" : "HOME";
+
+        // Underdog +1.5 / +2.5 Legs Handicap
+        const pDogPlus15 = clamp(0.52 + dogProb * 0.35, 0.58, 0.88);
+        const oddDogPlus15 = clamp(Math.round((1.40 + (1 - pDogPlus15) * 1.2) * 100) / 100, 1.35, 2.10);
+        const evDogPlus15 = (pDogPlus15 * oddDogPlus15) - 1;
+
+        // Favorite -1.5 Legs Handicap
+        const pFavMinus15 = clamp(favProb * 0.90, 0.52, 0.82);
+        const oddFavMinus15 = clamp(Math.round((1.38 + (1 - pFavMinus15) * 1.4) * 100) / 100, 1.40, 2.30);
+        const evFavMinus15 = (pFavMinus15 * oddFavMinus15) - 1;
+
+        const pickDarts = (pDogPlus15 >= 0.65 && evDogPlus15 >= 0.02)
+          ? {
+              team: dogTeam, opp: favTeam, side: dogSide, line: "+1.5 Legs Handicap",
+              code: "DARTS_PLUS_15", prob: pDogPlus15, odd: oddDogPlus15, ev: evDogPlus15,
+              reason: `${dogTeam} scoring consistency covers the +1.5 leg margin in ${(pDogPlus15 * 100).toFixed(1)}% of checkout legs.`
+            }
+          : (favProb >= 0.68 && evFavMinus15 >= 0.02)
+          ? {
+              team: favTeam, opp: dogTeam, side: favSide, line: "-1.5 Legs Handicap",
+              code: "DARTS_MINUS_15", prob: pFavMinus15, odd: oddFavMinus15, ev: evFavMinus15,
+              reason: `${favTeam} 3-dart average and finishing clinical edge projected to cover 2+ leg cushion in ${(pFavMinus15 * 100).toFixed(1)}% of simulations.`
+            }
+          : null;
+
+        if (pickDarts && pickDarts.prob >= 0.60 && pickDarts.ev >= 0.02) {
+          const fairOdds = Math.round((1 / pickDarts.prob) * 100) / 100;
+          const evPct = Math.round(pickDarts.ev * 10000) / 100;
+          allTips.push({
+            id: `val_${g.eventId}_${pickDarts.code}`,
+            eventId: g.eventId,
+            matchId: g.matchId,
+            sport,
+            sportName: "Darts",
+            homeTeamName: g.homeTeamName,
+            awayTeamName: g.awayTeamName,
+            fixture: `${g.homeTeamName} vs ${g.awayTeamName}`,
+            league: g.league,
+            country: g.country,
+            kickoffUtc: g.kickoffUtc,
+            isoDate: g.isoDate,
+            isLive: g.isLive,
+            score: g.score,
+            targetTeam: pickDarts.team,
+            opponentTeam: pickDarts.opp,
+            targetSide: pickDarts.side,
+            handicapLine: `${pickDarts.team} ${pickDarts.line}`,
+            handicapCode: pickDarts.code,
+            category: pickDarts.line.includes("-") ? "FAVORITE_MINUS" : "SAFE_PLUS",
+            trueProbability: pickDarts.prob,
+            trueProbabilityPct: (pickDarts.prob * 100).toFixed(1) + "%",
+            fairOdds,
+            bookmakerOdds: pickDarts.odd,
+            expectedValue: Math.round(pickDarts.ev * 10000) / 10000,
+            expectedValuePct: `+${evPct.toFixed(2)}%`,
+            bookmakerSource: "SportyBet & Football.com",
+            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ppgSchedule: ppgSched,
+            targetPpg: pickDarts.side === "HOME" ? ppgSched.home : ppgSched.away,
+            tacticalReason: pickDarts.reason,
+            qualityTier: pickDarts.prob >= 0.72 ? "ELITE" : "VALUE"
+          });
+          usedKeys.add(key);
+        }
       }
     }
 

@@ -111,7 +111,7 @@ async function fetchJsonSafe(url, timeoutMs = 8000, referer = "https://www.sport
   return null;
 }
 
-function extractEventsFromFactCenter(json) {
+function extractEventsFromFactCenter(json, sportKey = "football", sportLabel = "Football") {
   if (!json || !json.data) return [];
   const tList = Array.isArray(json.data) ? json.data : json.data.tournaments || [];
   const out = [];
@@ -122,7 +122,13 @@ function extractEventsFromFactCenter(json) {
       if (ev.ai || ev.banned) continue;
       const combinedName = `${ev.homeTeamName || ""} ${ev.awayTeamName || ""} ${ev.sport?.category?.name || ""} ${ev.sport?.category?.tournament?.name || tName}`;
       if (/esoccer|e-soccer|virtual|simulated|cyber|srl/i.test(combinedName)) continue;
-      out.push({ ...ev, _tournamentIcon: tIcon, _tournamentName: tName });
+      out.push({
+        ...ev,
+        _tournamentIcon: tIcon,
+        _tournamentName: tName,
+        sport: sportKey,
+        sportName: sportLabel
+      });
     }
   }
   return out;
@@ -457,12 +463,77 @@ function evaluateGameMismatch(game, hStats, aStats, h2h) {
     )
   );
 
+  // Strength of Schedule & PPG Trajectory (Soft vs Hard Opponents: Blue/Red Indicators)
+  const homeOppPpg = as.ppg || 1.30;
+  const awayOppPpg = hs.ppg || 1.30;
+  const homeFacingHard = homeOppPpg >= 1.55;
+  const homeFacingSoft = homeOppPpg <= 1.35 || hs.ppg >= homeOppPpg + 0.20;
+
+  let homeTrajectory = "NEUTRAL";
+  let homeSosBadge = "⚪ BALANCED PPG";
+  let homeSosReason = "";
+  if (hs.ppg >= 1.40 && homeFacingSoft) {
+    homeTrajectory = "GAIN_BLUE";
+    homeSosBadge = "🔵 GAIN POINTS SURGE";
+    homeSosReason = `Battle-tested squad (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}) facing soft defense (${game.awayTeamName} @ ${homeOppPpg.toFixed(2)} PPG) — primed to gain points.`;
+  } else if ((hs.ppg >= 1.40 && homeFacingHard && hs.ppg <= homeOppPpg + 0.10) || (hs.ppg <= 1.25 && homeFacingHard)) {
+    homeTrajectory = "DROP_RED";
+    homeSosBadge = "🔴 DROP POINTS RISK";
+    homeSosReason = `Past points built on soft opposition; now facing difficult test (${game.awayTeamName} @ ${homeOppPpg.toFixed(2)} PPG) — high danger of dropping points.`;
+  } else if (hs.ppg <= 1.20) {
+    homeTrajectory = "DROP_RED";
+    homeSosBadge = "🔴 DROP POINTS RISK";
+    homeSosReason = `Low PPG (${hs.ppg.toFixed(2)}) host vulnerable to dropping points.`;
+  } else {
+    homeTrajectory = "NEUTRAL";
+    homeSosBadge = "⚪ BALANCED PPG";
+    homeSosReason = `Balanced past schedule against comparable opponents (${hs.ppg.toFixed(2)} PPG).`;
+  }
+
+  const awayFacingHard = awayOppPpg >= 1.55;
+  const awayFacingSoft = awayOppPpg <= 1.35 || as.ppg >= awayOppPpg + 0.20;
+
+  let awayTrajectory = "NEUTRAL";
+  let awaySosBadge = "⚪ BALANCED PPG";
+  let awaySosReason = "";
+  if (as.ppg >= 1.40 && awayFacingSoft) {
+    awayTrajectory = "GAIN_BLUE";
+    awaySosBadge = "🔵 GAIN POINTS SURGE";
+    awaySosReason = `Tested away traveler (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")}) visiting soft opponent (${game.homeTeamName} @ ${awayOppPpg.toFixed(2)} PPG) — primed to gain points.`;
+  } else if ((as.ppg >= 1.40 && awayFacingHard && as.ppg <= awayOppPpg + 0.10) || (as.ppg <= 1.25 && awayFacingHard)) {
+    awayTrajectory = "DROP_RED";
+    awaySosBadge = "🔴 DROP POINTS RISK";
+    awaySosReason = `Away record built on soft opponents; facing difficult host (${game.homeTeamName} @ ${awayOppPpg.toFixed(2)} PPG) — risk of dropping points.`;
+  } else if (as.ppg <= 1.20) {
+    awayTrajectory = "DROP_RED";
+    awaySosBadge = "🔴 DROP POINTS RISK";
+    awaySosReason = `Low PPG (${as.ppg.toFixed(2)}) traveler vulnerable to dropping points.`;
+  } else {
+    awayTrajectory = "NEUTRAL";
+    awaySosBadge = "⚪ BALANCED PPG";
+    awaySosReason = `Normal away schedule balance (${as.ppg.toFixed(2)} PPG).`;
+  }
+
   return {
     ...game,
     hasVerifiedStats,
     homeStats: hs,
     awayStats: as,
     h2h: h2hData,
+    ppgSchedule: {
+      home: {
+        trajectory: homeTrajectory,
+        badge: homeSosBadge,
+        color: homeTrajectory === "DROP_RED" ? "#EF4444" : homeTrajectory === "GAIN_BLUE" ? "#3B82F6" : "#64748B",
+        reason: homeSosReason
+      },
+      away: {
+        trajectory: awayTrajectory,
+        badge: awaySosBadge,
+        color: awayTrajectory === "DROP_RED" ? "#EF4444" : awayTrajectory === "GAIN_BLUE" ? "#3B82F6" : "#64748B",
+        reason: awaySosReason
+      }
+    },
     model: {
       probHomePct: Math.round(modelProbHome * 100),
       probDrawPct: Math.round(modelProbDraw * 100),
@@ -489,36 +560,32 @@ async function runFullBookmakerScan(forceRefresh = false) {
 
   scanInFlight = (async () => {
     try {
-      const sbTodayUrl = "https://www.sportybet.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=1";
-      const sbLiveUrl = "https://www.sportybet.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29";
-      const fbTodayGhUrl = "https://www.football.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=1";
-      const fbTodayNgUrl = "https://www.football.com/api/ng/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=1";
-
-      const [sbTodayJson, sbLiveJson, fbGhJson, fbNgJson] = await Promise.all([
-        fetchJsonSafe(sbTodayUrl, 8500, "https://www.sportybet.com/"),
-        fetchJsonSafe(sbLiveUrl, 6500, "https://www.sportybet.com/"),
-        fetchJsonSafe(fbTodayGhUrl, 8500, "https://www.football.com/"),
-        fetchJsonSafe(fbTodayNgUrl, 8500, "https://www.football.com/")
-      ]);
-
-      const sbEvents = [
-        ...extractEventsFromFactCenter(sbLiveJson),
-        ...extractEventsFromFactCenter(sbTodayJson)
-      ];
-      const fbEvents = [
-        ...extractEventsFromFactCenter(fbGhJson),
-        ...extractEventsFromFactCenter(fbNgJson)
+      const SPORTS_CONFIG = [
+        { key: "football", sportId: "sr:sport:1", label: "Football" },
+        { key: "basketball", sportId: "sr:sport:2", label: "Basketball" },
+        { key: "tennis", sportId: "sr:sport:5", label: "Tennis" },
+        { key: "hockey", sportId: "sr:sport:4", label: "Ice Hockey" },
+        { key: "darts", sportId: "sr:sport:22", label: "Darts" }
       ];
 
-      // If todayGames has a second page (>100 games today), fetch page 2 sequentially to avoid CloudFront burst blocks
-      if ((sbTodayJson?.data?.totalNum || 0) > 100) {
-        const [sbP2, fbP2] = await Promise.all([
-          fetchJsonSafe("https://www.sportybet.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=2", 7500, "https://www.sportybet.com/"),
-          fetchJsonSafe("https://www.football.com/api/gh/factsCenter/pcUpcomingEvents?sportId=sr%3Asport%3A1&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=100&pageNum=2", 7500, "https://www.football.com/")
+      const sbEvents = [];
+      const fbEvents = [];
+
+      const sportFetches = SPORTS_CONFIG.map(async (sp) => {
+        const [sbLiveJson, sbTodayJson, fbLiveJson, fbTodayJson] = await Promise.all([
+          fetchJsonSafe(`https://www.sportybet.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&marketId=1%2C10%2C18%2C29`, 7500, "https://www.sportybet.com/"),
+          fetchJsonSafe(`https://www.sportybet.com/api/gh/factsCenter/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=60&pageNum=1`, 7500, "https://www.sportybet.com/"),
+          fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&marketId=1%2C10%2C18%2C29`, 7500, "https://www.football.com/"),
+          fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&marketId=1%2C10%2C18%2C29&todayGames=true&pageSize=60&pageNum=1`, 7500, "https://www.football.com/")
         ]);
-        sbEvents.push(...extractEventsFromFactCenter(sbP2));
-        fbEvents.push(...extractEventsFromFactCenter(fbP2));
-      }
+
+        sbEvents.push(...extractEventsFromFactCenter(sbLiveJson, sp.key, sp.label));
+        sbEvents.push(...extractEventsFromFactCenter(sbTodayJson, sp.key, sp.label));
+        fbEvents.push(...extractEventsFromFactCenter(fbLiveJson, sp.key, sp.label));
+        fbEvents.push(...extractEventsFromFactCenter(fbTodayJson, sp.key, sp.label));
+      });
+
+      await Promise.all(sportFetches);
 
       const mergedMap = new Map();
 
@@ -537,6 +604,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
           item = {
             eventId,
             matchId: eventId.split(":").pop() || eventId,
+            sport: ev.sport || "football",
+            sportName: ev.sportName || "Football",
             homeTeamName: ev.homeTeamName || "Home",
             awayTeamName: ev.awayTeamName || "Away",
             homeUid,
@@ -683,6 +752,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const mistakeBigOddsGiven =
             odd1 >= odd2 ||
             (odd1 >= 1.95 && odd2 <= 3.50 && (hs.ppg >= as.ppg + 0.25 || hs.formPts >= as.formPts + 3));
+          const notDropRisk = g.ppgSchedule?.home?.trajectory !== "DROP_RED";
           return (
             g.hasVerifiedStats &&
             odd1 >= 1.70 &&
@@ -690,7 +760,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
             hs.ppg >= 1.40 &&
             hs.formPts >= 7 &&
             homeStronger &&
-            mistakeBigOddsGiven
+            mistakeBigOddsGiven &&
+            notDropRisk
           );
         })
         .map((g) => {
@@ -736,6 +807,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const mistakeBigOddsGiven =
             odd2 >= odd1 ||
             (odd2 >= 1.95 && odd1 <= 3.60 && (as.ppg >= hs.ppg + 0.25 || as.formPts >= hs.formPts + 3));
+          const notDropRisk = g.ppgSchedule?.away?.trajectory !== "DROP_RED";
           return (
             g.hasVerifiedStats &&
             odd2 >= 1.70 &&
@@ -743,7 +815,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
             as.ppg >= 1.40 &&
             as.formPts >= 7 &&
             awayStronger &&
-            mistakeBigOddsGiven
+            mistakeBigOddsGiven &&
+            notDropRisk
           );
         })
         .map((g) => {
@@ -921,3 +994,4 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.runFullBookmakerScan = runFullBookmakerScan;
+module.exports.evaluateGameMismatch = evaluateGameMismatch;

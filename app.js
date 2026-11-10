@@ -45,6 +45,7 @@
   function loadState() {
     const defaults = {
       route: "/",
+      activeSport: "ALL", // ALL | football | tennis | basketball | darts | hockey
       selectedDate: "UPCOMING_ALL",
       matchFilter: "ALL", // ALL | LIVE | SCHEDULED | DROPS | ALERTS | FOLLOWING | FT
       activeIntelTab: "DROPS", // DROPS | ALERTS
@@ -254,46 +255,54 @@
     };
   }
 
+  const ALLOWED_SPORTS = [
+    { key: "ALL", label: "All 5 Sports", icon: "🏆" },
+    { key: "football", label: "Football", icon: "⚽" },
+    { key: "tennis", label: "Tennis", icon: "🎾" },
+    { key: "basketball", label: "Basketball", icon: "🏀" },
+    { key: "darts", label: "Darts", icon: "🎯" },
+    { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+  ];
+
   function renderSubnav() {
     const scrollEl = document.getElementById("subnavScroll");
     const mobileEl = document.getElementById("subnavMobile");
-    if (scrollEl && !scrollEl.dataset.populated) {
-      scrollEl.innerHTML = LEAGUES.map((l) => {
-        const active = state.route === l.href ? " is-active" : "";
-        return `<a class="subnav-item${active}" href="${escapeHtml(l.href)}" data-route="${escapeHtml(l.href)}">
-          <span class="crest-backed" style="width:20px;height:20px;">${crestImg(l.logo, l.name, "#0A7B5C", 20)}</span>
-          ${escapeHtml(l.name)}
-        </a>`;
+    const currentSport = state.activeSport || "ALL";
+
+    // Count matches per sport (restricted to the 5 allowed sports)
+    const sportCounts = { ALL: 0, football: 0, tennis: 0, basketball: 0, darts: 0, hockey: 0 };
+    liveMatches.forEach((m) => {
+      const sp = (m.sport || "football").toLowerCase();
+      if (sportCounts[sp] !== undefined) {
+        sportCounts[sp]++;
+        sportCounts.ALL++;
+      }
+    });
+
+    if (scrollEl) {
+      scrollEl.innerHTML = ALLOWED_SPORTS.map((s) => {
+        const isActive = currentSport === s.key ? " is-active" : "";
+        const count = sportCounts[s.key] || 0;
+        return `
+          <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}" title="Filter games by ${escapeHtml(s.label)}">
+            <span>${s.icon}</span>
+            <span>${escapeHtml(s.label)}</span>
+            <span class="sport-count">${count}</span>
+          </button>
+        `;
       }).join("");
-      scrollEl.dataset.populated = "1";
-    } else if (scrollEl) {
-      scrollEl.querySelectorAll(".subnav-item").forEach((a) => {
-        a.classList.toggle("is-active", a.getAttribute("data-route") === state.route);
-      });
     }
 
     if (mobileEl) {
-      const mobileQuick = [
-        { label: "Accurate", route: "/accurate-odds", logo: "/assets/motexiz-mark.svg" },
-        { label: "Sure Odds", route: "/sure-odds", logo: "/assets/motexiz-mark.svg" },
-        { label: "Dropping", route: "/dropping-odds", logo: "/assets/motexiz-mark.svg" },
-        { label: "PPG", route: "/ppg", logo: "/assets/motexiz-mark.svg" },
-        { label: "Strong", route: "/strong-teams", logo: "/assets/motexiz-mark.svg" },
-        { label: "Worst", route: "/worst-teams", logo: "/assets/motexiz-mark.svg" },
-        { label: "Mismatch", route: "/odds-mismatch", logo: "/assets/motexiz-mark.svg" },
-        { label: "Live/Next", route: "/matches", logo: "/assets/motexiz-mark.svg" },
-        ...LEAGUES.filter((l) => l.featured).slice(0, 8)
-      ];
-      mobileEl.innerHTML = mobileQuick
-        .map((item) => {
-          const r = item.route || item.href;
-          const active = state.route === r ? " is-active" : "";
-          return `<a class="subnav-mobile-item${active}" href="${escapeHtml(r)}" data-route="${escapeHtml(r)}">
-            <span class="crest-backed" style="width:24px;height:24px;">${crestImg(item.logo, item.label || item.name, "#0A7B5C", 24)}</span>
-            <span>${escapeHtml(item.label || item.name)}</span>
-          </a>`;
-        })
-        .join("");
+      mobileEl.innerHTML = ALLOWED_SPORTS.map((s) => {
+        const isActive = currentSport === s.key ? " is-active" : "";
+        return `
+          <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}">
+            <span>${s.icon}</span>
+            <span>${escapeHtml(s.label)}</span>
+          </button>
+        `;
+      }).join("");
     }
   }
 
@@ -873,6 +882,12 @@
     const ppgHome = m.ppgSummary?.homeOverall ?? m.analysis?.factors?.ppg?.homeOverall;
     const ppgAway = m.ppgSummary?.awayOverall ?? m.analysis?.factors?.ppg?.awayOverall;
     const ppgText = Number.isFinite(ppgHome) && Number.isFinite(ppgAway) ? `PPG ${ppgHome.toFixed(1)}-${ppgAway.toFixed(1)}` : "";
+    const sched = m.analysis?.factors?.ppg?.scheduleStrength;
+    const sosBadge = sched?.home?.isDropRed || sched?.away?.isDropRed
+      ? `<span class="ppg-sos-badge is-drop-red" title="${escapeHtml(sched.home?.isDropRed ? sched.home.reason : sched.away?.reason)}">🔴 Drop Risk</span>`
+      : sched?.home?.isGainBlue || sched?.away?.isGainBlue
+      ? `<span class="ppg-sos-badge is-gain-blue" title="${escapeHtml(sched.home?.isGainBlue ? sched.home.reason : sched.away?.reason)}">🔵 Gain Points</span>`
+      : "";
     const hasInjSusp = Boolean(
       m.analysis?.factors?.injuries?.home?.length ||
       m.analysis?.factors?.injuries?.away?.length ||
@@ -908,9 +923,10 @@
               <span class="team-score${isLive ? " is-live" : ""}">${hasScore ? m.awayScore : "-"}</span>
             </div>
             ${
-              dropChipHtml || ppgText
+              dropChipHtml || ppgText || sosBadge
                 ? `<div class="match-mobile-meta">
                     ${ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : ""}
+                    ${sosBadge}
                     ${dropChipHtml}
                     ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">! Inj/Sus</span>` : ""}
                   </div>`
@@ -941,6 +957,7 @@
             ${redBadges(m.awayRed)}
           </div>
           <div class="chevron">
+            ${sosBadge}
             ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
             ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
             <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
@@ -1393,13 +1410,18 @@
   }
 
   function filteredMatchesForDate() {
-    if (state.selectedDate === "UPCOMING_ALL") return liveMatches;
-    return liveMatches.filter((m) => m.date === state.selectedDate);
+    const allowed = ["football", "tennis", "basketball", "darts", "hockey"];
+    let pool = liveMatches.filter((m) => allowed.includes((m.sport || "football").toLowerCase()));
+    if (state.activeSport && state.activeSport !== "ALL") {
+      pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
+    }
+    if (state.selectedDate === "UPCOMING_ALL") return pool;
+    return pool.filter((m) => m.date === state.selectedDate);
   }
 
   // ============ HOME MARKET INTELLIGENCE STRIP (DROPPING ODDS, INJURIES, SUSPENSIONS, PPG) ============
   function renderMarketIntelligenceStrip() {
-    const active = liveMatches.filter((m) => m.status !== "FT");
+    const active = filteredMatchesForDate().filter((m) => m.status !== "FT");
     const dropRank = (m) => (m.status === "SCHEDULED" ? 1000 : 0) + (m.droppingOdds?.bestDrop?.dropPct || 0);
     const dropMatches = active
       .filter((m) => m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0)
@@ -1591,7 +1613,7 @@
 
   // ============ DEDICATED /ppg INTELLIGENCE & TABLE MECHANICS VIEW ============
   function renderPpgIntelligenceView() {
-    const active = liveMatches.filter((m) => m.status !== "FT");
+    const active = filteredMatchesForDate().filter((m) => m.status !== "FT");
     const activeCat = state.activePpgCategory || "ALL";
 
     const ppgListAll = [...active].sort(
@@ -1601,6 +1623,18 @@
     let filteredPpg = ppgListAll;
     if (activeCat === "HIGH_GAP") {
       filteredPpg = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.gap || 0) >= 0.35);
+    } else if (activeCat === "DROP_POINTS") {
+      // 🔴 RED: Teams that played soft/cheap opponents and are projected to drop points against tough opponent
+      filteredPpg = ppgListAll.filter((m) => {
+        const sched = m.analysis?.factors?.ppg?.scheduleStrength;
+        return sched?.home?.isDropRed || sched?.away?.isDropRed;
+      });
+    } else if (activeCat === "GAIN_POINTS") {
+      // 🔵 BLUE: Teams that faced hard opponents and are projected to gain points against soft opponent
+      filteredPpg = ppgListAll.filter((m) => {
+        const sched = m.analysis?.factors?.ppg?.scheduleStrength;
+        return sched?.home?.isGainBlue || sched?.away?.isGainBlue;
+      });
     } else if (activeCat === "HOME_DOMINANT") {
       filteredPpg = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.homeHomePpg || 0) >= 1.70);
     } else if (activeCat === "AWAY_DOMINANT") {
@@ -1613,6 +1647,8 @@
     }
 
     const highGapCount = ppgListAll.filter((m) => (m.analysis?.factors?.ppg?.gap || 0) >= 0.35).length;
+    const dropPointsCount = ppgListAll.filter((m) => m.analysis?.factors?.ppg?.scheduleStrength?.home?.isDropRed || m.analysis?.factors?.ppg?.scheduleStrength?.away?.isDropRed).length;
+    const gainPointsCount = ppgListAll.filter((m) => m.analysis?.factors?.ppg?.scheduleStrength?.home?.isGainBlue || m.analysis?.factors?.ppg?.scheduleStrength?.away?.isGainBlue).length;
 
     const bodyHtml = filteredPpg.length === 0
       ? `<div class="empty-state"><h3>No fixtures matching active PPG filter (${escapeHtml(activeCat)})...</h3><p class="text-sm">Click "All PPG Edges" above to view full league standings mathematics.</p></div>`
@@ -1627,6 +1663,9 @@
             const factors = m.analysis?.factors;
             const formH = factors?.currentForm?.homePts ? `${factors.currentForm.homePts}/15 pts` : "Active";
             const formA = factors?.currentForm?.awayPts ? `${factors.currentForm.awayPts}/15 pts` : "Active";
+
+            const hSos = ppg.scheduleStrength?.home;
+            const aSos = ppg.scheduleStrength?.away;
 
             // Points calculation & standings mechanics
             const isHighGap = ppg.gap >= 0.35;
@@ -1648,36 +1687,57 @@
                     <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
                     <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
                   </div>
-                  <span class="factor-edge-pill font-mono font-bold">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)} PPG)</span>
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 Drop Risk Alert</span>` : ""}
+                    ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 Points Gainer</span>` : ""}
+                    <span class="factor-edge-pill font-mono font-bold">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)} PPG)</span>
+                  </div>
                 </div>
 
                 <div class="ppg-matrix-grid mt-2">
                   <div class="ppg-side-card ${ppg.homeOverall >= ppg.awayOverall ? "is-edge" : ""}">
-                    <div class="flex items-center gap-2">
-                      ${crestImg(h.logo, h.name, h.color, 20)}
-                      <strong class="text-sm truncate">${escapeHtml(h.name)}</strong>
-                      <span class="text-xs text-muted font-mono">(Host)</span>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        ${crestImg(h.logo, h.name, h.color, 20)}
+                        <strong class="text-sm truncate">${escapeHtml(h.name)}</strong>
+                        <span class="text-xs text-muted font-mono">(Host)</span>
+                      </div>
+                      ${hSos ? `<span class="ppg-sos-badge ${hSos.isDropRed ? "is-drop-red" : hSos.isGainBlue ? "is-gain-blue" : "is-neutral"}">${escapeHtml(hSos.badge)}</span>` : ""}
                     </div>
                     <div class="ppg-stat-pills">
                       <span class="ppg-stat-badge">Overall: <strong>${ppg.homeOverall.toFixed(2)} PPG</strong></span>
                       <span class="ppg-stat-badge">Home: <strong>${ppg.homeHomePpg !== null ? ppg.homeHomePpg.toFixed(2) : "-"} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formH}</strong></span>
                     </div>
+                    ${hSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${hSos.isDropRed ? "text-danger font-semibold" : hSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(hSos.reason)}</div>` : ""}
                   </div>
 
                   <div class="ppg-side-card ${ppg.awayOverall > ppg.homeOverall ? "is-edge" : ""}">
-                    <div class="flex items-center gap-2">
-                      ${crestImg(a.logo, a.name, a.color, 20)}
-                      <strong class="text-sm truncate">${escapeHtml(a.name)}</strong>
-                      <span class="text-xs text-muted font-mono">(Visitor)</span>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-0">
+                        ${crestImg(a.logo, a.name, a.color, 20)}
+                        <strong class="text-sm truncate">${escapeHtml(a.name)}</strong>
+                        <span class="text-xs text-muted font-mono">(Visitor)</span>
+                      </div>
+                      ${aSos ? `<span class="ppg-sos-badge ${aSos.isDropRed ? "is-drop-red" : aSos.isGainBlue ? "is-gain-blue" : "is-neutral"}">${escapeHtml(aSos.badge)}</span>` : ""}
                     </div>
                     <div class="ppg-stat-pills">
                       <span class="ppg-stat-badge">Overall: <strong>${ppg.awayOverall.toFixed(2)} PPG</strong></span>
                       <span class="ppg-stat-badge">Away: <strong>${ppg.awayAwayPpg !== null ? ppg.awayAwayPpg.toFixed(2) : "-"} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formA}</strong></span>
                     </div>
+                    ${aSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${aSos.isDropRed ? "text-danger font-semibold" : aSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(aSos.reason)}</div>` : ""}
                   </div>
                 </div>
+
+                ${ppg.scheduleStrength?.systemVerdict ? `
+                  <div class="ppg-sos-verdict-box mt-2 p-2 rounded-md" style="background:rgba(255,255,255,0.04); border-left:3px solid ${ppg.scheduleStrength?.favoredSide === "HOME" ? '#3B82F6' : ppg.scheduleStrength?.favoredSide === "AWAY" ? '#3B82F6' : (hSos?.isDropRed || aSos?.isDropRed) ? '#EF4444' : 'var(--brand)'}; font-size:12px;">
+                    <strong style="color:${ppg.scheduleStrength?.favoredSide === "HOME" ? '#3B82F6' : ppg.scheduleStrength?.favoredSide === "AWAY" ? '#3B82F6' : (hSos?.isDropRed || aSos?.isDropRed) ? '#EF4444' : 'var(--brand)'}; font-family:var(--font-mono);">
+                      ${ppg.scheduleStrength?.favoredSide === "HOME" ? "🔵 HOME SCHEDULE ADVANTAGE" : ppg.scheduleStrength?.favoredSide === "AWAY" ? "🔵 AWAY SCHEDULE ADVANTAGE" : (hSos?.isDropRed || aSos?.isDropRed) ? "🔴 SCHEDULE REGRESSION ALERT" : "⚡ PPG SCHEDULE ANALYSIS"}:
+                    </strong>
+                    <span class="text-text-secondary">${escapeHtml(ppg.scheduleStrength?.systemVerdict || "")}</span>
+                  </div>
+                ` : ""}
 
                 <div class="ppg-table-stakes-box mt-2">
                   <div class="stakes-item">
@@ -1711,14 +1771,37 @@
       <div class="hero-banner">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="sure-pill-tag">PPG GAP ANALYSIS</span>
-          <span class="sure-pill-tag">HOME &amp; AWAY SPLITS</span>
-          <span class="sure-pill-tag">TABLE POINTS MATHEMATICS</span>
+          <span class="sure-pill-tag">STRENGTH OF SCHEDULE</span>
+          <span class="sure-pill-tag">SOFT VS HARD OPPONENTS</span>
         </div>
-        <h1 class="mt-2">Points Per Game (PPG) &amp; Table Mechanics</h1>
-        <p>Mathematical scouting measuring Overall, Home, and Away Points Per Game (PPG), points needed for title/survival, draw importance calculations, and standings impact if a loss occurs.</p>
+        <h1 class="mt-2">Points Per Game (PPG) &amp; Strength of Schedule Matrix</h1>
+        <p>Mathematical scouting measuring Overall, Home, and Away PPG weighted by opponent difficulty. Exposes teams that played soft/cheap opponents and will drop points (🔴) vs teams battle-tested against giants set to gain points (🔵).</p>
+
+        <!-- Strength of Schedule (SoS) PPG Matrix Showcase -->
+        <div class="ppg-sos-banner">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-xs font-bold px-2 py-0.5 rounded" style="background:#0A7B5C;color:#fff;">PPG STRENGTH OF SCHEDULE ENGINE</span>
+              <span class="text-xs text-text-secondary font-mono">Soft vs Hard Opponent Matrix Active</span>
+            </div>
+            <span class="font-mono text-xs text-muted">Active Sports Filter: ${escapeHtml((state.activeSport || "ALL").toUpperCase())}</span>
+          </div>
+          <div class="ppg-sos-legend">
+            <div class="ppg-sos-legend-item">
+              <span class="ppg-sos-badge is-drop-red">🔴 DROP POINTS RISK (RED)</span>
+              <span class="text-xs text-text-secondary">Played soft/cheap opponents; facing difficult opponent today — high danger of dropping points.</span>
+            </div>
+            <div class="ppg-sos-legend-item">
+              <span class="ppg-sos-badge is-gain-blue">🔵 GAIN POINTS SURGE (BLUE)</span>
+              <span class="text-xs text-text-secondary">Battle-tested against top tier; facing soft/weak defense today — primed to gain points and win.</span>
+            </div>
+          </div>
+        </div>
 
         <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
           <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-ppg-cat="ALL">All PPG Edges (${ppgListAll.length})</button>
+          <button type="button" class="filter-chip${activeCat === "DROP_POINTS" ? " is-active" : ""}" data-ppg-cat="DROP_POINTS" style="border-left:3px solid #EF4444; color:${activeCat === 'DROP_POINTS' ? '#fff' : '#EF4444'};">🔴 Drop Points Alerts (${dropPointsCount})</button>
+          <button type="button" class="filter-chip${activeCat === "GAIN_POINTS" ? " is-active" : ""}" data-ppg-cat="GAIN_POINTS" style="border-left:3px solid #3B82F6; color:${activeCat === 'GAIN_POINTS' ? '#fff' : '#3B82F6'};">🔵 Gain Points Surges (${gainPointsCount})</button>
           <button type="button" class="filter-chip${activeCat === "HIGH_GAP" ? " is-active" : ""}" data-ppg-cat="HIGH_GAP">Massive PPG Gaps &gt; 0.35 (${highGapCount})</button>
           <button type="button" class="filter-chip${activeCat === "HOME_DOMINANT" ? " is-active" : ""}" data-ppg-cat="HOME_DOMINANT">Dominant Home PPG</button>
           <button type="button" class="filter-chip${activeCat === "AWAY_DOMINANT" ? " is-active" : ""}" data-ppg-cat="AWAY_DOMINANT">Road Powerhouses</button>
@@ -2076,7 +2159,8 @@
     if (!RT?.buildTodayPowerRankings) {
       return `<div class="empty-state"><h3>Initializing Team Power Engine...</h3></div>`;
     }
-    const power = RT.buildTodayPowerRankings(liveMatches);
+    const pool = filteredMatchesForDate();
+    const power = RT.buildTodayPowerRankings(pool.length > 0 ? pool : liveMatches);
     const activeFilter = state.activeStrongFilter || "ALL";
 
     // Hydrate city weather for visible picks cleanly once per load
@@ -2143,7 +2227,8 @@
     if (!RT?.buildTodayPowerRankings) {
       return `<div class="empty-state"><h3>Initializing Team Risk Engine...</h3></div>`;
     }
-    const power = RT.buildTodayPowerRankings(liveMatches);
+    const pool = filteredMatchesForDate();
+    const power = RT.buildTodayPowerRankings(pool.length > 0 ? pool : liveMatches);
     const activeFilter = state.activeWorstFilter || "ALL";
 
     // Hydrate city weather for visible picks cleanly once per load
@@ -2489,11 +2574,16 @@
   function renderOddsMismatchView() {
     const sc = bookmakerScan;
     const activeCat = state.activeMismatchCategory || "ALL";
-    const sh = sc?.strongHomeMismatch || [];
-    const sa = sc?.strongAwayMismatch || [];
-    const wh = sc?.worstHomeMismatch || [];
-    const wa = sc?.worstAwayMismatch || [];
-    const allG = sc?.allGames || [];
+    const sportFilter = (list) => {
+      if (!Array.isArray(list)) return [];
+      if (!state.activeSport || state.activeSport === "ALL") return list;
+      return list.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
+    };
+    const sh = sportFilter(sc?.strongHomeMismatch || []);
+    const sa = sportFilter(sc?.strongAwayMismatch || []);
+    const wh = sportFilter(sc?.worstHomeMismatch || []);
+    const wa = sportFilter(sc?.worstAwayMismatch || []);
+    const allG = sportFilter(sc?.allGames || []);
 
     const blocks = [];
     if (activeCat === "ALL_GAMES") {
@@ -2838,7 +2928,8 @@
   }
 
   function renderAccurateWinningOddsView() {
-    const accData = RT?.buildAccurateWinningOdds ? RT.buildAccurateWinningOdds(liveMatches, sureSlips, bookmakerScan) : null;
+    const pool = filteredMatchesForDate();
+    const accData = RT?.buildAccurateWinningOdds ? RT.buildAccurateWinningOdds(pool.length > 0 ? pool : liveMatches, sureSlips, bookmakerScan) : null;
     const allPicks = accData?.allPicks || [];
     const activeFilter = state.activeAccurateFilter || "ALL";
 
@@ -3527,6 +3618,15 @@
 
   // ============ GLOBAL EVENT DELEGATION ============
   document.addEventListener("click", (e) => {
+    // Switch Active Sport Filter (Football, Tennis, Basketball, Darts, Ice Hockey)
+    const sportBtn = e.target.closest("[data-sport-filter]");
+    if (sportBtn) {
+      state.activeSport = sportBtn.getAttribute("data-sport-filter") || "ALL";
+      saveState();
+      renderAll();
+      return;
+    }
+
     // Tier jump links in footer
     const tierJump = e.target.closest("[data-tier-jump]");
     if (tierJump) {

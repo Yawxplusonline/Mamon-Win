@@ -3714,3 +3714,111 @@ ul {
   min-width: 110px;
   shrink: 0;
 }
+
+/* ============ 5 EXCLUSIVE SPORTS QUICK SELECTOR ============ */
+.sports-pills-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px 0;
+}
+.sports-pills-bar::-webkit-scrollbar {
+  display: none;
+}
+.sport-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-headline);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--ground);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+.sport-pill:hover {
+  color: var(--text);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.sport-pill.is-active {
+  color: #FFFFFF !important;
+  background: linear-gradient(135deg, #0A7B5C 0%, #064E3B 100%) !important;
+  border-color: #10B981 !important;
+  box-shadow: 0 2px 8px rgba(10, 123, 92, 0.35);
+}
+.sport-count {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+.sport-pill.is-active .sport-count {
+  background: rgba(255, 255, 255, 0.28);
+  color: #FFFFFF;
+}
+
+/* ============ PPG STRENGTH OF SCHEDULE (RED / BLUE) INDICATORS ============ */
+.ppg-sos-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2.5px 8px;
+  border-radius: var(--radius-pill);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.ppg-sos-badge.is-drop-red {
+  color: #EF4444 !important;
+  background: rgba(239, 68, 68, 0.12) !important;
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.15);
+}
+.ppg-sos-badge.is-gain-blue {
+  color: #3B82F6 !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+}
+.ppg-sos-badge.is-neutral {
+  color: var(--muted);
+  background: var(--ground);
+  border: 1px solid var(--line-soft);
+}
+
+.ppg-sos-banner {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(239, 68, 68, 0.08) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-top: 14px;
+}
+.ppg-sos-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+}
+.ppg-sos-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}

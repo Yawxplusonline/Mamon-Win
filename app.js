@@ -265,32 +265,32 @@
 
   const ALLOWED_SPORTS = [
     { key: "ALL", label: "All 5 Sports", icon: "🏆" },
-    { key: "football", label: "Football", icon: "⚽" },
     { key: "tennis", label: "Tennis", icon: "🎾" },
     { key: "basketball", label: "Basketball", icon: "🏀" },
     { key: "darts", label: "Darts", icon: "🎯" },
-    { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+    { key: "hockey", label: "Ice Hockey", icon: "🏒" },
+    { key: "football", label: "Football", icon: "⚽" }
   ];
 
   function renderSubnav() {
     const scrollEl = document.getElementById("subnavScroll");
     const mobileEl = document.getElementById("subnavMobile");
-    const currentSport = state.activeSport || "ALL";
+    const currentSport = (state.activeSport || "ALL").toLowerCase();
 
-    // Count matches per sport (restricted to the 5 allowed sports)
-    const sportCounts = { ALL: 0, football: 0, tennis: 0, basketball: 0, darts: 0, hockey: 0 };
+    // Count matches per sport (restricted strictly to the 5 allowed sports)
+    const sportCounts = { all: 0, tennis: 0, basketball: 0, darts: 0, hockey: 0, football: 0 };
     liveMatches.forEach((m) => {
       const sp = (m.sport || "football").toLowerCase();
       if (sportCounts[sp] !== undefined) {
         sportCounts[sp]++;
-        sportCounts.ALL++;
+        sportCounts.all++;
       }
     });
 
     if (scrollEl) {
       scrollEl.innerHTML = ALLOWED_SPORTS.map((s) => {
-        const isActive = currentSport === s.key ? " is-active" : "";
-        const count = sportCounts[s.key] || 0;
+        const isActive = currentSport === s.key.toLowerCase() ? " is-active" : "";
+        const count = sportCounts[s.key.toLowerCase()] || 0;
         return `
           <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}" title="Filter games by ${escapeHtml(s.label)}">
             <span>${s.icon}</span>
@@ -303,11 +303,13 @@
 
     if (mobileEl) {
       mobileEl.innerHTML = ALLOWED_SPORTS.map((s) => {
-        const isActive = currentSport === s.key ? " is-active" : "";
+        const isActive = currentSport === s.key.toLowerCase() ? " is-active" : "";
+        const count = sportCounts[s.key.toLowerCase()] || 0;
         return `
           <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}">
             <span>${s.icon}</span>
             <span>${escapeHtml(s.label)}</span>
+            <span class="sport-count">${count}</span>
           </button>
         `;
       }).join("");
@@ -1035,8 +1037,15 @@
   }
 
   function renderMatchesPanel(matchesList, title = "Live & Upcoming Matches", showToolbar = true, allowCompletedToggle = false) {
-    // By default ONLY show active LIVE or SCHEDULED real-time fixtures; never dead past matches
-    const sourcePool = state.matchFilter === "FT" && allowCompletedToggle ? finishedTodayMatches : matchesList;
+    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+
+    // Strictly filter source pool by active sport if not ALL
+    const rawPool = state.matchFilter === "FT" && allowCompletedToggle ? finishedTodayMatches : matchesList;
+    const sourcePool = rawPool.filter((m) => {
+      if (activeSportKey === "all") return true;
+      return (m.sport || "football").toLowerCase() === activeSportKey;
+    });
 
     const filtered = sourcePool.filter((m) => {
       if (state.matchFilter === "LIVE") return m.status === "LIVE";
@@ -1055,17 +1064,10 @@
       return m.status !== "FT";
     });
 
-    const groups = new Map();
-    filtered.forEach((m) => {
-      const k = `${m.leagueSlug}||${m.leagueName || ""}`;
-      if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
-      groups.get(k).items.push(m);
-    });
-
-    const liveCount = matchesList.filter((m) => m.status === "LIVE").length;
-    const schedCount = matchesList.filter((m) => m.status === "SCHEDULED").length;
-    const dropsCount = matchesList.filter((m) => m.status !== "FT" && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
-    const alertsCount = matchesList.filter((m) => m.status !== "FT" && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
+    const liveCount = sourcePool.filter((m) => m.status === "LIVE").length;
+    const schedCount = sourcePool.filter((m) => m.status === "SCHEDULED").length;
+    const dropsCount = sourcePool.filter((m) => m.status !== "FT" && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
+    const alertsCount = sourcePool.filter((m) => m.status !== "FT" && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
 
     const filterChips = [
       { id: "ALL", label: `Live & Upcoming (${liveCount + schedCount})` },
@@ -1097,7 +1099,7 @@
                 )
                 .join("")}
             </div>
-            <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync real-time scores from ESPN">
+            <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync real-time scores from SportyBet, Football.com & ESPN">
               <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
               Sync Live
             </button>
@@ -1113,41 +1115,138 @@
           ${[1, 2, 3, 4, 5].map(() => `<div data-skeleton style="height:52px;"><div data-skeleton-band></div></div>`).join("")}
         </div>
       `;
-    } else if (groups.size === 0) {
+    } else if (filtered.length === 0) {
       groupsHtml = `
         <div class="empty-state">
-          <h3>No matches match this filter</h3>
-          <p class="text-sm">Switch to "All Live &amp; Upcoming" to view every active global fixture.</p>
+          <h3>No ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches match this filter</h3>
+          <p class="text-sm">Click below or choose another sport above to view active fixtures.</p>
+          ${activeSportKey !== "all" ? `<button type="button" class="analyze-inline-btn mt-3" data-sport-filter="ALL">View All 5 Sports</button>` : ""}
         </div>
       `;
-    } else {
+    } else if (activeSportKey !== "all") {
+      // SINGLE SPORT ACTIVE: ONLY THIS SPORT'S GAMES APPEAR! (Zero contamination)
+      const groups = new Map();
+      filtered.forEach((m) => {
+        const k = `${m.leagueSlug}||${m.leagueName || ""}`;
+        if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
+        groups.get(k).items.push(m);
+      });
+
+      let subLeaguesHtml = "";
       for (const { sample, items } of groups.values()) {
         const lg = getLeagueInfo(sample);
-        groupsHtml += `
+        subLeaguesHtml += `
           <div>
             <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
               <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
               <span class="league-name">${escapeHtml(lg.name)}</span>
               <span class="match-league-country">${escapeHtml(lg.country || "")}</span>
+              <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
             </a>
             ${items.map(renderMatchRow).join("")}
           </div>
         `;
       }
+
+      groupsHtml = `
+        <div class="active-sport-banner">
+          <div class="flex items-center gap-2">
+            <span style="font-size:20px;">${spDef.icon}</span>
+            <span>Showing <strong>${escapeHtml(spDef.label)}</strong> matches only (${filtered.length} active fixtures from SportyBet &amp; Football.com)</span>
+          </div>
+          <button type="button" class="clear-sport-filter-btn" data-sport-filter="ALL">Show All 5 Sports</button>
+        </div>
+        ${subLeaguesHtml}
+      `;
+    } else {
+      // ALL SPORTS SELECTED: GROUP MATCHES ACCORDING TO WHERE THEY BELONG!
+      // DONT ADD FOOTBALL TO TENNIS, DONT ADD TENNIS TO BASKETBALL!
+      const sportsToGroup = [
+        { key: "tennis", label: "Tennis", icon: "🎾" },
+        { key: "basketball", label: "Basketball", icon: "🏀" },
+        { key: "darts", label: "Darts", icon: "🎯" },
+        { key: "hockey", label: "Ice Hockey", icon: "🏒" },
+        { key: "football", label: "Football", icon: "⚽" }
+      ];
+
+      const sectionsHtml = sportsToGroup
+        .map((sp) => {
+          const spMatches = filtered.filter((m) => (m.sport || "football").toLowerCase() === sp.key);
+          if (spMatches.length === 0) return "";
+
+          const groups = new Map();
+          spMatches.forEach((m) => {
+            const k = `${m.leagueSlug}||${m.leagueName || ""}`;
+            if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
+            groups.get(k).items.push(m);
+          });
+
+          let subLeaguesHtml = "";
+          for (const { sample, items } of groups.values()) {
+            const lg = getLeagueInfo(sample);
+            subLeaguesHtml += `
+              <div>
+                <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
+                  <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
+                  <span class="league-name">${escapeHtml(lg.name)}</span>
+                  <span class="match-league-country">${escapeHtml(lg.country || "")}</span>
+                  <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+                </a>
+                ${items.map(renderMatchRow).join("")}
+              </div>
+            `;
+          }
+
+          return `
+            <div class="sport-category-card" data-sport-group="${sp.key}">
+              <div class="sport-category-header">
+                <div class="flex items-center gap-2.5">
+                  <span class="sport-category-icon">${sp.icon}</span>
+                  <div>
+                    <h3 class="sport-category-title">${sp.label} Fixtures &amp; Odds</h3>
+                    <span class="sport-category-subtitle">${spMatches.length} Matches belonging strictly to ${sp.label} · SportyBet &amp; Football.com</span>
+                  </div>
+                </div>
+                <button type="button" class="sport-category-filter-btn" data-sport-filter="${sp.key}" title="View only ${sp.label} games">
+                  View ${sp.label} Only (${spMatches.length}) &rarr;
+                </button>
+              </div>
+              <div class="sport-category-body">
+                ${subLeaguesHtml}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+
+      groupsHtml = sectionsHtml || `
+        <div class="empty-state">
+          <h3>No matches found in active filter</h3>
+          <p class="text-sm">Check back shortly or click Sync Live above.</p>
+        </div>
+      `;
     }
+
+    const panelTitle = activeSportKey !== "all"
+      ? `${spDef.icon} ${spDef.label} Matches`
+      : title;
 
     return `
       ${toolbarHtml}
       <section class="panel" id="matchesPanel">
         <div class="panel-header">
           ${liveCount > 0 ? '<span class="live-dot"></span>' : ""}
-          <h2>${escapeHtml(title)}</h2>
-          <span class="count">${filtered.length} real-time</span>
+          <h2>${escapeHtml(panelTitle)}</h2>
+          <span class="count">${filtered.length} matches</span>
           <a class="see-all" href="/matches" data-route="/matches">
             Full schedule
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </a>
+        </div>
+        ${groupsHtml}
+      </section>
         </div>
         ${groupsHtml}
       </section>
@@ -1424,7 +1523,8 @@
       pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
     }
     if (state.selectedDate === "UPCOMING_ALL") return pool;
-    return pool.filter((m) => m.date === state.selectedDate);
+    const dateFiltered = pool.filter((m) => m.date === state.selectedDate);
+    return dateFiltered.length > 0 ? dateFiltered : pool;
   }
 
   // ============ HOME MARKET INTELLIGENCE STRIP (DROPPING ODDS, INJURIES, SUSPENSIONS, PPG) ============
@@ -1513,7 +1613,10 @@
 
   // ============ DEDICATED /dropping-odds SCANNER VIEW ============
   function renderDroppingOddsView() {
-    const active = liveMatches.filter((m) => m.status !== "FT");
+    let active = liveMatches.filter((m) => m.status !== "FT");
+    if (state.activeSport && state.activeSport !== "ALL") {
+      active = active.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
+    }
     const activeFilter = state.activeDropFilter || "ALL";
 
     const dropRank = (m) => (m.status === "SCHEDULED" ? 1000 : 0) + (m.droppingOdds?.bestDrop?.dropPct || 0);
@@ -2094,12 +2197,22 @@
   function renderMatchesView() {
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === (state.activeSport || "ALL").toLowerCase()) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const isSingleSport = spDef.key !== "ALL";
+
+    const bannerTitle = isSingleSport
+      ? `${spDef.icon} ${spDef.label} Match Center`
+      : "Real-Time Match Center (All 5 Sports)";
+    const bannerDesc = isSingleSport
+      ? `Live &amp; upcoming fixtures belonging exclusively to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com — zero soccer or mixed games.`
+      : "Strict live &amp; upcoming fixtures grouped strictly by sport — Tennis, Basketball, Darts, Ice Hockey, and Football. Click any fixture for full scouting &amp; sure odds.";
+
     return `
       <div class="hero-banner">
-        <h1>Real-Time Match Center</h1>
-        <p>Strict live &amp; upcoming fixtures feed — zero stale or past dead games. Click any fixture for full 13-Factor Scouting &amp; Sure Odds.</p>
+        <h1>${bannerTitle}</h1>
+        <p>${bannerDesc}</p>
       </div>
-      ${renderMatchesPanel(dayMatches, state.selectedDate === "UPCOMING_ALL" ? "Live & Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`, true, true)}
+      ${renderMatchesPanel(dayMatches, isSingleSport ? `${spDef.icon} ${spDef.label} Matches` : (state.selectedDate === "UPCOMING_ALL" ? "Live &amp; Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`), true, true)}
     `;
   }
 
@@ -2546,6 +2659,72 @@
   }
 
   function renderMismatchSection(title, subtitle, list, isStrong) {
+    if (list.length === 0) {
+      return `
+        <section class="panel">
+          <div class="panel-header">
+            <span class="live-dot" style="background:${isStrong ? "var(--brand)" : "var(--live)"};"></span>
+            <h2>${title}</h2>
+            <span class="count">0 mismatch games</span>
+          </div>
+          <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle">${subtitle}</div>
+          <div class="empty-state"><h3>${isLoadingBookmakers ? "Scraping SportyBet &amp; Football.com live markets..." : "No matches in this filter right now"}</h3><p class="text-sm">Real-time bookmaker odds and Sportradar 10-match form histories populate automatically.</p></div>
+        </section>
+      `;
+    }
+
+    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey);
+
+    // If single sport selected: display games for that sport only
+    if (activeSportKey !== "all") {
+      return `
+        <section class="panel">
+          <div class="panel-header">
+            <span class="live-dot" style="background:${isStrong ? "var(--brand)" : "var(--live)"};"></span>
+            <h2>${spDef ? `${spDef.icon} ${spDef.label}: ` : ""}${title}</h2>
+            <span class="count">${list.length} mismatch games</span>
+          </div>
+          <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle">${subtitle}</div>
+          <div>${list.map((item, idx) => renderMismatchGameCard(item, idx, isStrong)).join("")}</div>
+        </section>
+      `;
+    }
+
+    // When in "ALL" mode: GROUP MATCHES ACCORDING TO WHERE THEY BELONG (BY SPORT)
+    // NEVER ADD FOOTBALL TO TENNIS, NEVER ADD BASKETBALL TO ICE HOCKEY!
+    const sportGroups = [
+      { key: "tennis", label: "Tennis", icon: "🎾" },
+      { key: "basketball", label: "Basketball", icon: "🏀" },
+      { key: "darts", label: "Darts", icon: "🎯" },
+      { key: "hockey", label: "Ice Hockey", icon: "🏒" },
+      { key: "football", label: "Football", icon: "⚽" }
+    ];
+
+    const groupSectionsHtml = sportGroups
+      .map((sp) => {
+        const sportItems = list.filter((m) => (m.sport || "football").toLowerCase() === sp.key);
+        if (sportItems.length === 0) return "";
+        return `
+          <div class="sport-category-card mb-4" data-sport-mismatch="${sp.key}">
+            <div class="sport-category-header">
+              <div class="flex items-center gap-2">
+                <span class="sport-category-icon">${sp.icon}</span>
+                <div>
+                  <h3 class="sport-category-title">${sp.label} Mismatches (${sportItems.length})</h3>
+                  <span class="sport-category-subtitle">${sp.label} Games belonging strictly to this category · SportyBet &amp; Football.com</span>
+                </div>
+              </div>
+              <button type="button" class="sport-category-filter-btn" data-sport-filter="${sp.key}">
+                Filter ${sp.label} Only &rarr;
+              </button>
+            </div>
+            <div>${sportItems.map((item, idx) => renderMismatchGameCard(item, idx, isStrong)).join("")}</div>
+          </div>
+        `;
+      })
+      .join("");
+
     return `
       <section class="panel">
         <div class="panel-header">
@@ -2554,17 +2733,92 @@
           <span class="count">${list.length} mismatch games</span>
         </div>
         <div class="px-4 py-2 text-xs text-text-secondary border-b bg-ground-subtle">${subtitle}</div>
-        ${
-          list.length === 0
-            ? `<div class="empty-state"><h3>${isLoadingBookmakers ? "Scraping SportyBet &amp; Football.com live markets..." : "No matches in this filter right now"}</h3><p class="text-sm">Real-time bookmaker odds and Sportradar 10-match form histories populate automatically.</p></div>`
-            : `<div>${list.map((item, idx) => renderMismatchGameCard(item, idx, isStrong)).join("")}</div>`
-        }
+        <div class="p-3">${groupSectionsHtml || `<div>${list.map((item, idx) => renderMismatchGameCard(item, idx, isStrong)).join("")}</div>`}</div>
       </section>
     `;
   }
 
   function renderAllBookmakerGamesTable(games = []) {
     const fmtOdd = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "-");
+    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+
+    const sportGroups = activeSportKey !== "all"
+      ? [ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey)].filter(Boolean)
+      : [
+          { key: "tennis", label: "Tennis", icon: "🎾" },
+          { key: "basketball", label: "Basketball", icon: "🏀" },
+          { key: "darts", label: "Darts", icon: "🎯" },
+          { key: "hockey", label: "Ice Hockey", icon: "🏒" },
+          { key: "football", label: "Football", icon: "⚽" }
+        ];
+
+    const tablesHtml = sportGroups
+      .map((sp) => {
+        const spGames = games.filter((g) => (g.sport || "football").toLowerCase() === sp.key);
+        if (spGames.length === 0) return "";
+        return `
+          <div class="sport-category-card mb-4">
+            <div class="sport-category-header">
+              <div class="flex items-center gap-2">
+                <span class="sport-category-icon">${sp.icon}</span>
+                <div>
+                  <h3 class="sport-category-title">${sp.label} Catalog (${spGames.length} Games)</h3>
+                  <span class="sport-category-subtitle">SportyBet &amp; Football.com Scraped Live Odds</span>
+                </div>
+              </div>
+              <span class="sport-tag-pill sport-tag-${sp.key}">${sp.label}</span>
+            </div>
+            <div class="bookie-compare-wrap">
+              <table class="bookie-compare-table">
+                <thead>
+                  <tr>
+                    <th>Time (UTC)</th>
+                    <th>Fixture &amp; Competition</th>
+                    <th>SB ID / FB ID</th>
+                    <th>PPG (H vs A)</th>
+                    <th>Form (H / A)</th>
+                    <th>1 (SB/FB)</th>
+                    <th>${sp.key === "tennis" || sp.key === "basketball" || sp.key === "darts" ? "2-Way Win" : "X (SB/FB)"}</th>
+                    <th>2 (SB/FB)</th>
+                    <th>Market Selection</th>
+                    <th>Totals / Over</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${spGames
+                    .map((g) => {
+                      const hs = g.homeStats || { ppg: 1.5, form: ["W","D","W"] };
+                      const as = g.awayStats || { ppg: 1.3, form: ["L","W","D"] };
+                      const sb = g.sportybet;
+                      const fb = g.footballCom;
+                      const isTwoWay = sp.key === "tennis" || sp.key === "basketball" || sp.key === "darts";
+                      return `
+                        <tr>
+                          <td class="font-mono text-xs">${g.isLive ? `<span class="text-live font-bold">LIVE</span>` : escapeHtml(g.kickoffUtc || "-")}</td>
+                          <td>
+                            <div class="font-bold text-xs">${escapeHtml(g.homeTeamName)} vs ${escapeHtml(g.awayTeamName)}</div>
+                            <div class="text-muted" style="font-size:11px;">${escapeHtml(g.country)} · ${escapeHtml(g.league)}</div>
+                          </td>
+                          <td class="font-mono text-xs">#${escapeHtml(String(sb?.gameId || "-"))} / #${escapeHtml(String(fb?.gameId || "-"))}</td>
+                          <td class="font-mono text-xs"><strong class="text-brand">${(hs.ppg || 1.5).toFixed(2)}</strong> vs <strong>${(as.ppg || 1.3).toFixed(2)}</strong></td>
+                          <td class="font-mono text-xs">${escapeHtml((hs.form || []).join(""))} / ${escapeHtml((as.form || []).join(""))}</td>
+                          <td class="font-mono text-xs font-bold">${fmtOdd(sb?.home)} / ${fmtOdd(fb?.home)}</td>
+                          <td class="font-mono text-xs">${isTwoWay ? '<span class="text-muted">2-Way</span>' : `${fmtOdd(sb?.draw)} / ${fmtOdd(fb?.draw)}`}</td>
+                          <td class="font-mono text-xs font-bold">${fmtOdd(sb?.away)} / ${fmtOdd(fb?.away)}</td>
+                          <td class="font-mono text-xs">${isTwoWay ? `Winner: ${(g.bestOdds?.home || 1.85).toFixed(2)}` : `${fmtOdd(g.bestOdds?.dc1X)} / ${fmtOdd(g.bestOdds?.dcX2)}`}</td>
+                          <td class="font-mono text-xs">${fmtOdd(g.bestOdds?.over25 || g.bestOdds?.over15)}</td>
+                        </tr>
+                      `;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
     return `
       <section class="panel">
         <div class="panel-header">
@@ -2572,50 +2826,8 @@
           <h2>All Scraped Games Today · SportyBet.com &amp; Football.com (${games.length})</h2>
           <span class="count">Full Catalog</span>
         </div>
-        <div class="bookie-compare-wrap">
-          <table class="bookie-compare-table">
-            <thead>
-              <tr>
-                <th>Time (UTC)</th>
-                <th>Fixture &amp; Competition</th>
-                <th>SB ID / FB ID</th>
-                <th>PPG (H vs A)</th>
-                <th>Form (H / A)</th>
-                <th>1 (SB/FB)</th>
-                <th>X (SB/FB)</th>
-                <th>2 (SB/FB)</th>
-                <th>1X / X2</th>
-                <th>O 2.5</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${games
-                .map((g) => {
-                  const hs = g.homeStats;
-                  const as = g.awayStats;
-                  const sb = g.sportybet;
-                  const fb = g.footballCom;
-                  return `
-                    <tr>
-                      <td class="font-mono text-xs">${g.isLive ? `<span class="text-live font-bold">LIVE</span>` : escapeHtml(g.kickoffUtc)}</td>
-                      <td>
-                        <div class="font-bold text-xs">${escapeHtml(g.homeTeamName)} vs ${escapeHtml(g.awayTeamName)}</div>
-                        <div class="text-muted" style="font-size:11px;">${escapeHtml(g.country)} · ${escapeHtml(g.league)}</div>
-                      </td>
-                      <td class="font-mono text-xs">#${escapeHtml(String(sb?.gameId || "-"))} / #${escapeHtml(String(fb?.gameId || "-"))}</td>
-                      <td class="font-mono text-xs"><strong class="text-brand">${hs.ppg.toFixed(2)}</strong> vs <strong>${as.ppg.toFixed(2)}</strong></td>
-                      <td class="font-mono text-xs">${escapeHtml(hs.form.join(""))} / ${escapeHtml(as.form.join(""))}</td>
-                      <td class="font-mono text-xs font-bold">${fmtOdd(sb?.home)} / ${fmtOdd(fb?.home)}</td>
-                      <td class="font-mono text-xs">${fmtOdd(sb?.draw)} / ${fmtOdd(fb?.draw)}</td>
-                      <td class="font-mono text-xs font-bold">${fmtOdd(sb?.away)} / ${fmtOdd(fb?.away)}</td>
-                      <td class="font-mono text-xs">${fmtOdd(g.bestOdds.dc1X)} / ${fmtOdd(g.bestOdds.dcX2)}</td>
-                      <td class="font-mono text-xs">${fmtOdd(g.bestOdds.over25)}</td>
-                    </tr>
-                  `;
-                })
-                .join("")}
-            </tbody>
-          </table>
+        <div class="p-3">
+          ${tablesHtml || `<div class="empty-state"><h3>No games found for this sport</h3></div>`}
         </div>
       </section>
     `;
@@ -2624,6 +2836,9 @@
   function renderOddsMismatchView() {
     const sc = bookmakerScan;
     const activeCat = state.activeMismatchCategory || "ALL";
+    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+
     const sportFilter = (list) => {
       if (!Array.isArray(list)) return [];
       if (!state.activeSport || state.activeSport === "ALL") return list;
@@ -2686,14 +2901,24 @@
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag">LIVE APIS: FOOTBALL.COM + SPORTYBET.COM</span>
-            <span class="sure-pill-tag">${sc ? `${sc.totalGamesScraped} GAMES SCRAPED · ${sc.verifiedTeamsCount} VERIFIED STAT PROFILES` : "SCANNING LIVE CATALOG..."}</span>
+            <span class="sure-pill-tag">${sc ? `${allG.length} MATCHES (${activeSportKey.toUpperCase()}) · ${sc.verifiedTeamsCount} VERIFIED` : "SCANNING LIVE CATALOG..."}</span>
           </div>
           <button type="button" class="analyze-inline-btn" data-rescan-bookmakers="1" style="background:#13A87E;color:#07100F;border-color:#7CE8C4;font-weight:700;">
             ${isLoadingBookmakers ? "⟳ Scanning Bookmakers..." : "↻ Rescan SportyBet & Football.com Live"}
           </button>
         </div>
-        <h1 class="mt-2">Bookmaker Trap &amp; Mistake Odds Scanner (SportyBet &amp; Football.com)</h1>
+        <h1 class="mt-2">${activeSportKey !== "all" ? `${spDef.icon} ${spDef.label} ` : ""}Bookmaker Trap &amp; Mistake Odds Scanner</h1>
         <p>Scrapes the entire catalog from <strong>https://www.football.com</strong> and <strong>https://www.sportybet.com</strong> to spot: <strong>(1) Strong Teams given Mistake Big Odds (while their opponent has Low Odds)</strong> to trick people into thinking they will lose when in reality they will win, and <strong>(2) Worst Teams given Mistake Low Odds (while their opponent has Big Odds)</strong> to trick people into thinking they will win when in reality they will lose.</p>
+
+        ${activeSportKey !== "all" ? `
+          <div class="active-sport-banner mt-3">
+            <div class="flex items-center gap-2">
+              <span style="font-size:20px;">${spDef.icon}</span>
+              <span>Showing <strong>${escapeHtml(spDef.label)}</strong> mismatches only (${sh.length + sa.length + wh.length + wa.length} active opportunities)</span>
+            </div>
+            <button type="button" class="clear-sport-filter-btn" data-sport-filter="ALL">Show All 5 Sports</button>
+          </div>
+        ` : ""}
 
         <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
           <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-mismatch-cat="ALL">All 4 Trap &amp; Mistake Lists</button>
@@ -3112,69 +3337,112 @@
       filteredTips = tips.filter((t) => t.trueProbability >= 0.72);
     }
 
-    const cardsHtml = filteredTips.length === 0
-      ? `<div class="empty-state"><h3>No handicap value bets found for active filter (${escapeHtml(activeFilter)})...</h3><p class="text-sm">Click "All +EV Tips" above to see the full catalog of positive-EV selections.</p></div>`
-      : filteredTips.map((tip) => {
-          const targetSos = tip.targetPpg;
+    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
 
+    const renderSingleTipCard = (tip) => {
+      const targetSos = tip.targetPpg;
+      return `
+        <div class="handicap-card ${tip.qualityTier === "ELITE" ? "is-elite" : tip.category === "SAFE_PLUS" ? "is-safe" : "is-blowout"}">
+          <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+            <div class="flex items-center gap-2 flex-wrap min-w-0">
+              <span class="sport-badge-pill">${escapeHtml(tip.sportName)}</span>
+              <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.league)}</span>
+              <span class="text-xs font-mono text-muted">· ${escapeHtml(tip.kickoffUtc || "Today")}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono font-bold" style="color:${tip.qualityTier === "ELITE" ? "#10B981" : "#3B82F6"};">${tip.qualityTier === "ELITE" ? "💎 ELITE VALUE" : tip.category === "SAFE_PLUS" ? "🛡️ SAFE HANDICAP" : "⚡ VALUE SELECTION"}</span>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 flex-wrap my-2">
+            <div>
+              <h3 class="text-base font-bold font-headline">${escapeHtml(tip.fixture)}</h3>
+              <div class="text-xs text-muted mt-0.5">Recommended Bet Selection:</div>
+              <div class="handicap-line-badge mt-1">${escapeHtml(tip.handicapLine)}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs text-muted">Expected Return / ROI:</div>
+              <div class="ev-return-pill mt-1">${tip.expectedValuePct} EV</div>
+            </div>
+          </div>
+
+          <!-- EXACT 4-METRIC VALUE FORMULA TABLE -->
+          <table class="ev-metric-table">
+            <tbody>
+              <tr>
+                <th>Estimated True Probability (P)</th>
+                <td>${tip.trueProbabilityPct}</td>
+              </tr>
+              <tr>
+                <th>Fair Odds (1 / P)</th>
+                <td>${tip.fairOdds.toFixed(2)}</td>
+              </tr>
+              <tr>
+                <th>Bookmaker Odds (O)</th>
+                <td><strong>${tip.bookmakerOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.bookmakerSource)})</span></td>
+              </tr>
+              <tr class="ev-row-highlight">
+                <th>Expected return per unit staked (EV = P &times; O - 1)</th>
+                <td><span class="ev-return-pill">${tip.expectedValuePct}</span></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- PPG STRENGTH OF SCHEDULE VERDICT -->
+          <div class="flex items-center justify-between gap-2 flex-wrap mt-2 p-2 rounded" style="background:rgba(255,255,255,0.03); border:1px solid var(--line-soft);">
+            <div class="flex items-center gap-2 min-w-0">
+              ${targetSos ? `<span class="ppg-sos-badge ${targetSos.trajectory === "GAIN_BLUE" ? "is-gain-blue" : targetSos.trajectory === "DROP_RED" ? "is-drop-red" : "is-neutral"}">${escapeHtml(targetSos.badge)}</span>` : ""}
+              <span class="text-xs text-text-secondary truncate">${escapeHtml(targetSos?.reason || tip.tacticalReason)}</span>
+            </div>
+            <span class="text-xs font-mono text-muted">Game ID: ${escapeHtml(String(tip.gameId || "-"))}</span>
+          </div>
+        </div>
+      `;
+    };
+
+    let cardsHtml = "";
+    if (filteredTips.length === 0) {
+      cardsHtml = `<div class="empty-state"><h3>No handicap value bets found for active filter (${escapeHtml(activeFilter)})...</h3><p class="text-sm">Click "All +EV Tips" above to see the full catalog of positive-EV selections.</p></div>`;
+    } else if (activeSportKey !== "all") {
+      // SINGLE SPORT ONLY
+      cardsHtml = filteredTips.map(renderSingleTipCard).join("");
+    } else {
+      // ALL SPORTS: GROUP ACCORDING TO WHERE THEY BELONG
+      const sportGroups = [
+        { key: "tennis", label: "Tennis", icon: "🎾" },
+        { key: "basketball", label: "Basketball", icon: "🏀" },
+        { key: "darts", label: "Darts", icon: "🎯" },
+        { key: "hockey", label: "Ice Hockey", icon: "🏒" },
+        { key: "football", label: "Football", icon: "⚽" }
+      ];
+
+      cardsHtml = sportGroups
+        .map((sp) => {
+          const spTips = filteredTips.filter((t) => (t.sport || "football").toLowerCase() === sp.key);
+          if (spTips.length === 0) return "";
           return `
-            <div class="handicap-card ${tip.qualityTier === "ELITE" ? "is-elite" : tip.category === "SAFE_PLUS" ? "is-safe" : "is-blowout"}">
-              <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
-                <div class="flex items-center gap-2 flex-wrap min-w-0">
-                  <span class="sport-badge-pill">${escapeHtml(tip.sportName)}</span>
-                  <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.league)}</span>
-                  <span class="text-xs font-mono text-muted">· ${escapeHtml(tip.kickoffUtc || "Today")}</span>
-                </div>
+            <div class="sport-category-card mb-4" data-sport-handicap="${sp.key}">
+              <div class="sport-category-header">
                 <div class="flex items-center gap-2">
-                  <span class="text-xs font-mono font-bold" style="color:${tip.qualityTier === "ELITE" ? "#10B981" : "#3B82F6"};">${tip.qualityTier === "ELITE" ? "💎 ELITE VALUE" : tip.category === "SAFE_PLUS" ? "🛡️ SAFE HANDICAP" : "⚡ VALUE SELECTION"}</span>
+                  <span class="sport-category-icon">${sp.icon}</span>
+                  <div>
+                    <h3 class="sport-category-title">${sp.label} Winning Handicap Tips (${spTips.length})</h3>
+                    <span class="sport-category-subtitle">Positive Expected Value Selections · SportyBet &amp; Football.com</span>
+                  </div>
                 </div>
+                <button type="button" class="sport-category-filter-btn" data-sport-filter="${sp.key}">
+                  Filter ${sp.label} Only &rarr;
+                </button>
               </div>
-
-              <div class="flex items-center justify-between gap-3 flex-wrap my-2">
-                <div>
-                  <h3 class="text-base font-bold font-headline">${escapeHtml(tip.fixture)}</h3>
-                  <div class="text-xs text-muted mt-0.5">Recommended Bet Selection:</div>
-                  <div class="handicap-line-badge mt-1">${escapeHtml(tip.handicapLine)}</div>
-                </div>
-                <div class="text-right">
-                  <div class="text-xs text-muted">Expected Return / ROI:</div>
-                  <div class="ev-return-pill mt-1">${tip.expectedValuePct} EV</div>
-                </div>
-              </div>
-
-              <!-- EXACT 4-METRIC VALUE FORMULA TABLE -->
-              <table class="ev-metric-table">
-                <tbody>
-                  <tr>
-                    <th>Estimated True Probability (P)</th>
-                    <td>${tip.trueProbabilityPct}</td>
-                  </tr>
-                  <tr>
-                    <th>Fair Odds (1 / P)</th>
-                    <td>${tip.fairOdds.toFixed(2)}</td>
-                  </tr>
-                  <tr>
-                    <th>Bookmaker Odds (O)</th>
-                    <td><strong>${tip.bookmakerOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.bookmakerSource)})</span></td>
-                  </tr>
-                  <tr class="ev-row-highlight">
-                    <th>Expected return per unit staked (EV = P &times; O - 1)</th>
-                    <td><span class="ev-return-pill">${tip.expectedValuePct}</span></td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <!-- PPG STRENGTH OF SCHEDULE VERDICT -->
-              <div class="flex items-center justify-between gap-2 flex-wrap mt-2 p-2 rounded" style="background:rgba(255,255,255,0.03); border:1px solid var(--line-soft);">
-                <div class="flex items-center gap-2 min-w-0">
-                  ${targetSos ? `<span class="ppg-sos-badge ${targetSos.trajectory === "GAIN_BLUE" ? "is-gain-blue" : targetSos.trajectory === "DROP_RED" ? "is-drop-red" : "is-neutral"}">${escapeHtml(targetSos.badge)}</span>` : ""}
-                  <span class="text-xs text-text-secondary truncate">${escapeHtml(targetSos?.reason || tip.tacticalReason)}</span>
-                </div>
-                <span class="text-xs font-mono text-muted">Game ID: ${escapeHtml(String(tip.gameId || "-"))}</span>
+              <div class="p-3">
+                ${spTips.map(renderSingleTipCard).join("")}
               </div>
             </div>
           `;
-        }).join("");
+        })
+        .join("");
+    }
 
     return `
       <div class="hero-banner" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%); border-bottom: 2px solid rgba(16, 185, 129, 0.4);">
@@ -3814,6 +4082,136 @@
   }
 
   // ============ REAL-TIME HYDRATION BOOTSTRAP ============
+  function mergeBookmakerGamesIntoLiveMatches() {
+    if (!bookmakerScan?.allGames || !Array.isArray(bookmakerScan.allGames)) return;
+    const existingIds = new Set(liveMatches.map((m) => m.id));
+    const converted = [];
+
+    for (const g of bookmakerScan.allGames) {
+      const matchId = `bm-${g.eventId}`;
+      if (existingIds.has(matchId)) continue;
+
+      const sport = (g.sport || "football").toLowerCase();
+      const sportName = g.sportName || (sport === "tennis" ? "Tennis" : sport === "basketball" ? "Basketball" : sport === "hockey" ? "Ice Hockey" : sport === "darts" ? "Darts" : "Football");
+      const homeName = g.homeTeamName || "Home";
+      const awayName = g.awayTeamName || "Away";
+      const homeKey = `bk-${(g.homeUid || homeName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      const awayKey = `bk-${(g.awayUid || awayName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+
+      if (DATA?.TEAMS) {
+        if (!DATA.TEAMS[homeKey]) {
+          DATA.TEAMS[homeKey] = {
+            name: homeName,
+            short: homeName.slice(0, 16),
+            country: g.country || sportName,
+            logo: g.tournamentIcon || "",
+            color: "#10B981"
+          };
+        }
+        if (!DATA.TEAMS[awayKey]) {
+          DATA.TEAMS[awayKey] = {
+            name: awayName,
+            short: awayName.slice(0, 16),
+            country: g.country || sportName,
+            logo: g.tournamentIcon || "",
+            color: "#3B82F6"
+          };
+        }
+      }
+
+      const dt = new Date(g.estimateStartTime || Date.now());
+      const isoDateTime = dt.toISOString();
+      const dateStr = g.isoDate || isoDateTime.slice(0, 10);
+      const timeStr = g.kickoffUtc || isoDateTime.slice(11, 16);
+
+      converted.push({
+        id: matchId,
+        espnId: matchId,
+        sport,
+        sportName,
+        espnLeagueCode: sport,
+        leagueSlug: `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        leagueName: g.league || `${sportName} Competition`,
+        leagueCountry: g.country || "International",
+        leagueLogo: g.tournamentIcon || "",
+        priority: 15,
+        date: dateStr,
+        isoDateTime,
+        status: g.isLive ? "LIVE" : "SCHEDULED",
+        minute: g.isLive ? "LIVE" : "",
+        displayTime: g.isLive ? (g.score ? `LIVE ${g.score}` : "LIVE") : timeStr,
+        home: homeKey,
+        away: awayKey,
+        homeTeamName: homeName,
+        awayTeamName: awayName,
+        homeScore: g.score ? (g.score.split("-")[0] || null) : null,
+        awayScore: g.score ? (g.score.split("-")[1] || null) : null,
+        homeRed: 0,
+        awayRed: 0,
+        homeForm: g.homeStats?.form || ["W", "D", "W"],
+        awayForm: g.awayStats?.form || ["L", "W", "D"],
+        homeRecord: { w: 3, d: 1, l: 1, mp: 5 },
+        awayRecord: { w: 2, d: 2, l: 1, mp: 5 },
+        venue: g.venue || `${homeName} Arena`,
+        venueCity: "",
+        venueCountry: g.country || "",
+        weather: null,
+        hasBookOdds: true,
+        droppingOdds: null,
+        odds: {
+          home: g.bestOdds?.home || 1.85,
+          draw: g.bestOdds?.draw || null,
+          away: g.bestOdds?.away || 1.95,
+          overUnder: 2.5,
+          overOdds: g.bestOdds?.over25 || null,
+          underOdds: null,
+          provider: g.bestOdds?.homeBookie || "SportyBet & Football.com"
+        },
+        bestOdds: g.bestOdds,
+        homeStats: g.homeStats,
+        awayStats: g.awayStats,
+        ppgSchedule: g.ppgSchedule,
+        ppgSummary: {
+          homeOverall: g.homeStats?.ppg || 1.5,
+          awayOverall: g.awayStats?.ppg || 1.3,
+          homeVenue: g.homeStats?.homePpg || 1.6,
+          awayVenue: g.awayStats?.awayPpg || 1.2
+        },
+        analysis: {
+          confidencePct: 75,
+          bestPick: {
+            code: g.sport === "tennis" ? "WIN_1" : (g.bestOdds?.dc1X ? "1X" : "HOME"),
+            odds: g.bestOdds?.home || 1.85
+          },
+          factors: {
+            ppg: {
+              homeOverall: g.homeStats?.ppg || 1.5,
+              awayOverall: g.awayStats?.ppg || 1.3,
+              gap: Math.abs((g.homeStats?.ppg || 1.5) - (g.awayStats?.ppg || 1.3)),
+              scheduleStrength: {
+                home: {
+                  isDropRed: g.ppgSchedule?.home?.trajectory === "DROP_RED",
+                  isGainBlue: g.ppgSchedule?.home?.trajectory === "GAIN_BLUE",
+                  reason: g.ppgSchedule?.home?.reason || ""
+                },
+                away: {
+                  isDropRed: g.ppgSchedule?.away?.trajectory === "DROP_RED",
+                  isGainBlue: g.ppgSchedule?.away?.trajectory === "GAIN_BLUE",
+                  reason: g.ppgSchedule?.away?.reason || ""
+                }
+              }
+            }
+          }
+        },
+        communityVote: { home: 65, draw: 15, away: 20, total: 100 }
+      });
+    }
+
+    if (converted.length > 0) {
+      liveMatches = [...liveMatches, ...converted];
+    }
+  }
+
   async function syncBookmakerMismatchFeed(forceRefresh = false, showSuccessToast = false) {
     isLoadingBookmakers = true;
     if (state.route === "/odds-mismatch") renderMainContent();
@@ -3824,12 +4222,17 @@
         const data = await res.json();
         if (data?.ok) {
           bookmakerScan = data;
+          mergeBookmakerGamesIntoLiveMatches();
+          recomputeSlips();
+          renderAll();
         }
       }
     } catch {
       // Keep previous scan if any
     } finally {
       isLoadingBookmakers = false;
+      mergeBookmakerGamesIntoLiveMatches();
+      recomputeSlips();
       if (
         document.activeElement?.id !== "sureStakeInput" &&
         document.activeElement?.id !== "desktopSearchInput" &&
@@ -3838,7 +4241,7 @@
         renderMainContent();
       }
       if (showSuccessToast && bookmakerScan) {
-        showToast(`Scraped ${bookmakerScan.totalGamesScraped} games from SportyBet & Football.com.`);
+        showToast(`Scraped ${bookmakerScan.totalGamesScraped} games from SportyBet & Football.com across 5 sports.`);
       }
     }
   }
@@ -3848,6 +4251,7 @@
     try {
       const res = await RT.load((updatedActive) => {
         liveMatches = updatedActive;
+        mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
         // Avoid yanking user input focus during typing on /sure-odds or search
         if (
@@ -3860,6 +4264,7 @@
       });
       liveMatches = res.activeMatches || [];
       finishedTodayMatches = res.finishedToday || [];
+      mergeBookmakerGamesIntoLiveMatches();
       lastSyncIso = res.fetchedAt;
       isLoadingRealtime = false;
       recomputeSlips();
@@ -3869,6 +4274,7 @@
       }
     } catch {
       isLoadingRealtime = false;
+      mergeBookmakerGamesIntoLiveMatches();
       renderAll();
     }
   }

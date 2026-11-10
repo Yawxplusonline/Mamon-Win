@@ -449,6 +449,8 @@ window.MAMON_REALTIME = (() => {
     const match = {
       id: `espn-${ev.id}`,
       espnId: String(ev.id),
+      sport: "football",
+      sportName: "Football",
       espnLeagueCode: leagueMeta.espnLeagueCode,
       leagueSlug: leagueMeta.leagueSlug,
       leagueName: leagueMeta.leagueName,

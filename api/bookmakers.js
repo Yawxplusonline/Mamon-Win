@@ -396,9 +396,9 @@ function deriveParticipantStats(game, side, providedStats) {
   const awayPpg = Math.round((basePpg + (isHome ? -0.12 : 0.14)) * 100) / 100;
 
   const formPts = Math.max(2, Math.min(15, Math.round(p * 15.5)));
-  const winsCount = Math.min(5, Math.floor(formPts / 3));
-  const drawsCount = isTwoWay ? 0 : Math.floor((formPts % 3) / 1);
-  const lossesCount = 5 - winsCount - drawsCount;
+  const winsCount = Math.min(5, Math.max(0, Math.floor(formPts / 3)));
+  const drawsCount = isTwoWay ? 0 : Math.min(Math.max(0, 5 - winsCount), Math.max(0, Math.floor(formPts % 3)));
+  const lossesCount = Math.max(0, 5 - winsCount - drawsCount);
   const form = [
     ...Array(winsCount).fill("W"),
     ...Array(drawsCount).fill("D"),

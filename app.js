@@ -56,6 +56,7 @@
       activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY (backwards compatible)
       activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
       activeAccurateFilter: "ALL", // ALL | SINGLE | DOUBLE | TREBLE | DOUBLE_CHANCE | GOALS
+      activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       standingsLeague: "england-premier-league",
       followedMatches: [],
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
@@ -162,6 +163,7 @@
     if (h === "/ppg-intelligence" || h === "/points-per-game") return "/ppg";
     if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/accurate-odds";
+    if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
     return h;
   }
 
@@ -178,6 +180,12 @@
       route = "/accurate-odds";
     }
     if (route === "/accurate-winning-odds" || route === "/banker-of-the-day") route = "/accurate-odds";
+    if (route.startsWith("/handicap?") || route.startsWith("/value-bets?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("filter")) state.activeHandicapFilter = q.get("filter").toUpperCase();
+      route = "/handicap";
+    }
+    if (route === "/handicap-tips" || route === "/value-bets") route = "/handicap";
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("filter")) state.activeDropFilter = q.get("filter").toUpperCase();
@@ -2025,12 +2033,54 @@
     `;
   }
 
+  function renderHomeHandicapValueCard() {
+    const handData = RT?.buildHandicapValueBets ? RT.buildHandicapValueBets(filteredMatchesForDate(), bookmakerScan) : null;
+    if (!handData || !handData.allTips || handData.allTips.length === 0) return "";
+    const topTips = handData.allTips.slice(0, 3);
+    const totalCount = handData.allTips.length;
+
+    return `
+      <section class="panel-section border-subtle" id="handicapValueHomeCard" style="border: 2px solid rgba(16, 185, 129, 0.45); background: linear-gradient(145deg, var(--card) 0%, rgba(16, 185, 129, 0.04) 100%); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.08);">
+        <div class="panel-header" style="background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(16, 185, 129, 0.25); padding: 14px 18px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">🎯 WINNING HANDICAP TIPS</span>
+            <span class="sure-pill-tag">+EV VALUE BETS DETECTED (${totalCount})</span>
+            <span class="font-mono text-xs text-muted">· Fair Odds vs Bookmaker Odds</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/handicap" data-route="/handicap" style="font-weight:700;color:#10B981;">Open Handicap &amp; +EV Center &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
+            ${topTips.map((tip, i) => `
+              <a class="power-preview-tile is-strong" href="/handicap" data-route="/handicap" style="border-left: 3px solid #10B981; background: var(--ground);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} HANDICAP VALUE PICK</span>
+                  <span class="ev-return-pill">${tip.expectedValuePct} EV</span>
+                </div>
+                <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(tip.fixture)}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
+                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                </div>
+              </a>
+            `).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Live & Upcoming Matches" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
     return `
       ${renderHomeAccurateOddsCard()}
+      ${renderHomeHandicapValueCard()}
       ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
       ${renderMarketIntelligenceStrip()}
@@ -3030,6 +3080,211 @@
     `;
   }
 
+  // ============ DEDICATED /handicap VIEW (WINNING HANDICAP TIPS & +EV VALUE BETS) ============
+  function renderHandicapValueBetsView() {
+    if (!RT?.buildHandicapValueBets) {
+      return `<div class="empty-state"><h3>Initializing Handicap Value Engine...</h3></div>`;
+    }
+    const pool = filteredMatchesForDate();
+    const handData = RT.buildHandicapValueBets(pool.length > 0 ? pool : liveMatches, bookmakerScan);
+    const activeFilter = state.activeHandicapFilter || "ALL";
+
+    let tips = handData.allTips || [];
+    // Filter by active sport if not ALL
+    if (state.activeSport && state.activeSport !== "ALL") {
+      tips = tips.filter((t) => (t.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
+    }
+
+    const allCount = tips.length;
+    const safeCount = tips.filter((t) => t.category === "SAFE_PLUS").length;
+    const dcCount = tips.filter((t) => t.category === "DOUBLE_CHANCE").length;
+    const favCount = tips.filter((t) => t.category === "FAVORITE_MINUS").length;
+    const highWinCount = tips.filter((t) => t.trueProbability >= 0.72).length;
+
+    let filteredTips = tips;
+    if (activeFilter === "SAFE_PLUS") {
+      filteredTips = tips.filter((t) => t.category === "SAFE_PLUS");
+    } else if (activeFilter === "DOUBLE_CHANCE") {
+      filteredTips = tips.filter((t) => t.category === "DOUBLE_CHANCE");
+    } else if (activeFilter === "FAVORITE_MINUS") {
+      filteredTips = tips.filter((t) => t.category === "FAVORITE_MINUS");
+    } else if (activeFilter === "HIGH_PROB") {
+      filteredTips = tips.filter((t) => t.trueProbability >= 0.72);
+    }
+
+    const cardsHtml = filteredTips.length === 0
+      ? `<div class="empty-state"><h3>No handicap value bets found for active filter (${escapeHtml(activeFilter)})...</h3><p class="text-sm">Click "All +EV Tips" above to see the full catalog of positive-EV selections.</p></div>`
+      : filteredTips.map((tip) => {
+          const targetSos = tip.targetPpg;
+
+          return `
+            <div class="handicap-card ${tip.qualityTier === "ELITE" ? "is-elite" : tip.category === "SAFE_PLUS" ? "is-safe" : "is-blowout"}">
+              <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                <div class="flex items-center gap-2 flex-wrap min-w-0">
+                  <span class="sport-badge-pill">${escapeHtml(tip.sportName)}</span>
+                  <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.league)}</span>
+                  <span class="text-xs font-mono text-muted">· ${escapeHtml(tip.kickoffUtc || "Today")}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-mono font-bold" style="color:${tip.qualityTier === "ELITE" ? "#10B981" : "#3B82F6"};">${tip.qualityTier === "ELITE" ? "💎 ELITE VALUE" : tip.category === "SAFE_PLUS" ? "🛡️ SAFE HANDICAP" : "⚡ VALUE SELECTION"}</span>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between gap-3 flex-wrap my-2">
+                <div>
+                  <h3 class="text-base font-bold font-headline">${escapeHtml(tip.fixture)}</h3>
+                  <div class="text-xs text-muted mt-0.5">Recommended Bet Selection:</div>
+                  <div class="handicap-line-badge mt-1">${escapeHtml(tip.handicapLine)}</div>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs text-muted">Expected Return / ROI:</div>
+                  <div class="ev-return-pill mt-1">${tip.expectedValuePct} EV</div>
+                </div>
+              </div>
+
+              <!-- EXACT 4-METRIC VALUE FORMULA TABLE -->
+              <table class="ev-metric-table">
+                <tbody>
+                  <tr>
+                    <th>Estimated True Probability (P)</th>
+                    <td>${tip.trueProbabilityPct}</td>
+                  </tr>
+                  <tr>
+                    <th>Fair Odds (1 / P)</th>
+                    <td>${tip.fairOdds.toFixed(2)}</td>
+                  </tr>
+                  <tr>
+                    <th>Bookmaker Odds (O)</th>
+                    <td><strong>${tip.bookmakerOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.bookmakerSource)})</span></td>
+                  </tr>
+                  <tr class="ev-row-highlight">
+                    <th>Expected return per unit staked (EV = P &times; O - 1)</th>
+                    <td><span class="ev-return-pill">${tip.expectedValuePct}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <!-- PPG STRENGTH OF SCHEDULE VERDICT -->
+              <div class="flex items-center justify-between gap-2 flex-wrap mt-2 p-2 rounded" style="background:rgba(255,255,255,0.03); border:1px solid var(--line-soft);">
+                <div class="flex items-center gap-2 min-w-0">
+                  ${targetSos ? `<span class="ppg-sos-badge ${targetSos.trajectory === "GAIN_BLUE" ? "is-gain-blue" : targetSos.trajectory === "DROP_RED" ? "is-drop-red" : "is-neutral"}">${escapeHtml(targetSos.badge)}</span>` : ""}
+                  <span class="text-xs text-text-secondary truncate">${escapeHtml(targetSos?.reason || tip.tacticalReason)}</span>
+                </div>
+                <span class="text-xs font-mono text-muted">Game ID: ${escapeHtml(String(tip.gameId || "-"))}</span>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+    return `
+      <div class="hero-banner" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%); border-bottom: 2px solid rgba(16, 185, 129, 0.4);">
+        <div class="flex items-center gap-2 flex-wrap mb-1">
+          <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">🎯 WINNING HANDICAP TIPS</span>
+          <span class="sure-pill-tag">POSITIVE EXPECTED VALUE (+EV)</span>
+          <span class="font-mono text-xs text-muted">· Live Audited</span>
+        </div>
+        <h1 class="font-headline font-black text-2xl md:text-3xl" style="color:var(--text); letter-spacing:-0.02em;">
+          Winning Handicap Tips &amp; Value Bets (+EV)
+        </h1>
+        <p class="text-sm text-text-secondary mt-1 max-w-3xl">
+          Derived from the exact 3-step value betting formula: We calculate the true mathematical probability \(P\), determine Fair Odds \(\frac{1}{P}\), compare them with live bookmaker odds \(O\), and identify market inefficiencies where \(EV = (P \times O) - 1 > 0\).
+        </p>
+
+        <!-- 3-STEP VALUE BETTING FORMULA CARDS -->
+        <div class="ev-formula-grid mt-3">
+          <div class="ev-formula-card">
+            <span class="step-title">Step 1 · True Probability &amp; Fair Odds</span>
+            <div class="step-math">Fair Odds = 1 / True Probability (P)</div>
+            <div class="step-desc">Calculated via Poisson distribution, 11-factor form, and PPG strength of schedule.</div>
+          </div>
+          <div class="ev-formula-card">
+            <span class="step-title">Step 2 · Bookmaker Odds Comparison</span>
+            <div class="step-math">Bookmaker Odds (O) &gt; Fair Odds</div>
+            <div class="step-desc">Spots when SportyBet and Football.com price a team higher than their true likelihood of covering.</div>
+          </div>
+          <div class="ev-formula-card">
+            <span class="step-title">Step 3 · Expected Value (EV)</span>
+            <div class="step-math">EV = (P &times; O) &minus; 1</div>
+            <div class="step-desc">Positive EV guarantees long-term expected return per unit staked (e.g. +14.29%).</div>
+          </div>
+        </div>
+
+        <!-- Filter Chips -->
+        <div class="intel-tabs mt-4" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-handicap-filter="ALL">All +EV Tips (${allCount})</button>
+          <button type="button" class="filter-chip${activeFilter === "SAFE_PLUS" ? " is-active" : ""}" data-handicap-filter="SAFE_PLUS">🛡️ Safe Cushions (+1.5 / +2.5) (${safeCount})</button>
+          <button type="button" class="filter-chip${activeFilter === "DOUBLE_CHANCE" ? " is-active" : ""}" data-handicap-filter="DOUBLE_CHANCE">🎯 Double Chance (+0.5) (${dcCount})</button>
+          <button type="button" class="filter-chip${activeFilter === "FAVORITE_MINUS" ? " is-active" : ""}" data-handicap-filter="FAVORITE_MINUS">⚡ Dominant Blowouts (-1.5) (${favCount})</button>
+          <button type="button" class="filter-chip${activeFilter === "HIGH_PROB" ? " is-active" : ""}" data-handicap-filter="HIGH_PROB">👑 High Win-Rate (72%+ Prob) (${highWinCount})</button>
+        </div>
+      </div>
+
+      <!-- Curated Handicap Banker & Value Slips -->
+      <div class="handicap-slips-grid mt-4">
+        ${handData.bankerDouble ? `
+          <div class="handicap-slip-card">
+            <div>
+              <div class="slip-header">
+                <div>
+                  <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:700;">${escapeHtml(handData.bankerDouble.badge)}</span>
+                  <h3 class="font-bold text-base mt-1">${escapeHtml(handData.bankerDouble.title)}</h3>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs text-muted">Total Odds</div>
+                  <div class="text-lg font-black font-mono text-brand">${handData.bankerDouble.totalOdds.toFixed(2)}x</div>
+                </div>
+              </div>
+              <p class="text-xs text-text-secondary mb-3">${escapeHtml(handData.bankerDouble.summary)}</p>
+              ${handData.bankerDouble.legs.map((leg) => `
+                <div class="handicap-slip-leg">
+                  <span class="font-semibold truncate">${escapeHtml(leg.targetTeam)} ${escapeHtml(leg.handicapLine.replace(leg.targetTeam, "").trim())}</span>
+                  <span class="font-mono font-bold text-brand ml-2">${leg.bookmakerOdds.toFixed(2)}</span>
+                </div>
+              `).join("")}
+            </div>
+            <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
+              <span>Combined Prob: <strong class="text-text">${handData.bankerDouble.combinedProb}</strong></span>
+              <span>Avg EV: <strong style="color:#10B981;">${handData.bankerDouble.combinedEvPct}</strong></span>
+            </div>
+          </div>
+        ` : ""}
+
+        ${handData.valueTreble ? `
+          <div class="handicap-slip-card">
+            <div>
+              <div class="slip-header">
+                <div>
+                  <span class="sure-pill-tag" style="background:#3B82F6;color:#FFFFFF;font-weight:700;">${escapeHtml(handData.valueTreble.badge)}</span>
+                  <h3 class="font-bold text-base mt-1">${escapeHtml(handData.valueTreble.title)}</h3>
+                </div>
+                <div class="text-right">
+                  <div class="text-xs text-muted">Total Odds</div>
+                  <div class="text-lg font-black font-mono" style="color:#3B82F6;">${handData.valueTreble.totalOdds.toFixed(2)}x</div>
+                </div>
+              </div>
+              <p class="text-xs text-text-secondary mb-3">${escapeHtml(handData.valueTreble.summary)}</p>
+              ${handData.valueTreble.legs.map((leg) => `
+                <div class="handicap-slip-leg">
+                  <span class="font-semibold truncate">${escapeHtml(leg.targetTeam)} ${escapeHtml(leg.handicapLine.replace(leg.targetTeam, "").trim())}</span>
+                  <span class="font-mono font-bold ml-2" style="color:#3B82F6;">${leg.bookmakerOdds.toFixed(2)}</span>
+                </div>
+              `).join("")}
+            </div>
+            <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
+              <span>Combined Prob: <strong class="text-text">${handData.valueTreble.combinedProb}</strong></span>
+              <span>Avg EV: <strong style="color:#10B981;">${handData.valueTreble.combinedEvPct}</strong></span>
+            </div>
+          </div>
+        ` : ""}
+      </div>
+
+      <!-- CARDS LIST -->
+      <div class="handicap-cards-container mt-4">
+        ${cardsHtml}
+      </div>
+    `;
+  }
+
   function renderCompetitionView(slug) {
     const lg = getLeagueInfo(slug);
     const isFollowed = state.followedLeagues.includes(slug);
@@ -3145,6 +3400,8 @@
       main.innerHTML = renderHomeView();
     } else if (r === "/accurate-odds" || r === "/accurate-winning-odds" || r === "/banker-of-the-day") {
       main.innerHTML = renderAccurateWinningOddsView();
+    } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
+      main.innerHTML = renderHandicapValueBetsView();
     } else if (r === "/sure-odds" || r === "/game-points") {
       main.innerHTML = renderSureOddsView();
       bindSureCalculatorEvents();
@@ -3731,6 +3988,15 @@
     const accurateFilterBtn = e.target.closest("[data-accurate-filter]");
     if (accurateFilterBtn) {
       state.activeAccurateFilter = accurateFilterBtn.getAttribute("data-accurate-filter");
+      saveState();
+      renderMainContent();
+      return;
+    }
+
+    // Switch Handicap Value Bets filter
+    const handicapFilterBtn = e.target.closest("[data-handicap-filter]");
+    if (handicapFilterBtn) {
+      state.activeHandicapFilter = handicapFilterBtn.getAttribute("data-handicap-filter");
       saveState();
       renderMainContent();
       return;

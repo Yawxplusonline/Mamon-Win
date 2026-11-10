@@ -3822,3 +3822,195 @@ ul {
   gap: 6px;
   font-size: 12px;
 }
+
+/* ============ HANDICAP & VALUE BETS (+EV) STYLING ============ */
+.handicap-pulse-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  animation: pulseGreen 1.8s infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes pulseGreen {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.nav-handicap {
+  position: relative;
+  font-weight: 600;
+}
+
+.ev-formula-banner {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.ev-formula-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.ev-formula-card {
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ev-formula-card .step-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: #10B981;
+}
+.ev-formula-card .step-math {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 6px 10px;
+  background: var(--ground);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid #10B981;
+}
+.ev-formula-card .step-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.ev-metric-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-size: 12.5px;
+  margin: 12px 0;
+}
+.ev-metric-table th, .ev-metric-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-soft);
+}
+.ev-metric-table tr:last-child th, .ev-metric-table tr:last-child td {
+  border-bottom: none;
+}
+.ev-metric-table th {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-weight: 600;
+  width: 55%;
+}
+.ev-metric-table td {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text);
+}
+.ev-metric-table tr.ev-row-highlight td {
+  color: #10B981;
+  font-size: 14px;
+}
+
+.handicap-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 16px;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  position: relative;
+  overflow: hidden;
+}
+.handicap-card:hover {
+  transform: translateY(-2px);
+  border-color: #10B981;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.12);
+}
+.handicap-card.is-elite {
+  border-left: 4px solid #10B981;
+}
+.handicap-card.is-safe {
+  border-left: 4px solid #3B82F6;
+}
+.handicap-card.is-blowout {
+  border-left: 4px solid #F59E0B;
+}
+
+.handicap-line-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10B981;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.ev-return-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10B981;
+  color: #10B981;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 13px;
+  border-radius: var(--radius-pill);
+}
+
+.handicap-slips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.handicap-slip-card {
+  background: var(--surface);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.handicap-slip-card .slip-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.handicap-slip-leg {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--ground);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  font-size: 13px;
+}

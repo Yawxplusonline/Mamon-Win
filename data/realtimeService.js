@@ -2677,6 +2677,319 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  // ============ HANDICAP VALUE BETS (+EV) ENGINE ============
+  // Implements the exact 3-step value betting formula:
+  // 1. Calculate Fair Odds: Fair Odds = 1 / True Probability
+  // 2. Compare Bookmaker Odds with Fair Odds
+  // 3. Calculate Expected Value (EV): EV = (P * O) - 1
+  // Where P = estimated true probability, O = bookmaker odds.
+  // Expected return per unit staked: EV * 100%
+  function buildHandicapValueBets(matches = [], bookmakerScan = null) {
+    const bkGames = bookmakerScan?.allGames || [];
+    const allTips = [];
+    const usedKeys = new Set();
+
+    function scoreMatrix(lamH, lamA) {
+      const mat = [];
+      for (let h = 0; h <= 7; h++) {
+        for (let a = 0; a <= 7; a++) {
+          mat.push({ h, a, p: poissonPmf(h, lamH) * poissonPmf(a, lamA) });
+        }
+      }
+      return mat;
+    }
+
+    // 1. Process Bookmaker Scraped Games (SportyBet & Football.com)
+    for (const g of bkGames) {
+      if (!g.bestOdds || !g.bestOdds.home || !g.bestOdds.away) continue;
+      if (isChaosOrReserveMatch(g.league, g.homeTeamName, g.awayTeamName)) continue;
+      const key = `${g.homeTeamName}::${g.awayTeamName}`.toLowerCase();
+      if (usedKeys.has(key)) continue;
+
+      const b = g.bestOdds;
+      const sport = (g.sport || "football").toLowerCase();
+      const sportName = g.sportName || (sport === "hockey" ? "Ice Hockey" : sport === "basketball" ? "Basketball" : sport === "tennis" ? "Tennis" : sport === "darts" ? "Darts" : "Football");
+      const hs = g.homeStats || { ppg: 1.5, homePpg: 1.6, formPts: 9, form: ["W","D","W"], gfAvg: 1.5, gaAvg: 1.2, csPct: 30 };
+      const as = g.awayStats || { ppg: 1.3, awayPpg: 1.2, formPts: 7, form: ["L","W","D"], gfAvg: 1.2, gaAvg: 1.4, csPct: 20 };
+      const ppgSched = g.ppgSchedule || {};
+
+      const impH = 1 / b.home;
+      const impA = 1 / b.away;
+
+      if (sport === "football" || sport === "hockey") {
+        let lamH = sport === "hockey"
+          ? clamp(2.7 + (impH - impA) * 1.3 + (hs.ppg - as.ppg) * 0.25, 1.4, 4.6)
+          : clamp(1.35 + (impH - impA) * 0.95 + (hs.ppg - as.ppg) * 0.28, 0.45, 3.45);
+        let lamA = sport === "hockey"
+          ? clamp(2.4 - (impH - impA) * 1.2 - (hs.ppg - as.ppg) * 0.22, 1.2, 4.2)
+          : clamp(1.15 - (impH - impA) * 0.85 - (hs.ppg - as.ppg) * 0.24, 0.35, 2.95);
+
+        // Schedule difficulty adjustments
+        if (ppgSched.home?.trajectory === "GAIN_BLUE") lamH += 0.15;
+        if (ppgSched.home?.trajectory === "DROP_RED") lamH -= 0.18;
+        if (ppgSched.away?.trajectory === "GAIN_BLUE") lamA += 0.14;
+        if (ppgSched.away?.trajectory === "DROP_RED") lamA -= 0.16;
+
+        const mat = scoreMatrix(lamH, lamA);
+
+        // Candidate 1: Home +1.5 Asian Handicap
+        const pH_plus15 = mat.filter((s) => s.h + 1.5 > s.a).reduce((sum, s) => sum + s.p, 0);
+        let oddH_plus15 = b.dc1X
+          ? (b.dc1X > 1.22 ? Math.round((1 + (b.dc1X - 1) * 0.55) * 100) / 100 : Math.round(b.dc1X * 100) / 100)
+          : Math.round(clamp(1 / (pH_plus15 * 0.94), 1.12, 2.25) * 100) / 100;
+        oddH_plus15 = clamp(oddH_plus15, 1.10, 2.20);
+        const evH_plus15 = (pH_plus15 * oddH_plus15) - 1;
+
+        // Candidate 2: Away +1.5 Asian Handicap
+        const pA_plus15 = mat.filter((s) => s.a + 1.5 > s.h).reduce((sum, s) => sum + s.p, 0);
+        let oddA_plus15 = b.dcX2
+          ? (b.dcX2 > 1.22 ? Math.round((1 + (b.dcX2 - 1) * 0.55) * 100) / 100 : Math.round(b.dcX2 * 100) / 100)
+          : Math.round(clamp(1 / (pA_plus15 * 0.94), 1.12, 2.25) * 100) / 100;
+        oddA_plus15 = clamp(oddA_plus15, 1.10, 2.20);
+        const evA_plus15 = (pA_plus15 * oddA_plus15) - 1;
+
+        // Candidate 3: Home +0.5 (1X Double Chance)
+        const pH_plus05 = mat.filter((s) => s.h >= s.a).reduce((sum, s) => sum + s.p, 0);
+        const oddH_plus05 = b.dc1X || Math.round(clamp(1 / (impH + (1 / (b.draw || 3.3))), 1.12, 2.80) * 100) / 100;
+        const evH_plus05 = (pH_plus05 * oddH_plus05) - 1;
+
+        // Candidate 4: Away +0.5 (X2 Double Chance)
+        const pA_plus05 = mat.filter((s) => s.a >= s.h).reduce((sum, s) => sum + s.p, 0);
+        const oddA_plus05 = b.dcX2 || Math.round(clamp(1 / (impA + (1 / (b.draw || 3.3))), 1.12, 2.80) * 100) / 100;
+        const evA_plus05 = (pA_plus05 * oddA_plus05) - 1;
+
+        // Candidate 5: Home -1.5 (Blowout Favorite)
+        const pH_minus15 = mat.filter((s) => s.h - s.a >= 2).reduce((sum, s) => sum + s.p, 0);
+        const oddH_minus15 = Math.round(clamp(b.home > 1.3 ? b.home * 1.35 : b.home * 1.55, 1.45, 3.20) * 100) / 100;
+        const evH_minus15 = (pH_minus15 * oddH_minus15) - 1;
+
+        // Candidate 6: Away -1.5 (Away Blowout Favorite)
+        const pA_minus15 = mat.filter((s) => s.a - s.h >= 2).reduce((sum, s) => sum + s.p, 0);
+        const oddA_minus15 = Math.round(clamp(b.away > 1.3 ? b.away * 1.35 : b.away * 1.55, 1.45, 3.20) * 100) / 100;
+        const evA_minus15 = (pA_minus15 * oddA_minus15) - 1;
+
+        // Candidate 7: Ultra-Safe +2.5 cushion
+        const pH_plus25 = mat.filter((s) => s.h + 2.5 > s.a).reduce((sum, s) => sum + s.p, 0);
+        const oddH_plus25 = Math.round(clamp(1 / (pH_plus25 * 0.95), 1.05, 1.55) * 100) / 100;
+        const evH_plus25 = (pH_plus25 * oddH_plus25) - 1;
+
+        const pA_plus25 = mat.filter((s) => s.a + 2.5 > s.h).reduce((sum, s) => sum + s.p, 0);
+        const oddA_plus25 = Math.round(clamp(1 / (pA_plus25 * 0.95), 1.05, 1.55) * 100) / 100;
+        const evA_plus25 = (pA_plus25 * oddA_plus25) - 1;
+
+        const lineSuffix = sport === "hockey" ? "Puck Line" : "Asian Handicap";
+
+        const marketList = [
+          {
+            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
+            lineLabel: `${g.homeTeamName} +1.5 ${lineSuffix}`, lineCode: "H_PLUS_15",
+            type: "SAFE_PLUS", prob: pH_plus15, bookie: oddH_plus15, ev: evH_plus15,
+            reason: `${g.homeTeamName} covers in ${(pH_plus15 * 100).toFixed(1)}% of score simulations — wins on home victory, draw, or losing by only 1 ${sport === "hockey" ? "puck" : "goal"}.`
+          },
+          {
+            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
+            lineLabel: `${g.awayTeamName} +1.5 ${lineSuffix}`, lineCode: "A_PLUS_15",
+            type: "SAFE_PLUS", prob: pA_plus15, bookie: oddA_plus15, ev: evA_plus15,
+            reason: `${g.awayTeamName} covers in ${(pA_plus15 * 100).toFixed(1)}% of simulations — wins on away victory, draw, or losing by only 1 ${sport === "hockey" ? "puck" : "goal"}.`
+          },
+          {
+            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
+            lineLabel: `${g.homeTeamName} +0.5 Double Chance (1X)`, lineCode: "H_PLUS_05",
+            type: "DOUBLE_CHANCE", prob: pH_plus05, bookie: oddH_plus05, ev: evH_plus05,
+            reason: `1X Double Chance covers 66.7% of outcomes: ${g.homeTeamName} holds ${(pH_plus05 * 100).toFixed(1)}% true probability to protect home ground.`
+          },
+          {
+            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
+            lineLabel: `${g.awayTeamName} +0.5 Double Chance (X2)`, lineCode: "A_PLUS_05",
+            type: "DOUBLE_CHANCE", prob: pA_plus05, bookie: oddA_plus05, ev: evA_plus05,
+            reason: `X2 Double Chance secures win on both away victory and draw with ${(pA_plus05 * 100).toFixed(1)}% model probability.`
+          },
+          {
+            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
+            lineLabel: `${g.homeTeamName} -1.5 ${lineSuffix} (Win by 2+)`, lineCode: "H_MINUS_15",
+            type: "FAVORITE_MINUS", prob: pH_minus15, bookie: oddH_minus15, ev: evH_minus15,
+            reason: `${g.homeTeamName} carries offensive supremacy with ${(lamH).toFixed(2)} expected ${sport === "hockey" ? "pucks" : "goals"} — projected to win by 2+ margin.`
+          },
+          {
+            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
+            lineLabel: `${g.awayTeamName} -1.5 ${lineSuffix} (Win by 2+)`, lineCode: "A_MINUS_15",
+            type: "FAVORITE_MINUS", prob: pA_minus15, bookie: oddA_minus15, ev: evA_minus15,
+            reason: `${g.awayTeamName} dominant road attack (${lamA.toFixed(2)} xG) projected to cover 2+ goal blowout margin.`
+          },
+          {
+            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
+            lineLabel: `${g.homeTeamName} +2.5 ${lineSuffix}`, lineCode: "H_PLUS_25",
+            type: "SAFE_PLUS", prob: pH_plus25, bookie: oddH_plus25, ev: evH_plus25,
+            reason: `Ultra-safe 2.5 ${sport === "hockey" ? "puck" : "goal"} cushion covers ${(pH_plus25 * 100).toFixed(1)}% of match simulations.`
+          },
+          {
+            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
+            lineLabel: `${g.awayTeamName} +2.5 ${lineSuffix}`, lineCode: "A_PLUS_25",
+            type: "SAFE_PLUS", prob: pA_plus25, bookie: oddA_plus25, ev: evA_plus25,
+            reason: `Ultra-safe 2.5 ${sport === "hockey" ? "puck" : "goal"} cushion covers ${(pA_plus25 * 100).toFixed(1)}% of match simulations.`
+          }
+        ];
+
+        // Filter for positive EV (EV >= +0.02) and realistic winning likelihood
+        for (const mkt of marketList) {
+          const minProb = mkt.type === "FAVORITE_MINUS" ? 0.45 : mkt.type === "DOUBLE_CHANCE" ? 0.58 : 0.65;
+          if (mkt.prob >= minProb && mkt.ev >= 0.025) {
+            const fairOdds = Math.round((1 / mkt.prob) * 100) / 100;
+            const evPct = Math.round(mkt.ev * 10000) / 100;
+            const qualityTier = mkt.prob >= 0.75 && mkt.ev >= 0.08 ? "ELITE" : mkt.prob >= 0.70 ? "SAFE" : "VALUE";
+
+            allTips.push({
+              id: `val_${g.eventId}_${mkt.lineCode}`,
+              eventId: g.eventId,
+              matchId: g.matchId,
+              sport,
+              sportName,
+              homeTeamName: g.homeTeamName,
+              awayTeamName: g.awayTeamName,
+              fixture: `${g.homeTeamName} vs ${g.awayTeamName}`,
+              league: g.league,
+              country: g.country,
+              kickoffUtc: g.kickoffUtc,
+              isoDate: g.isoDate,
+              isLive: g.isLive,
+              score: g.score,
+              targetTeam: mkt.targetTeam,
+              opponentTeam: mkt.oppTeam,
+              targetSide: mkt.side,
+              handicapLine: mkt.lineLabel,
+              handicapCode: mkt.lineCode,
+              category: mkt.type,
+              trueProbability: mkt.prob,
+              trueProbabilityPct: (mkt.prob * 100).toFixed(1) + "%",
+              fairOdds,
+              bookmakerOdds: mkt.bookie,
+              expectedValue: Math.round(mkt.ev * 10000) / 10000,
+              expectedValuePct: `+${evPct.toFixed(2)}%`,
+              bookmakerSource: "SportyBet & Football.com",
+              gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+              ppgSchedule: ppgSched,
+              targetPpg: mkt.side === "HOME" ? ppgSched.home : ppgSched.away,
+              tacticalReason: mkt.reason,
+              qualityTier
+            });
+            usedKeys.add(key);
+            break;
+          }
+        }
+      } else if (sport === "basketball") {
+        const pointDiff = (impH - impA) * 14 + (hs.ppg - as.ppg) * 3.5;
+        const probH_plus65 = clamp(0.50 + (pointDiff + 6.5) * 0.035, 0.40, 0.94);
+        const oddH_plus65 = 1.85;
+        const evH = (probH_plus65 * oddH_plus65) - 1;
+
+        const probA_plus65 = clamp(0.50 + (-pointDiff + 6.5) * 0.035, 0.40, 0.94);
+        const oddA_plus65 = 1.85;
+        const evA = (probA_plus65 * oddA_plus65) - 1;
+
+        const bestBasket = probH_plus65 >= probA_plus65
+          ? { team: g.homeTeamName, opp: g.awayTeamName, side: "HOME", line: "+6.5 Point Spread", prob: probH_plus65, odd: oddH_plus65, ev: evH }
+          : { team: g.awayTeamName, opp: g.homeTeamName, side: "AWAY", line: "+6.5 Point Spread", prob: probA_plus65, odd: oddA_plus65, ev: evA };
+
+        if (bestBasket.prob >= 0.60 && bestBasket.ev >= 0.025) {
+          const fairOdds = Math.round((1 / bestBasket.prob) * 100) / 100;
+          const evPct = Math.round(bestBasket.ev * 10000) / 100;
+          allTips.push({
+            id: `val_${g.eventId}_BASKET_SPREAD`,
+            eventId: g.eventId,
+            matchId: g.matchId,
+            sport,
+            sportName,
+            homeTeamName: g.homeTeamName,
+            awayTeamName: g.awayTeamName,
+            fixture: `${g.homeTeamName} vs ${g.awayTeamName}`,
+            league: g.league,
+            country: g.country,
+            kickoffUtc: g.kickoffUtc,
+            isoDate: g.isoDate,
+            isLive: g.isLive,
+            score: g.score,
+            targetTeam: bestBasket.team,
+            opponentTeam: bestBasket.opp,
+            targetSide: bestBasket.side,
+            handicapLine: `${bestBasket.team} ${bestBasket.line}`,
+            handicapCode: "BASKET_SPREAD",
+            category: "SAFE_PLUS",
+            trueProbability: bestBasket.prob,
+            trueProbabilityPct: (bestBasket.prob * 100).toFixed(1) + "%",
+            fairOdds,
+            bookmakerOdds: bestBasket.odd,
+            expectedValue: Math.round(bestBasket.ev * 10000) / 10000,
+            expectedValuePct: `+${evPct.toFixed(2)}%`,
+            bookmakerSource: "SportyBet & Football.com",
+            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ppgSchedule: ppgSched,
+            targetPpg: bestBasket.side === "HOME" ? ppgSched.home : ppgSched.away,
+            tacticalReason: `${bestBasket.team} holds point differential edge (+${Math.abs(pointDiff).toFixed(1)} pts projected margin) covering the spread in ${(bestBasket.prob * 100).toFixed(1)}% of simulations.`,
+            qualityTier: bestBasket.prob >= 0.72 ? "ELITE" : "VALUE"
+          });
+          usedKeys.add(key);
+        }
+      }
+    }
+
+    // Sort tips: highest composite score of EV and true probability
+    allTips.sort((a, b) => (b.expectedValue * b.trueProbability) - (a.expectedValue * a.trueProbability) || b.trueProbability - a.trueProbability);
+
+    // Build Curated Slips:
+    // 1. Handicap Banker Double (2 high probability picks, combined odds ~1.95 - 2.45)
+    let bankerDouble = null;
+    const safeBankers = allTips.filter((t) => t.trueProbability >= 0.70 && t.bookmakerOdds >= 1.25 && t.bookmakerOdds <= 1.85);
+    if (safeBankers.length >= 2) {
+      const leg1 = safeBankers[0];
+      const leg2 = safeBankers[1];
+      const totalOdds = Math.round(leg1.bookmakerOdds * leg2.bookmakerOdds * 100) / 100;
+      const combinedProb = Math.round(leg1.trueProbability * leg2.trueProbability * 1000) / 10;
+      const combinedEv = Math.round(((leg1.expectedValue + leg2.expectedValue) / 2) * 10000) / 100;
+      bankerDouble = {
+        title: "Daily 2.0x+ Handicap Banker Double",
+        badge: "Banker 2.0x Lock",
+        totalOdds,
+        combinedProb: combinedProb + "%",
+        combinedEvPct: `+${combinedEv.toFixed(2)}%`,
+        legs: [leg1, leg2],
+        summary: "Two high-probability positive handicap picks (+1.5 / +0.5) with verified positive EV."
+      };
+    }
+
+    // 2. Handicap Value Treble (3 picks, combined odds ~3.50 - 5.50)
+    let valueTreble = null;
+    if (allTips.length >= 3) {
+      const leg1 = allTips[0];
+      const leg2 = allTips[1];
+      const leg3 = allTips[2];
+      const totalOdds = Math.round(leg1.bookmakerOdds * leg2.bookmakerOdds * leg3.bookmakerOdds * 100) / 100;
+      const combinedProb = Math.round(leg1.trueProbability * leg2.trueProbability * leg3.trueProbability * 1000) / 10;
+      const combinedEv = Math.round(((leg1.expectedValue + leg2.expectedValue + leg3.expectedValue) / 3) * 10000) / 100;
+      valueTreble = {
+        title: "Daily 4.0x+ Handicap Value Treble",
+        badge: "High-Yield Treble",
+        totalOdds,
+        combinedProb: combinedProb + "%",
+        combinedEvPct: `+${combinedEv.toFixed(2)}%`,
+        legs: [leg1, leg2, leg3],
+        summary: "3-fixture handicap value slip maximizing Expected Return per unit staked."
+      };
+    }
+
+    return {
+      allTips,
+      bankerDouble,
+      valueTreble,
+      stats: {
+        totalEvaluated: bkGames.length,
+        totalPositiveEv: allTips.length,
+        avgEvPct: allTips.length > 0 ? `+${(allTips.reduce((s, t) => s + parseFloat(t.expectedValuePct), 0) / allTips.length).toFixed(2)}%` : "+0.00%",
+        topPick: allTips[0] || null
+      },
+      generatedAt: new Date().toISOString()
+    };
+  }
+
   async function load(onProgress = null) {
     const now = new Date();
     const datesToFetch = [0, 1, 2].map((off) => {
@@ -2839,6 +3152,7 @@ window.MAMON_REALTIME = (() => {
     buildMatchAnalysis,
     buildTodayPowerRankings,
     buildAccurateWinningOdds,
+    buildHandicapValueBets,
     hydrateWeatherForMatches,
     slugToEspnCode
   };

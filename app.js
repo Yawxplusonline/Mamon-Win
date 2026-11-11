@@ -1425,44 +1425,77 @@
       }
 
       const schedPool = sourcePool.filter((m) => m.status === "SCHEDULED");
+      const isMatchPre5h = (m) => (
+        RT?.isTipEligiblePreMatch5h
+          ? RT.isTipEligiblePreMatch5h(m)
+          : Boolean(!m.isLive && m.status === "SCHEDULED" && ((m.timestamp || m.estimateStartTime || 0) - Date.now() >= 5 * 3600000))
+      );
+      const isMatchVerified = (m) => Boolean(m.onOneFootball || m.onFootballCom || m.footballComGameId);
+      const pre5Count = schedPool.filter(isMatchPre5h).length;
+      const verifiedCount = schedPool.filter(isMatchVerified).length;
+
+      const byDateFilter = (arr) => (
+        state.selectedDate && state.selectedDate !== "UPCOMING_ALL"
+          ? arr.filter((m) => m.date === state.selectedDate)
+          : arr
+      );
 
       if (state.matchFilter === "SCHEDULED") {
-        filtered = state.selectedDate && state.selectedDate !== "UPCOMING_ALL"
-          ? schedPool.filter((m) => m.date === state.selectedDate)
-          : schedPool;
+        filtered = byDateFilter(schedPool);
+      } else if (state.matchFilter === "PREMATCH_5H") {
+        filtered = byDateFilter(schedPool.filter(isMatchPre5h));
+      } else if (state.matchFilter === "VERIFIED") {
+        filtered = byDateFilter(schedPool.filter(isMatchVerified));
       } else if (state.matchFilter === "DROPS") {
-        let dropsPool = schedPool.filter((m) => Boolean(m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0));
-        if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
-          dropsPool = dropsPool.filter((m) => m.date === state.selectedDate);
-        }
-        filtered = dropsPool;
+        filtered = byDateFilter(schedPool.filter((m) => Boolean(m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0)));
       } else if (state.matchFilter === "ALERTS") {
-        let alertsPool = schedPool.filter((m) => Boolean(m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length));
-        if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
-          alertsPool = alertsPool.filter((m) => m.date === state.selectedDate);
-        }
-        filtered = alertsPool;
+        filtered = byDateFilter(schedPool.filter((m) => Boolean(m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)));
       } else if (state.matchFilter === "FT" && allowCompletedToggle) {
         filtered = finishedTodayMatches
           .filter((m) => !isNcaaOrWomenMatch(m))
           .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
       } else {
-        filtered = schedPool;
+        filtered = byDateFilter(schedPool);
       }
 
       const upcomingModes = [
-        { id: "SCHEDULED", label: "Upcoming Fixtures", count: schedCount },
-        { id: "DROPS", label: "Dropping Odds", count: dropsCount },
-        { id: "ALERTS", label: "Inj / Susp Alerts", count: alertsCount }
+        { id: "SCHEDULED", icon: "📅", label: "Upcoming Fixtures", count: schedCount },
+        { id: "PREMATCH_5H", icon: "🕒", label: "≥5h Before KO", count: pre5Count },
+        { id: "VERIFIED", icon: "⚽", label: "OF + FB.com", count: verifiedCount },
+        { id: "DROPS", icon: "📉", label: "Dropping Odds", count: dropsCount },
+        { id: "ALERTS", icon: "⚠️", label: "Inj / Susp Alerts", count: alertsCount }
       ];
       if (allowCompletedToggle && finishedTodayMatches.length > 0) {
-        upcomingModes.push({ id: "FT", label: "Completed Today", count: finishedTodayMatches.length });
+        upcomingModes.push({ id: "FT", icon: "✅", label: "Completed Today", count: finishedTodayMatches.length });
       }
+
+      // Build complete Matchday pills (DATA.DATES + extra active upcoming dates, capped neatly with live counts)
+      const dateCountMap = new Map();
+      for (const m of schedPool) {
+        if (m.date) dateCountMap.set(m.date, (dateCountMap.get(m.date) || 0) + 1);
+      }
+      const baseDates = Array.isArray(DATA.DATES) ? [...DATA.DATES] : [{ id: "UPCOMING_ALL", label: "All Upcoming Dates" }];
+      const knownDateIds = new Set(baseDates.map((d) => d.id));
+      const extraDateEntries = Array.from(dateCountMap.keys())
+        .filter((dIso) => !knownDateIds.has(dIso) && /^\d{4}-\d{2}-\d{2}$/.test(dIso))
+        .sort()
+        .slice(0, 3)
+        .map((dIso) => {
+          const dtObj = new Date(`${dIso}T12:00:00Z`);
+          const lbl = Number.isFinite(dtObj.getTime())
+            ? dtObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
+            : dIso;
+          return { id: dIso, label: lbl };
+        });
+      const matchdayTabs = [...baseDates, ...extraDateEntries].map((d) => ({
+        ...d,
+        count: d.id === "UPCOMING_ALL" ? schedPool.length : (dateCountMap.get(d.id) || 0)
+      }));
 
       toolbarHtml = showToolbar
         ? `
           <div class="toolbar-card upcoming-toolbar-card">
-            <!-- Row 1: Upcoming Filters (NO LIVE GAMES TAB) -->
+            <!-- Row 1: Full-Width Upcoming Filter Modes -->
             <div class="toolbar-primary-row">
               <div class="toolbar-modes" role="tablist" aria-label="Upcoming fixture filters">
                 ${upcomingModes
@@ -1470,26 +1503,29 @@
                     const active = state.matchFilter === f.id;
                     return `
                       <button type="button" class="toolbar-mode-tab${active ? " is-active" : ""}" data-filter="${f.id}" aria-selected="${active}">
-                        <span class="toolbar-mode-label">${f.id === "SCHEDULED" ? "📅 " : f.id === "DROPS" ? "📉 " : f.id === "ALERTS" ? "⚠️ " : ""}${escapeHtml(f.label)}</span>
+                        <span class="toolbar-mode-label">${f.icon} ${escapeHtml(f.label)}</span>
                         <span class="toolbar-count-badge">${f.count}</span>
                       </button>
                     `;
                   })
                   .join("")}
               </div>
-              <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync upcoming fixtures from SportyBet, Football.com & ESPN">
+              <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync upcoming fixtures from SportyBet, Football.com &amp; ESPN">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
                 Sync Fixtures
               </button>
             </div>
 
-            <!-- Row 2: Matchday Date Selector -->
+            <!-- Row 2: Full-Width Matchday Date Selector with Fixture Counts -->
             <div class="toolbar-sub-row">
               <span class="toolbar-sub-label">Matchday:</span>
               <div class="date-strip" role="tablist" aria-label="Upcoming matchdays">
-                ${(DATA.DATES || [])
+                ${matchdayTabs
                   .map(
-                    (d) => `<button type="button" class="date-pill${state.selectedDate === d.id ? " is-active" : ""}" data-date="${d.id}">${escapeHtml(d.label)}</button>`
+                    (d) => `<button type="button" class="date-pill${state.selectedDate === d.id ? " is-active" : ""}" data-date="${d.id}">
+                      <span>${escapeHtml(d.label)}</span>
+                      <span class="date-count-badge">${d.count}</span>
+                    </button>`
                   )
                   .join("")}
               </div>
@@ -3537,19 +3573,28 @@
       ? `Upcoming scheduled matches belonging strictly to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com.`
       : "Verified upcoming fixtures across Football, Tennis, Basketball, Darts, and Ice Hockey · Zero live games.";
 
+    const pre5HeroCount = schedMatchesPool.filter((m) => (
+      RT?.isTipEligiblePreMatch5h
+        ? RT.isTipEligiblePreMatch5h(m)
+        : Boolean(!m.isLive && ((m.timestamp || m.estimateStartTime || 0) - Date.now() >= 5 * 3600000))
+    )).length;
+
     return `
-      <div class="hero-banner" style="margin-bottom:12px; padding:16px 20px; border-left:4px solid var(--brand);">
-        <div class="flex items-center justify-between flex-wrap gap-2">
+      <div class="hero-banner" style="margin-bottom:12px; padding:18px 22px; border-left:4px solid var(--brand);">
+        <div class="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div class="flex items-center gap-2 mb-1">
-              <span class="font-mono text-xs font-bold uppercase tracking-wider text-brand">📅 Upcoming Fixtures Section Only</span>
+              <span class="font-mono text-xs font-bold uppercase tracking-wider" style="color:#7CE8C4;">📅 Upcoming Fixtures Section Only</span>
             </div>
-            <h1 style="font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px;">${bannerTitle}</h1>
-            <p style="font-size:13px; color:var(--text-secondary); margin:0;">${bannerDesc}</p>
+            <h1 style="font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px; color:#FFFFFF;">${bannerTitle}</h1>
+            <p style="font-size:13px; color:#D1E0D9; margin:0;">${bannerDesc}</p>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="status-pill font-mono text-xs" style="background:var(--ground-subtle); padding:4px 10px; border-radius:var(--radius-pill); border:1px solid var(--line-soft);">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag font-mono text-xs" style="background:rgba(16,185,129,0.16); color:#7CE8C4; border:1px solid rgba(124,232,196,0.35); padding:5px 12px; font-weight:700;">
               ${schedMatchesPool.length} Upcoming Fixtures
+            </span>
+            <span class="sure-pill-tag font-mono text-xs" style="background:rgba(59,130,246,0.18); color:#BFDBFE; border:1px solid rgba(147,197,253,0.38); padding:5px 12px; font-weight:700;">
+              🕒 ${pre5HeroCount} ≥5h Before KO
             </span>
           </div>
         </div>

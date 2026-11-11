@@ -813,11 +813,11 @@ ul {
   border-radius: 12px;
   border: 1px solid var(--line-soft);
   background: var(--card);
-  padding: 12px 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 .live-toolbar-card {
@@ -844,19 +844,35 @@ ul {
   flex-wrap: wrap;
 }
 
+.upcoming-toolbar-card .toolbar-primary-row {
+  align-items: stretch;
+}
+
 .toolbar-modes {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.upcoming-toolbar-card .toolbar-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
 }
 
 .toolbar-mode-tab {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 15px;
-  border-radius: 9999px;
+  justify-content: center;
+  flex: 1 0 auto;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--card);
   font-family: inherit;
@@ -866,6 +882,20 @@ ul {
   cursor: pointer;
   transition: all 0.18s ease;
   user-select: none;
+  white-space: nowrap;
+}
+
+.upcoming-toolbar-card .refresh-btn {
+  min-height: 38px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .toolbar-mode-tab:hover {
@@ -943,8 +973,8 @@ ul {
 .toolbar-sub-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-top: 8px;
+  gap: 12px;
+  padding-top: 10px;
   border-top: 1px dashed var(--line-soft);
   flex-wrap: wrap;
 }
@@ -974,9 +1004,23 @@ ul {
 .date-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex: 1 1 320px;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+@media (min-width: 768px) {
+  .date-strip {
+    display: flex;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+  .date-pill {
+    flex: 1 0 auto;
+    justify-content: center;
+  }
 }
 
 .date-strip::-webkit-scrollbar {
@@ -984,28 +1028,52 @@ ul {
 }
 
 .date-pill {
-  padding: 6px 13px;
-  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 10px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--ground-subtle);
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
   white-space: nowrap;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
+}
+
+.date-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.07);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
 }
 
 .date-pill:hover {
   color: var(--text);
+  background: var(--card);
   border-color: var(--line-strong);
 }
 
 .date-pill.is-active {
   background: var(--brand);
+  border-color: var(--brand);
   color: #ffffff;
   font-weight: 700;
-  box-shadow: 0 2px 4px rgba(10, 123, 92, 0.2);
+  box-shadow: 0 2px 6px rgba(10, 123, 92, 0.22);
+}
+
+.date-pill.is-active .date-count-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
 
 .filter-row {
@@ -1400,7 +1468,7 @@ ul {
 @media (min-width: 1100px) {
   .match-desktop {
     gap: 16px;
-    grid-template-columns: minmax(215px, 270px) minmax(160px, 1fr) 114px minmax(160px, 1fr) minmax(215px, 270px);
+    grid-template-columns: minmax(250px, 340px) minmax(150px, 1fr) 114px minmax(150px, 1fr) minmax(250px, 340px);
   }
 }
 
@@ -1546,9 +1614,10 @@ ul {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
-  padding-right: 6px;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-right: 4px;
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -1929,11 +1998,23 @@ ul {
 .standings-tabs {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--line-soft);
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+@media (min-width: 768px) {
+  .standings-tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    overflow-x: visible;
+  }
+  .standings-tabs .filter-chip {
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 .standings-tabs::-webkit-scrollbar {

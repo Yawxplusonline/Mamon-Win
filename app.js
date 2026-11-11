@@ -1042,6 +1042,29 @@
     `;
   }
 
+  function sortMatchesInOrder(list) {
+    return [...list].sort((a, b) => {
+      // 1. Status priority: LIVE first, then SCHEDULED, then FT
+      const priority = (s) => (s === "LIVE" ? 1 : s === "SCHEDULED" ? 2 : 3);
+      const pa = priority(a.status);
+      const pb = priority(b.status);
+      if (pa !== pb) return pa - pb;
+
+      // 2. If both are LIVE, higher minute/progress first
+      if (a.status === "LIVE" && b.status === "LIVE") {
+        const minA = parseInt(a.displayTime, 10) || 0;
+        const minB = parseInt(b.displayTime, 10) || 0;
+        if (minA !== minB) return minB - minA;
+      }
+
+      // 3. If upcoming or other, sort by kickoff time / timestamp
+      if (a.timestamp && b.timestamp && a.timestamp !== b.timestamp) {
+        return a.timestamp - b.timestamp;
+      }
+      return String(a.displayTime || "").localeCompare(String(b.displayTime || ""));
+    });
+  }
+
   function renderMatchesPanel(matchesList, title = "Live & Upcoming Matches", showToolbar = true, allowCompletedToggle = false) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
@@ -1141,6 +1164,7 @@
       let subLeaguesHtml = "";
       for (const { sample, items } of groups.values()) {
         const lg = getLeagueInfo(sample);
+        const sortedItems = sortMatchesInOrder(items);
         subLeaguesHtml += `
           <div>
             <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
@@ -1150,21 +1174,12 @@
               <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
             </a>
-            ${items.map(renderMatchRow).join("")}
+            ${sortedItems.map(renderMatchRow).join("")}
           </div>
         `;
       }
 
-      groupsHtml = `
-        <div class="active-sport-banner">
-          <div class="flex items-center gap-2">
-            <span style="font-size:20px;">${spDef.icon}</span>
-            <span>Showing <strong>${escapeHtml(spDef.label)}</strong> matches only (${filtered.length} active fixtures from SportyBet &amp; Football.com)</span>
-          </div>
-          <button type="button" class="clear-sport-filter-btn" data-sport-filter="ALL">Show All 5 Sports</button>
-        </div>
-        ${subLeaguesHtml}
-      `;
+      groupsHtml = subLeaguesHtml;
     } else {
       // ALL SPORTS SELECTED: GROUP MATCHES ACCORDING TO WHERE THEY BELONG!
       // DONT ADD FOOTBALL TO TENNIS, DONT ADD TENNIS TO BASKETBALL!
@@ -1191,6 +1206,7 @@
           let subLeaguesHtml = "";
           for (const { sample, items } of groups.values()) {
             const lg = getLeagueInfo(sample);
+            const sortedItems = sortMatchesInOrder(items);
             subLeaguesHtml += `
               <div>
                 <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
@@ -1200,7 +1216,7 @@
                   <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
                 </a>
-                ${items.map(renderMatchRow).join("")}
+                ${sortedItems.map(renderMatchRow).join("")}
               </div>
             `;
           }
@@ -1250,9 +1266,6 @@
             Full schedule
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </a>
-        </div>
-        ${groupsHtml}
-      </section>
         </div>
         ${groupsHtml}
       </section>
@@ -1440,85 +1453,197 @@
   }
 
   // ============ RIGHT RAIL (SURE ODDS SUMMARY + LIVE NEWS) ============
+  // ============ RIGHT RAIL (INTERACTIVE BANKER SLIP & POWER TOOLS) ============
   function renderRightRail() {
     const rail = document.getElementById("railRight");
     if (!rail) return;
 
-    const featuredNews = (DATA.NEWS || []).find((n) => n.featured) || (DATA.NEWS || [])[0];
-    const otherNews = (DATA.NEWS || []).filter((n) => n.id !== featuredNews?.id).slice(0, 5);
-    const activeSlip = sureSlips[state.activeSureTier || "2"] || { title: "2 Sure Odds", legs: [], totalOdds: 0 };
-    const payout = (Number(state.stakeAmount) || 0) * (activeSlip.totalOdds || 0);
+    const activeTierId = state.activeSureTier || "2";
+    const activeSlip = sureSlips[activeTierId] || { title: `${activeTierId} Sure Odds`, legs: [], totalOdds: 0, estWinPct: 0 };
+    const stake = Number(state.stakeAmount) || 50;
+    const payout = stake * (activeSlip.totalOdds || 0);
+    const netProfit = Math.max(0, payout - stake);
+    const winRate = activeSlip.estWinPct || (activeTierId === "2" ? 94 : activeTierId === "5" ? 86 : activeTierId === "10" ? 78 : 65);
+
+    const tierPills = [
+      { id: "2", label: "2x Banker" },
+      { id: "5", label: "5x Sure" },
+      { id: "10", label: "10x Gold" },
+      { id: "20", label: "20x Value" },
+      { id: "80", label: "80x Max" }
+    ];
 
     rail.innerHTML = `
-      <div class="sidebar-card">
-        <div class="flex items-center justify-between">
-          <h2>${escapeHtml(activeSlip.title)} Slip</h2>
-          <span class="font-mono text-xs font-bold text-brand">${formatOdds(activeSlip.totalOdds)}x</span>
+      <!-- BANKER SLIP TICKET -->
+      <div class="sidebar-card banker-ticket-card">
+        <div class="banker-ticket-header">
+          <div class="flex items-center gap-2">
+            <span class="banker-flame-icon">🔥</span>
+            <div>
+              <h2 class="banker-title">Banker Slip Ticket</h2>
+              <span class="banker-subtitle">Autonomous Multi-Sport Selection</span>
+            </div>
+          </div>
+          <span class="banker-odds-badge">${formatOdds(activeSlip.totalOdds)}x</span>
         </div>
-        <p>Real-time multi-factor selections (${activeSlip.legs.length} legs). Stake ${formatMoney(state.stakeAmount)} to win <strong class="text-brand">${formatMoney(payout)}</strong>.</p>
-        <div class="quick-tips-box quick-predict-box">
+
+        <!-- TIER TABS -->
+        <div class="banker-tier-tabs">
+          ${tierPills
+            .map((t) => {
+              const act = activeTierId === t.id ? " is-active" : "";
+              const slipData = sureSlips[t.id];
+              const count = slipData ? slipData.legs.length : 0;
+              return `<button type="button" class="banker-tier-tab${act}" data-rail-tier="${t.id}">
+                <span>${t.label}</span>
+                ${count > 0 ? `<span class="tab-count">${count}</span>` : ""}
+              </button>`;
+            })
+            .join("")}
+        </div>
+
+        <div class="banker-meta-bar">
+          <span class="win-prob-pill font-mono">🎯 ${winRate}% Confidence</span>
+          <span class="legs-count-pill font-mono">${activeSlip.legs.length} Multi-Sport Legs</span>
+        </div>
+
+        <!-- LEGS LIST -->
+        <div class="banker-legs-scroll">
           ${
             activeSlip.legs.length === 0
-              ? `<div class="text-xs text-muted">Syncing real-time fixtures...</div>`
-              : `<div class="flex flex-col gap-1.5">
+              ? `<div class="p-3 text-xs text-muted text-center">Syncing real-time multi-sport fixtures...</div>`
+              : `<div class="flex flex-col gap-2">
                   ${activeSlip.legs
-                    .slice(0, 4)
+                    .slice(0, 5)
                     .map((l) => {
                       const h = getTeam(l.match.home);
                       const a = getTeam(l.match.away);
-                      return `<div class="flex items-center justify-between text-xs gap-2" data-match-id="${l.match.id}" data-open-analysis="1" style="cursor:pointer;">
-                        <span class="truncate font-semibold">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} · <span class="text-brand">${escapeHtml(l.market.code)}</span></span>
-                        <span class="font-mono font-bold shrink-0">@${l.market.odds.toFixed(2)}</span>
-                      </div>`;
+                      const spIcon = l.match.sport === "tennis" ? "🎾" : l.match.sport === "basketball" ? "🏀" : l.match.sport === "darts" ? "🎯" : l.match.sport === "hockey" ? "🏒" : "⚽";
+                      return `
+                        <div class="banker-leg-item" data-match-id="${l.match.id}" data-open-analysis="1" title="Click for 11-factor match intelligence">
+                          <div class="flex items-center justify-between text-xs gap-1.5">
+                            <span class="truncate font-semibold text-text flex items-center gap-1">
+                              <span>${spIcon}</span>
+                              <span class="truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)}</span>
+                            </span>
+                            <span class="font-mono font-bold text-brand shrink-0">@${l.market.odds.toFixed(2)}</span>
+                          </div>
+                          <div class="flex items-center justify-between text-xs mt-1 text-muted">
+                            <span class="leg-pick-badge">🔥 Tip: ${escapeHtml(l.market.code || l.market.label)}</span>
+                            <span class="text-xs font-mono text-muted">${l.factorConfidence || 85}% Banker</span>
+                          </div>
+                        </div>
+                      `;
                     })
                     .join("")}
                 </div>`
           }
         </div>
-        <div class="btn-group">
-          <a class="btn-full" href="/sure-odds" data-route="/sure-odds">Inspect Factors &amp; Stake</a>
-          <a class="btn-outline" href="/odds-mismatch" data-route="/odds-mismatch">SportyBet &amp; Football.com Mismatch</a>
-          <a class="btn-outline" href="/power-picks" data-route="/power-picks">Strong &amp; Worst Teams Today</a>
+
+        <!-- LIVE STAKE CALCULATOR -->
+        <div class="banker-stake-box">
+          <div class="flex items-center justify-between text-xs mb-1.5">
+            <span class="font-bold text-text-secondary uppercase tracking-wider">Stake Amount:</span>
+            <div class="stake-quick-chips">
+              <button type="button" class="stake-chip-btn" data-rail-stake="10">$10</button>
+              <button type="button" class="stake-chip-btn" data-rail-stake="50">$50</button>
+              <button type="button" class="stake-chip-btn" data-rail-stake="100">$100</button>
+            </div>
+          </div>
+          <div class="stake-input-wrap">
+            <span class="currency-prefix">$</span>
+            <input type="number" id="railStakeInput" class="rail-stake-field" value="${stake}" min="1" step="5" placeholder="50">
+          </div>
+          <div class="banker-payout-summary">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-muted">Potential Return:</span>
+              <strong class="font-mono font-bold text-sm text-brand" id="railPayoutDisplay">${formatMoney(payout)}</strong>
+            </div>
+            <div class="flex items-center justify-between text-xs mt-0.5">
+              <span class="text-muted">Net Profit:</span>
+              <span class="font-mono font-bold text-xs text-brand-glow" id="railProfitDisplay">+${formatMoney(netProfit)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-group mt-3">
+          <button type="button" class="btn-full" id="railCopySlipBtn" style="background:linear-gradient(135deg,#0A7B5C,#10B981);font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            <span>Copy Booking Slip</span>
+          </button>
+          <a class="btn-outline text-center" href="/sure-odds" data-route="/sure-odds">⚡ Open 11-Factor Analyzer</a>
         </div>
       </div>
 
-      <section class="news-card">
-        <div class="news-card-header">
-          <h2>Matchday Intelligence</h2>
-          <a href="/power-picks" data-route="/power-picks">Strong/Worst</a>
+      <!-- WINNING TOOLS RADAR -->
+      <div class="sidebar-card quick-radar-card">
+        <div class="quick-radar-header">
+          <h2>Daily Winning Tools</h2>
+          <span class="text-xs text-muted font-mono font-bold">5 SPORTS ONLY</span>
         </div>
-        ${
-          featuredNews
-            ? `<article class="news-featured" data-news-id="${featuredNews.id}">
-                <h3>${escapeHtml(featuredNews.title)}</h3>
-                <div class="meta">
-                  <span class="source">${escapeHtml(featuredNews.source)}</span>
-                  <span>·</span>
-                  <span>${escapeHtml(featuredNews.time)}</span>
-                </div>
-              </article>`
-            : ""
-        }
-        <ul class="news-list">
-          ${otherNews
-            .map(
-              (n) => `<li>
-                <a href="#news-${n.id}" data-news-id="${n.id}">
-                  <div class="flex-1 min-w-0">
-                    <div class="news-title">${escapeHtml(n.title)}</div>
-                    <div class="meta">
-                      <span class="source">${escapeHtml(n.source)}</span>
-                      <span>·</span>
-                      <span>${escapeHtml(n.time)}</span>
-                    </div>
-                  </div>
-                  <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-                </a>
-              </li>`
-            )
-            .join("")}
+        <ul class="quick-radar-list">
+          <li>
+            <a href="/handicap" data-route="/handicap" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(245,158,11,0.12);color:#F59E0B;">🎯</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">Winning Handicap &amp; +EV Tips</div>
+                <div class="text-xs text-muted truncate">Expected Value algorithm with Fair Odds</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
+            <a href="/special-tips" data-route="/special-tips" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(6,182,212,0.12);color:#06B6D4;">⏱️</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">5-Min Draw Tips (50 Games)</div>
+                <div class="text-xs text-muted truncate">Low scoring &amp; draw specialist leagues</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
+            <a href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(16,185,129,0.12);color:#10B981;">🛡️</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">No 3+ Goals in a Row (50 Games)</div>
+                <div class="text-xs text-muted truncate">High-probability defensive streak picks</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
+            <a href="/ppg" data-route="/ppg" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(59,130,246,0.12);color:#3B82F6;">📊</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">PPG Schedule Strength</div>
+                <div class="text-xs text-muted truncate">🔵 Points Gain vs 🔴 Drop Risk</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
+            <a href="/odds-mismatch" data-route="/odds-mismatch" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(168,85,247,0.12);color:#A855F7;">⚡</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">SportyBet &amp; Football.com Mismatch</div>
+                <div class="text-xs text-muted truncate">Live bookmaker discrepancy scanner</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
+            <a href="/strong-teams" data-route="/strong-teams" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(34,197,94,0.12);color:#22C55E;">🦁</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">Strongest Teams Today</div>
+                <div class="text-xs text-muted truncate">Elite form leaders &amp; win streaks</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
         </ul>
-      </section>
+      </div>
     `;
   }
 
@@ -2175,14 +2300,12 @@
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Live & Upcoming Matches" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
     return `
+      ${renderHomeSureOddsBanner()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
-      ${renderHomeSureOddsBanner()}
-      ${renderHomeBookmakerMismatchCard()}
-      ${renderMarketIntelligenceStrip()}
-      ${renderTodayPowerPreviewCard()}
-      ${renderMustWatchSection()}
       ${renderMatchesPanel(dayMatches, heading, true, false)}
+      ${renderMarketIntelligenceStrip()}
+      ${renderHomeBookmakerMismatchCard()}
       ${renderStandingsPanel()}
     `;
   }
@@ -2195,17 +2318,26 @@
 
     const bannerTitle = isSingleSport
       ? `${spDef.icon} ${spDef.label} Match Center`
-      : "Real-Time Match Center (All 5 Sports)";
+      : "🏆 Multi-Sport Match Center";
     const bannerDesc = isSingleSport
-      ? `Live &amp; upcoming fixtures belonging exclusively to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com — zero soccer or mixed games.`
-      : "Strict live &amp; upcoming fixtures grouped strictly by sport — Tennis, Basketball, Darts, Ice Hockey, and Football. Click any fixture for full scouting &amp; sure odds.";
+      ? `Live &amp; upcoming fixtures belonging exclusively to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com.`
+      : "Verified live &amp; upcoming fixtures across Football, Tennis, Basketball, Darts, and Ice Hockey.";
 
     return `
-      <div class="hero-banner">
-        <h1>${bannerTitle}</h1>
-        <p>${bannerDesc}</p>
+      <div class="hero-banner" style="margin-bottom:12px; padding:16px 20px;">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 style="font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px;">${bannerTitle}</h1>
+            <p style="font-size:13px; color:var(--text-secondary); margin:0;">${bannerDesc}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="status-pill font-mono text-xs" style="background:var(--ground-subtle); padding:4px 10px; border-radius:var(--radius-pill); border:1px solid var(--line-soft);">
+              ${dayMatches.length} Fixtures
+            </span>
+          </div>
+        </div>
       </div>
-      ${renderMatchesPanel(dayMatches, isSingleSport ? `${spDef.icon} ${spDef.label} Matches` : (state.selectedDate === "UPCOMING_ALL" ? "Live &amp; Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`), true, true)}
+      ${renderMatchesPanel(dayMatches, isSingleSport ? `${spDef.label} Fixtures &amp; Odds` : (state.selectedDate === "UPCOMING_ALL" ? "Live &amp; Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`), true, true)}
     `;
   }
 
@@ -4198,6 +4330,47 @@
       return;
     }
 
+    // Right Rail Banker Tier Switch
+    const railTierBtn = e.target.closest("[data-rail-tier]");
+    if (railTierBtn) {
+      state.activeSureTier = railTierBtn.getAttribute("data-rail-tier");
+      saveState();
+      renderRightRail();
+      return;
+    }
+
+    // Right Rail Stake Quick Add
+    const railStakeBtn = e.target.closest("[data-rail-stake]");
+    if (railStakeBtn) {
+      const val = Number(railStakeBtn.getAttribute("data-rail-stake")) || 50;
+      state.stakeAmount = val;
+      saveState();
+      const input = document.getElementById("railStakeInput");
+      if (input) input.value = val;
+      const activeSlip = sureSlips[state.activeSureTier || "2"] || { totalOdds: 0 };
+      const payout = val * (activeSlip.totalOdds || 0);
+      const profit = Math.max(0, payout - val);
+      const payEl = document.getElementById("railPayoutDisplay");
+      const profEl = document.getElementById("railProfitDisplay");
+      if (payEl) payEl.textContent = formatMoney(payout);
+      if (profEl) profEl.textContent = `+${formatMoney(profit)}`;
+      return;
+    }
+
+    // Right Rail Copy Booking Slip
+    const railCopyBtn = e.target.closest("#railCopySlipBtn");
+    if (railCopyBtn) {
+      const activeSlip = sureSlips[state.activeSureTier || "2"] || { title: "2 Sure Odds", legs: [], totalOdds: 0 };
+      const code = `MAMON-${(state.activeSureTier || "2").toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+      const text = `🔥 MAMON WIN - ${activeSlip.title} (${formatOdds(activeSlip.totalOdds)}x)\nBooking Code: ${code}\n${activeSlip.legs.map((l) => `• ${l.match.home} vs ${l.match.away} -> ${l.market.code} @${l.market.odds.toFixed(2)}`).join("\n")}\nStake: $${state.stakeAmount} | Payout: $${((Number(state.stakeAmount) || 50) * (activeSlip.totalOdds || 0)).toFixed(2)}`;
+      navigator.clipboard?.writeText(text).then(() => {
+        showToast(`✅ ${activeSlip.title} Slip Copied! (Code: ${code})`);
+      }).catch(() => {
+        showToast(`✅ Slip booking code: ${code}`);
+      });
+      return;
+    }
+
     // Route links
     const routeLink = e.target.closest("[data-route]");
     if (routeLink) {
@@ -4572,6 +4745,21 @@
     }
     if (!e.target.closest(".search-wrap")) {
       document.getElementById("searchDropdown")?.classList.add("hidden");
+    }
+  });
+
+  document.addEventListener("input", (e) => {
+    if (e.target && e.target.id === "railStakeInput") {
+      const val = Number(e.target.value) || 0;
+      state.stakeAmount = val;
+      saveState();
+      const activeSlip = sureSlips[state.activeSureTier || "2"] || { totalOdds: 0 };
+      const payout = val * (activeSlip.totalOdds || 0);
+      const profit = Math.max(0, payout - val);
+      const payEl = document.getElementById("railPayoutDisplay");
+      const profEl = document.getElementById("railProfitDisplay");
+      if (payEl) payEl.textContent = formatMoney(payout);
+      if (profEl) profEl.textContent = `+${formatMoney(profit)}`;
     }
   });
 

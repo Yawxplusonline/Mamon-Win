@@ -8,9 +8,9 @@
 }
 
 :root {
-  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
-  --font-headline: 'Fraunces', Georgia, serif;
-  --font-mono: 'IBM Plex Mono', 'SF Mono', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-headline: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', 'SF Mono', monospace;
 
   --brand: #0A7B5C;
   --brand-hover: #096A4F;
@@ -79,7 +79,10 @@ body {
   color: var(--text);
   min-height: 100dvh;
   line-height: 1.5;
+  letter-spacing: -0.011em;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 img {
@@ -243,52 +246,47 @@ ul {
 
 /* Layout */
 .shell {
-  max-width: 1280px;
+  max-width: 1540px;
   margin: 0 auto;
-  padding: 0 12px;
+  padding: 0 16px;
 }
 
 .main-layout {
   display: flex;
-  gap: 12px;
-  padding-bottom: 32px;
-  padding-top: 12px;
+  gap: 20px;
+  padding-bottom: 48px;
+  padding-top: 16px;
   flex: 1;
   width: 100%;
 }
 
 @media (min-width: 1024px) {
   .main-layout {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
 
 .rail-left {
-  width: 260px;
+  display: none !important;
+}
+
+.rail-right {
+  width: 350px;
   flex-shrink: 0;
   display: none;
 }
 
 @media (min-width: 1024px) {
-  .rail-left {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-}
-
-.rail-right {
-  width: 300px;
-  flex-shrink: 0;
-  display: none;
-}
-
-@media (min-width: 768px) {
   .rail-right {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
+    position: sticky;
+    top: 76px;
+    align-self: flex-start;
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
   }
 }
 
@@ -1091,21 +1089,22 @@ ul {
   gap: 12px;
   flex: 1;
   min-width: 0;
-  padding: 9px 10px 9px 0;
+  padding: 10px 14px 10px 0;
 }
 
 @media (min-width: 640px) {
   .match-desktop {
     display: grid;
-    grid-template-columns: 4rem minmax(0, 1fr) 3.4rem minmax(0, 1fr) auto;
+    grid-template-columns: 66px minmax(150px, 1.2fr) 68px minmax(150px, 1.2fr) minmax(210px, auto);
     align-items: center;
-    gap: 8px;
+    gap: 10px;
   }
 }
 
 @media (min-width: 1200px) {
   .match-desktop {
-    gap: 12px;
+    gap: 16px;
+    grid-template-columns: 74px minmax(180px, 1.3fr) 76px minmax(180px, 1.3fr) minmax(230px, auto);
   }
 }
 
@@ -1119,8 +1118,8 @@ ul {
 .match-desktop .time .live-minute {
   font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 700;
-  color: var(--live);
+  font-weight: 800;
+  color: #EF4444;
   white-space: nowrap;
 }
 
@@ -1146,8 +1145,8 @@ ul {
 
 .match-desktop .team-home img,
 .match-desktop .team-away img {
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -1158,43 +1157,50 @@ ul {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 14.5px;
+  font-weight: 600;
   color: var(--text);
+  letter-spacing: -0.01em;
 }
 
 .team-winner {
-  font-weight: 700 !important;
+  font-weight: 800 !important;
+  color: var(--brand-glow) !important;
 }
 
 .match-desktop .score {
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 13.5px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 800;
   color: var(--brand);
   white-space: nowrap;
-  padding: 2px 6px;
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
 }
 
 .match-desktop .score.is-live {
-  color: var(--live-score);
-  background: rgba(229, 57, 53, 0.1);
+  color: #EF4444;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .match-desktop .score.is-vs {
   color: var(--muted);
   background: transparent;
-  font-weight: 500;
+  border-color: transparent;
+  font-weight: 600;
 }
 
 .match-desktop .chevron {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 6px;
   padding-right: 6px;
   white-space: nowrap;
   min-width: 0;
@@ -1212,10 +1218,12 @@ ul {
 
 .match-odds-pill {
   font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-secondary);
-  background: var(--ground-subtle);
-  padding: 2px 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   white-space: nowrap;
 }
@@ -1719,95 +1727,289 @@ ul {
   border-color: var(--brand);
 }
 
-/* News sidebar */
-.news-card {
+/* Banker Bet Slip Ticket in Right Rail */
+.banker-ticket-card {
   border-radius: var(--radius-lg);
-  border: 1px solid var(--line-soft);
+  border: 1px solid rgba(16, 185, 129, 0.28);
   background: var(--card);
-  padding: 12px;
-  box-shadow: var(--shadow-sm);
+  padding: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  position: relative;
+  overflow: hidden;
 }
 
-.news-card-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 8px;
+.banker-ticket-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #10B981, #F59E0B);
 }
 
-.news-card-header h2 {
-  font-family: var(--font-headline);
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.news-card-header a {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--brand);
-  flex-shrink: 0;
-}
-
-.news-featured {
-  display: block;
-  margin-bottom: 12px;
-  cursor: pointer;
-}
-
-.news-featured:hover h3 {
-  color: var(--brand);
-}
-
-.news-featured h3 {
-  font-family: var(--font-headline);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--text);
-  transition: color 0.15s;
-}
-
-.news-featured .meta {
+.banker-ticket-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.banker-flame-icon {
+  font-size: 20px;
+  display: inline-flex;
+  filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5));
+}
+
+.banker-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.banker-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  display: block;
+}
+
+.banker-odds-badge {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.banker-tier-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 10px 0;
+  background: var(--ground-subtle);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-soft);
+}
+
+.banker-tier-tab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.banker-tier-tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.banker-tier-tab.is-active {
+  color: #FFFFFF;
+  background: var(--brand);
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.banker-tier-tab .tab-count {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  opacity: 0.8;
+}
+
+.banker-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  margin-top: 6px;
+  margin-bottom: 8px;
+}
+
+.win-prob-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+}
+
+.legs-count-pill {
   font-size: 11px;
   color: var(--muted);
 }
 
-.news-featured .meta .source {
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--brand);
+.banker-legs-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 12px;
 }
 
-.news-list li a {
+.banker-leg-item {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.banker-leg-item:hover {
+  background: var(--ground-elevated);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.leg-pick-badge {
+  font-weight: 700;
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+  padding: 1.5px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.banker-stake-box {
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: var(--ground);
+  border: 1px solid var(--line-soft);
+}
+
+.stake-quick-chips {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border-top: 1px solid var(--line-soft);
-  padding: 10px 0;
+  gap: 4px;
+}
+
+.stake-chip-btn {
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
-.news-list li a:hover .news-title {
-  color: var(--brand);
+.stake-chip-btn:hover {
+  color: var(--text);
+  border-color: var(--line);
 }
 
-.news-title {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.375;
+.stake-input-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.currency-prefix {
+  position: absolute;
+  left: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.rail-stake-field {
+  width: 100%;
+  padding: 6px 10px 6px 24px;
+  border-radius: var(--radius-md);
+  background: var(--ground-subtle);
+  border: 1px solid var(--line);
   color: var(--text);
-  transition: color 0.15s;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.rail-stake-field:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.banker-payout-summary {
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+/* Winning Tools Radar Card */
+.quick-radar-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line-soft);
+  background: var(--card);
+  padding: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.quick-radar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 8px;
+}
+
+.quick-radar-header h2 {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.quick-radar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.quick-radar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.quick-radar-item:hover {
+  background: var(--ground-subtle);
+}
+
+.radar-item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .news-list .meta {

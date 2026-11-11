@@ -11,7 +11,7 @@
   <link rel="icon" href="/assets/motexiz-mark.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -100,133 +100,72 @@
       </div>
     </header>
 
-    <!-- ============ MAIN 3-COLUMN SHELL ============ -->
+    <!-- ============ MAIN 2-COLUMN DASHBOARD ============ -->
     <main class="shell main-layout" id="appRoot">
-      <aside class="rail-left" id="railLeft"></aside>
       <section class="main-content" id="mainContent" aria-live="polite"></section>
       <aside class="rail-right" id="railRight"></aside>
     </main>
 
     <!-- ============ FOOTER ============ -->
+    <!-- ============ MODERN FOOTER ============ -->
     <footer class="site-footer">
-      <div class="footer-hero">
-        <img src="/assets/footer-bg.svg" alt="" aria-hidden="true">
-        <div class="footer-hero-content">
-          <div class="footer-logo">
-            <img src="/assets/motexiz-mark.svg" alt="" width="28" height="28">
-            <span>mamon win</span>
-          </div>
-          <h2>Where football <span>lives</span>.</h2>
-          <p>Real-time live &amp; upcoming matches, 11-factor tactical match intelligence, and Sure Odds slips from 2 to 1 Million odds across 473 leagues.</p>
-        </div>
-      </div>
-
-      <div class="footer-nav">
+      <div class="footer-nav" style="padding: 32px 0 20px;">
         <div class="footer-grid">
           <div class="footer-col">
-            <h3>Competitions</h3>
-            <ul>
-              <li><a href="/competitions/england-premier-league" data-route="/competitions/england-premier-league">Premier League</a></li>
-              <li><a href="/competitions/spain-la-liga" data-route="/competitions/spain-la-liga">La Liga</a></li>
-              <li><a href="/competitions/italy-serie-a" data-route="/competitions/italy-serie-a">Serie A</a></li>
-              <li><a href="/competitions/germany-bundesliga" data-route="/competitions/germany-bundesliga">Bundesliga</a></li>
-              <li><a href="/competitions/france-ligue-1" data-route="/competitions/france-ligue-1">Ligue 1</a></li>
-              <li><a href="/competitions/uefa-champions-league" data-route="/competitions/uefa-champions-league">Champions League</a></li>
-              <li><a href="/competitions/ghana-premier-league" data-route="/competitions/ghana-premier-league">Ghana Premier League</a></li>
-            </ul>
-          </div>
-
-          <div class="footer-col">
-            <h3>Sure Odds Slips</h3>
-            <ul>
-              <li><a href="/sure-odds?tier=2" data-route="/sure-odds" data-tier-jump="2">2 Sure Odds (Banker)</a></li>
-              <li><a href="/sure-odds?tier=5" data-route="/sure-odds" data-tier-jump="5">5 Sure Odds</a></li>
-              <li><a href="/sure-odds?tier=10" data-route="/sure-odds" data-tier-jump="10">10 Sure Odds</a></li>
-              <li><a href="/sure-odds?tier=80" data-route="/sure-odds" data-tier-jump="80">80 &amp; 100 Sure Odds</a></li>
-              <li><a href="/sure-odds?tier=200" data-route="/sure-odds" data-tier-jump="200">200 &amp; 500 Sure Odds</a></li>
-              <li><a href="/sure-odds?tier=1000000" data-route="/sure-odds" data-tier-jump="1000000">1 Million Sure Odds</a></li>
-            </ul>
-          </div>
-
-          <div class="footer-col">
-            <h3>MAMON WIN</h3>
-            <ul>
-              <li><a href="/" data-route="/">Home Hub</a></li>
-              <li><a href="/sure-odds" data-route="/sure-odds">Sure Odds &amp; 11 Factors</a></li>
-              <li><a href="/dropping-odds" data-route="/dropping-odds">Dropping Odds Scanner</a></li>
-              <li><a href="/ppg" data-route="/ppg">PPG Intelligence &amp; Table</a></li>
-              <li><a href="/strong-teams" data-route="/strong-teams">Strong Teams Today</a></li>
-              <li><a href="/worst-teams" data-route="/worst-teams">Worst Teams Today</a></li>
-              <li><a href="/odds-mismatch" data-route="/odds-mismatch">SportyBet &amp; Football.com Mismatch</a></li>
-              <li><a href="/matches" data-route="/matches">Live &amp; Upcoming</a></li>
-              <li><a href="/search" data-route="/search">Directory Search</a></li>
-            </ul>
-          </div>
-
-          <div class="footer-col">
-            <h3>Coverage</h3>
-            <ul>
-              <li><a href="/competitions/saudi-pro-league" data-route="/competitions/saudi-pro-league">Saudi Pro League</a></li>
-              <li><a href="/competitions/usa-mls" data-route="/competitions/usa-mls">Major League Soccer</a></li>
-              <li><a href="/competitions/netherlands-eredivisie" data-route="/competitions/netherlands-eredivisie">Eredivisie</a></li>
-              <li><a href="/competitions/portugal-primeira-liga" data-route="/competitions/portugal-primeira-liga">Primeira Liga</a></li>
-              <li><a href="/competitions/brazil-serie-a" data-route="/competitions/brazil-serie-a">Brazil Serie A</a></li>
-              <li><a href="/competitions/africa-cup-of-nations" data-route="/competitions/africa-cup-of-nations">Africa Cup of Nations</a></li>
-            </ul>
-          </div>
-
-          <div class="footer-col footer-app">
-            <p>Instant Open Access</p>
-            <p class="app-desc">No sign-up or login wall. Real-time ESPN match feeds, 11-factor scouting reports, and instant Stake-to-Win slips.</p>
-            <div class="app-buttons">
-              <a class="app-btn" href="/sure-odds" data-route="/sure-odds">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                <span class="btn-text">
-                  <span class="small">Launch Engine</span>
-                  <span class="large">Sure Odds 2 – 1M</span>
-                </span>
-              </a>
-              <a class="app-btn" href="/matches" data-route="/matches">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-                <span class="btn-text">
-                  <span class="small">Real-Time Feed</span>
-                  <span class="large">Live &amp; Upcoming</span>
-                </span>
-              </a>
+            <div class="footer-logo mb-2">
+              <img src="/assets/motexiz-mark.svg" alt="" width="26" height="26">
+              <span class="font-bold text-lg text-white">mamon win</span>
             </div>
+            <p class="text-xs text-muted leading-relaxed max-w-xs">
+              Autonomous multi-sport winning intelligence &amp; value odds engine. Real-time statistical analysis across Football, Tennis, Basketball, Darts, and Ice Hockey.
+            </p>
           </div>
-        </div>
-      </div>
 
-      <div class="footer-cta">
-        <div class="footer-cta-inner">
-          <div class="footer-cta-box">
-            <div class="label">11-Factor Sure Odds Engine</div>
-            <h3>Stake smarter with live H2H, Form, Injuries, Suspensions, Clean Sheets &amp; Run-in Analysis</h3>
-            <p>Select 2, 5, 10, 80, 100, 200, 500 or 1 Million Sure Odds built strictly from real-time upcoming &amp; live matches.</p>
-            <a class="btn-cta" href="/sure-odds" data-route="/sure-odds">
-              Open Sure Odds Analyzer
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-            </a>
+          <div class="footer-col">
+            <h3>Winning Tips &amp; Slips</h3>
+            <ul>
+              <li><a href="/special-tips" data-route="/special-tips">⏱️ 5-Minute Draw Tips (50 Games)</a></li>
+              <li><a href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW">🛡️ No 3+ in a Row Tips (50 Games)</a></li>
+              <li><a href="/handicap" data-route="/handicap">🎯 Winning Handicap &amp; +EV Bets</a></li>
+              <li><a href="/sure-odds" data-route="/sure-odds">💎 Sure Odds Banker Slips (2x–1M)</a></li>
+            </ul>
           </div>
-          <button class="back-to-top" id="backToTopBtn" type="button" aria-label="Back to top">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m18 15-6-6-6 6"/>
-            </svg>
-            <span>Top</span>
-          </button>
+
+          <div class="footer-col">
+            <h3>5 Core Sports</h3>
+            <ul>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="football">⚽ Football Matches</a></li>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="tennis">🎾 Tennis Matches</a></li>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="basketball">🏀 Basketball Matches</a></li>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="darts">🎯 Darts Matches</a></li>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="hockey">🏒 Ice Hockey Matches</a></li>
+            </ul>
+          </div>
+
+          <div class="footer-col">
+            <h3>Market Tools</h3>
+            <ul>
+              <li><a href="/odds-mismatch" data-route="/odds-mismatch">⚡ SportyBet &amp; Football.com Mismatch</a></li>
+              <li><a href="/ppg" data-route="/ppg">📊 PPG Schedule Difficulty (Gain/Drop)</a></li>
+              <li><a href="/dropping-odds" data-route="/dropping-odds">📉 Dropping Odds Scanner</a></li>
+              <li><a href="/strong-teams" data-route="/strong-teams">🦁 Strongest Teams Today</a></li>
+              <li><a href="/worst-teams" data-route="/worst-teams">⚠️ Vulnerable Teams Today</a></li>
+            </ul>
+          </div>
         </div>
       </div>
 
       <div class="footer-legal">
         <div class="footer-legal-inner">
-          <span>© 2026 MAMON WIN. All rights reserved.</span>
+          <span class="text-xs text-muted">© 2026 MAMON WIN. Built for High-Probability Winning Everyday.</span>
           <div class="footer-legal-links">
             <a href="#about" data-legal="about">About</a>
-            <a href="#privacy" data-legal="privacy">Privacy Policy</a>
-            <a href="#terms" data-legal="terms">Terms of Service</a>
-            <a href="#cookies" data-legal="cookies">Cookie Settings</a>
-            <a href="#contact" data-legal="contact">Contact</a>
+            <a href="#privacy" data-legal="privacy">Privacy</a>
+            <a href="#terms" data-legal="terms">Terms</a>
+            <button class="back-to-top" id="backToTopBtn" type="button" aria-label="Back to top" style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; font-size:12px; border-radius:var(--radius-pill); background:var(--ground-subtle); color:var(--text); border:1px solid var(--line);">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+              <span>Top</span>
+            </button>
           </div>
         </div>
       </div>

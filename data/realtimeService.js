@@ -3911,12 +3911,15 @@ window.MAMON_REALTIME = (() => {
     const ppg = Number(row?.ppg) || 0;
     const diffPct = Number(row?.diffPct) || 0;
     const remPpg = Number(row?.remainingPpg) || 0;
+    const sport = String(row?.sport || "football").toLowerCase();
+    const isTwoWay = sport === "tennis" || sport === "basketball" || sport === "darts";
     const nextOpp = Array.isArray(row?.remainingOpponents) && row.remainingOpponents.length > 0 ? row.remainingOpponents[0] : null;
     const oppV = nextOpp?.oppVenuePpg;
     const hasWeakNext = typeof oppV === "number" && oppV <= 1.25;
     const hasModNext = typeof oppV === "number" && oppV <= 1.45;
-    const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : "Next league match";
+    const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : `Next ${sport} match`;
     const oppTxt = typeof oppV === "number" ? oppV.toFixed(2) : remPpg.toFixed(2);
+    const oddsTag = nextOpp?.odds ? ` @ ${Number(nextOpp.odds).toFixed(2)}` : "";
 
     if (Array.isArray(row?.remainingOpponents)) {
       row.remainingOpponents = row.remainingOpponents.map((op) => {
@@ -3926,7 +3929,15 @@ window.MAMON_REALTIME = (() => {
         let matchTip = "⏭️ Skip (<1.60 PPG)";
         let tipClass = "is-skip";
         if (ppg >= 1.60) {
-          if (gap >= 0.45 && ov <= 1.35) {
+          if (isTwoWay) {
+            if (gap >= 0.35 && ov <= 1.45) {
+              matchTip = op.venue === "H" ? "💎 Back Winner (1)" : "💎 Back Winner (2)";
+              tipClass = "is-strong";
+            } else {
+              matchTip = "🛡️ Strong PPG · +1.5 Hcap";
+              tipClass = "is-safe";
+            }
+          } else if (gap >= 0.45 && ov <= 1.35) {
             matchTip = op.venue === "H" ? "💎 Back Home Win (1)" : "💎 Back Away Win (2)";
             tipClass = "is-strong";
           } else if (gap >= 0.15) {
@@ -3945,6 +3956,17 @@ window.MAMON_REALTIME = (() => {
     }
 
     if (ppg >= 1.85) {
+      if (isTwoWay) {
+        const market = nextOpp?.venue === "A" ? "Match Winner (2)" : "Match Winner (1)";
+        return {
+          isStrongPpg: true,
+          tier: "STRONG_LOCK",
+          badge: `💎 BACK WINNER (${nextOpp?.venue === "A" ? "2" : "1"})${oddsTag}`,
+          market,
+          nextFixtureTip: `${nextLabel} → Back ${market}${oddsTag}`,
+          reason: `Strong ${ppg.toFixed(2)} PPG (${row.diffLabel || "0%"} run-in) vs opp ${oppTxt} venue PPG.`
+        };
+      }
       if (hasModNext || diffPct >= 0) {
         const market = nextOpp?.venue === "A" ? "Away Win (2) / X2" : "Home Win (1)";
         return {
@@ -3952,7 +3974,7 @@ window.MAMON_REALTIME = (() => {
           tier: "STRONG_LOCK",
           badge: nextOpp?.venue === "A" ? "💎 BACK AWAY WIN (2) / X2" : "💎 BACK HOME WIN (1)",
           market,
-          nextFixtureTip: `${nextLabel} → Back ${market}`,
+          nextFixtureTip: `${nextLabel} → Back ${market}${oddsTag}`,
           reason: `Strong ${ppg.toFixed(2)} PPG (${row.diffLabel || "0%"} run-in) vs opp ${oppTxt} venue PPG.`
         };
       }
@@ -3962,12 +3984,24 @@ window.MAMON_REALTIME = (() => {
         tier: "STRONG_SAFE",
         badge: `🛡️ STRONG PPG · ${market.toUpperCase()}`,
         market,
-        nextFixtureTip: `${nextLabel} → Safe ${market}`,
+        nextFixtureTip: `${nextLabel} → Safe ${market}${oddsTag}`,
         reason: `Elite ${ppg.toFixed(2)} PPG facing tough ${oppTxt} venue opponent (${row.diffLabel || "0%"} REM).`
       };
     }
 
     if (ppg >= 1.60) {
+      if (isTwoWay) {
+        const favorWin = diffPct >= 0 || hasWeakNext;
+        const market = favorWin ? `Winner (${nextOpp?.venue === "A" ? "2" : "1"})` : "+1.5 Handicap Safe";
+        return {
+          isStrongPpg: true,
+          tier: favorWin ? "STRONG_EDGE" : "STRONG_CAUTION",
+          badge: favorWin ? `💎 STRONG PPG · WIN (${nextOpp?.venue === "A" ? "2" : "1"})${oddsTag}` : `🛡️ STRONG PPG · SAFE HCAP`,
+          market,
+          nextFixtureTip: `${nextLabel} → ${market}${oddsTag}`,
+          reason: `Strong ${ppg.toFixed(2)} PPG vs ${oppTxt} opponent venue PPG.`
+        };
+      }
       if (diffPct >= 0 || hasWeakNext) {
         const market = nextOpp?.venue === "A" ? "Away or Draw (X2)" : "Home Win (1) / 1X";
         return {
@@ -3975,7 +4009,7 @@ window.MAMON_REALTIME = (() => {
           tier: "STRONG_EDGE",
           badge: nextOpp?.venue === "A" ? "💎 STRONG PPG · X2 / OVER 1.5" : "💎 STRONG PPG · HOME (1 / 1X)",
           market,
-          nextFixtureTip: `${nextLabel} → ${market}`,
+          nextFixtureTip: `${nextLabel} → ${market}${oddsTag}`,
           reason: `Strong ${ppg.toFixed(2)} PPG with ${diffPct >= 0 ? "favorable" : "manageable"} upcoming fixture (${oppTxt} opp PPG).`
         };
       }
@@ -3985,7 +4019,7 @@ window.MAMON_REALTIME = (() => {
         tier: "STRONG_CAUTION",
         badge: `🛡️ STRONG PPG · ${nextOpp?.venue === "A" ? "X2" : "1X"} SAFE`,
         market,
-        nextFixtureTip: `${nextLabel} → Safe ${market}`,
+        nextFixtureTip: `${nextLabel} → Safe ${market}${oddsTag}`,
         reason: `Strong ${ppg.toFixed(2)} PPG, but remaining fixtures are tougher (${row.diffLabel || "0%"}).`
       };
     }

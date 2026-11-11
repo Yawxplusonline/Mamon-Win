@@ -15,6 +15,10 @@
     NGN: { symbol: "₦", label: "NGN ₦" }
   };
 
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
   function escapeHtml(str) {
     return String(str ?? "")
       .replace(/&/g, "&amp;")
@@ -206,7 +210,9 @@
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
       activeRuninLeague: "england",
-      activeRuninFilter: "ALL", // ALL | FAVORABLE | TOUGH | STRONG_PPG_EASY
+      activeRuninSport: "football", // football | tennis | basketball | darts | hockey
+      activeRuninSportLeague: "ALL",
+      activeRuninFilter: "ALL", // ALL | FAVORABLE | TOUGH | STRONG_PPG_EASY | STRONG_PPG
       standingsLeague: "england-premier-league",
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
       followedLeagues: ["england-premier-league", "spain-la-liga", "uefa-champions-league"],
@@ -369,6 +375,7 @@
     if (h === "/runin" || h === "/run-in-analysis" || h.startsWith("/run-in?") || h.startsWith("/runin?")) {
       if (h.includes("?")) {
         const q = new URLSearchParams(h.split("?")[1]);
+        if (q.get("sport")) state.activeRuninSport = q.get("sport").toLowerCase();
         if (q.get("league")) state.activeRuninLeague = q.get("league").toLowerCase();
         if (q.get("filter")) state.activeRuninFilter = q.get("filter").toUpperCase();
       }
@@ -419,6 +426,7 @@
     if (route === "/ppg-intelligence" || route === "/points-per-game") route = "/ppg";
     if (route.startsWith("/run-in?") || route.startsWith("/runin?")) {
       const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("sport")) state.activeRuninSport = q.get("sport").toLowerCase();
       if (q.get("league")) state.activeRuninLeague = q.get("league").toLowerCase();
       if (q.get("filter")) state.activeRuninFilter = q.get("filter").toUpperCase();
       route = "/run-in";
@@ -1467,68 +1475,85 @@
     }
 
     let groupsHtml = "";
-    if (isLoadingRealtime && liveMatches.length === 0) {
+    const nonFootballSports = ["tennis", "basketball", "darts", "hockey"];
+    if ((isLoadingRealtime && liveMatches.length === 0) || (isLoadingBookmakers && !bookmakerScan && filtered.length === 0)) {
       groupsHtml = `
         <div class="p-4 flex flex-col gap-3">
           ${[1, 2, 3, 4, 5].map(() => `<div data-skeleton style="height:52px;"><div data-skeleton-band></div></div>`).join("")}
         </div>
       `;
-    } else if (filtered.length === 0) {
-      if (isLiveSection) {
-        groupsHtml = `
-          <div class="empty-state">
-            <span style="font-size:32px;">🔴</span>
-            <h3>No live ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches in play right now</h3>
-            <p class="text-sm">Live scores and minutes update automatically as soon as games kick off.</p>
-            <a href="/upcoming" data-route="/upcoming" class="analyze-inline-btn mt-3">View Upcoming Fixtures (${schedCount}) &rarr;</a>
-          </div>
-        `;
-      } else {
-        groupsHtml = `
-          <div class="empty-state">
-            <span style="font-size:32px;">📅</span>
-            <h3>No upcoming ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches scheduled for this selection</h3>
-            <p class="text-sm">Fixtures sync continuously in real-time from SportyBet, Football.com &amp; ESPN.</p>
-            <button type="button" class="analyze-inline-btn mt-3" data-date="UPCOMING_ALL">View All Upcoming Dates &rarr;</button>
-          </div>
-        `;
-      }
     } else if (activeSportKey !== "all") {
-      // SINGLE SPORT ACTIVE: ONLY THIS SPORT'S GAMES APPEAR! (Zero contamination)
-      const groups = new Map();
-      filtered.forEach((m) => {
-        const k = `${m.leagueSlug}||${m.leagueName || ""}`;
-        if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
-        groups.get(k).items.push(m);
-      });
-
-      let subLeaguesHtml = "";
-      for (const { sample, items } of groups.values()) {
-        const lg = getLeagueInfo(sample);
-        const sortedItems = sortMatchesInOrder(items);
-        subLeaguesHtml += `
-          <div>
-            <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
-              <span class="league-hdr-spacer" aria-hidden="true"></span>
-              <span class="league-hdr-center">
-                <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-                <span class="league-name">${escapeHtml(lg.name)}</span>
-                ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
-              </span>
-              <span class="league-hdr-right">
-                <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
-              </span>
-            </a>
-            ${sortedItems.map(renderMatchRow).join("")}
+      // SINGLE SPORT ACTIVE: Non-football sports render the Run-In Difficulty Table format directly
+      if (nonFootballSports.includes(activeSportKey)) {
+        const spMeta = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || spDef;
+        groupsHtml = renderNonFootballRuninSection(spMeta.key, {
+          mode: isLiveSection ? "LIVE" : "SCHEDULED",
+          dateFilter: isLiveSection ? null : (state.matchFilter === "FT" ? null : state.selectedDate),
+          showHeader: true,
+          scopePrefix: isLiveSection ? "live" : "sched"
+        }) || `
+          <div class="empty-state">
+            <span style="font-size:32px;">${spMeta.icon}</span>
+            <h3>No ${isLiveSection ? "live" : "upcoming"} ${escapeHtml(spMeta.label)} Run-In data available</h3>
+            <p class="text-sm">Waiting for real-time fixtures &amp; Sportradar opponent records.</p>
           </div>
         `;
-      }
+      } else if (filtered.length === 0) {
+        if (isLiveSection) {
+          groupsHtml = `
+            <div class="empty-state">
+              <span style="font-size:32px;">🔴</span>
+              <h3>No live ${escapeHtml(spDef.label)} matches in play right now</h3>
+              <p class="text-sm">Live scores and minutes update automatically as soon as games kick off.</p>
+              <a href="/upcoming" data-route="/upcoming" class="analyze-inline-btn mt-3">View Upcoming Fixtures (${schedCount}) &rarr;</a>
+            </div>
+          `;
+        } else {
+          groupsHtml = `
+            <div class="empty-state">
+              <span style="font-size:32px;">📅</span>
+              <h3>No upcoming ${escapeHtml(spDef.label)} matches scheduled for this selection</h3>
+              <p class="text-sm">Fixtures sync continuously in real-time from SportyBet, Football.com &amp; ESPN.</p>
+              <button type="button" class="analyze-inline-btn mt-3" data-date="UPCOMING_ALL">View All Upcoming Dates &rarr;</button>
+            </div>
+          `;
+        }
+      } else {
+        // Football keeps centered league headers & live clock/half/scorelines
+        const groups = new Map();
+        filtered.forEach((m) => {
+          const k = `${m.leagueSlug}||${m.leagueName || ""}`;
+          if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
+          groups.get(k).items.push(m);
+        });
 
-      groupsHtml = subLeaguesHtml;
+        let subLeaguesHtml = "";
+        for (const { sample, items } of groups.values()) {
+          const lg = getLeagueInfo(sample);
+          const sortedItems = sortMatchesInOrder(items);
+          subLeaguesHtml += `
+            <div>
+              <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
+                <span class="league-hdr-spacer" aria-hidden="true"></span>
+                <span class="league-hdr-center">
+                  <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
+                  <span class="league-name">${escapeHtml(lg.name)}</span>
+                  ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
+                </span>
+                <span class="league-hdr-right">
+                  <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+                </span>
+              </a>
+              ${sortedItems.map(renderMatchRow).join("")}
+            </div>
+          `;
+        }
+
+        groupsHtml = subLeaguesHtml;
+      }
     } else {
-      // ALL SPORTS SELECTED: GROUP MATCHES ACCORDING TO WHERE THEY BELONG!
-      // DONT ADD FOOTBALL TO TENNIS, DONT ADD TENNIS TO BASKETBALL!
+      // ALL SPORTS SELECTED: Football keeps centered Fixtures & Odds; Tennis, Basketball, Darts & Ice Hockey use Run-In Difficulty Table
       const sportsToGroup = [
         { key: "football", label: "Football", icon: "⚽" },
         { key: "tennis", label: "Tennis", icon: "🎾" },
@@ -1540,6 +1565,14 @@
       const sectionsHtml = sportsToGroup
         .map((sp) => {
           const spMatches = filtered.filter((m) => (m.sport || "football").toLowerCase() === sp.key);
+          if (sp.key !== "football") {
+            return renderNonFootballRuninSection(sp.key, {
+              mode: isLiveSection ? "LIVE" : "SCHEDULED",
+              dateFilter: isLiveSection ? null : (state.matchFilter === "FT" ? null : state.selectedDate),
+              showHeader: true,
+              scopePrefix: isLiveSection ? "live" : "sched"
+            });
+          }
           if (spMatches.length === 0) return "";
 
           const groups = new Map();
@@ -2313,9 +2346,28 @@
     return "is-skip";
   }
 
-  function renderRuninPlayedChips(playedList, inlineLimit = null) {
+  const RUNIN_SPORTS = [
+    { key: "football", label: "Football", icon: "⚽", entityLabel: "Team" },
+    { key: "tennis", label: "Tennis", icon: "🎾", entityLabel: "Player / Pair" },
+    { key: "basketball", label: "Basketball", icon: "🏀", entityLabel: "Team" },
+    { key: "darts", label: "Darts", icon: "🎯", entityLabel: "Player" },
+    { key: "hockey", label: "Ice Hockey", icon: "🏒", entityLabel: "Team" }
+  ];
+
+  function renderRuninPlayedChips(playedList, inlineLimit = null, rowMeta = null) {
     const list = Array.isArray(playedList) ? playedList : [];
-    if (list.length === 0) return `<span class="text-xs text-muted">Pending fixtures</span>`;
+    if (list.length === 0) {
+      const formArr = Array.isArray(rowMeta?.formFallback) ? rowMeta.formFallback : [];
+      if (formArr.length > 0) {
+        const recTxt = [rowMeta?.homeRecord, rowMeta?.awayRecord].filter(Boolean).join(" / ");
+        const formPills = formArr.map((c) => {
+          const cls = c === "W" ? "is-w" : c === "D" ? "is-d" : "is-l";
+          return `<span class="runin-score-tag ${cls}">${escapeHtml(c)}</span>`;
+        }).join(" ");
+        return `<span class="runin-mini-chip">Form: ${formPills}</span>${recTxt ? `<span class="runin-mini-chip text-muted font-mono">${escapeHtml(recTxt)}</span>` : ""}`;
+      }
+      return `<span class="text-xs text-muted">Pending fixtures</span>`;
+    }
     const subset = inlineLimit ? [...list].slice(-inlineLimit).reverse() : list;
     const chips = subset.map((op) => {
       const resCls = op.result === "W" ? "is-w" : op.result === "D" ? "is-d" : op.result === "L" ? "is-l" : "";
@@ -2349,17 +2401,20 @@
       const oppPpgNum = op.oppVenuePpg !== null && op.oppVenuePpg !== undefined ? Number(op.oppVenuePpg) : null;
       const oppPpgTxt = oppPpgNum !== null ? oppPpgNum.toFixed(2) : "-";
       const oppTone = oppPpgNum === null ? "" : oppPpgNum <= 1.20 ? "color:#16A34A;font-weight:700;" : oppPpgNum >= 1.55 ? "color:#DC2626;font-weight:700;" : "";
+      const liveChipHtml = op.isLive
+        ? `<span class="runin-live-inline"><span class="live-dot"></span>${escapeHtml(op.liveClock || "LIVE")}${op.halfLabel ? ` ${escapeHtml(op.halfLabel)}` : ""}${op.liveScore ? ` · <strong>${escapeHtml(op.liveScore)}</strong>` : ""}</span>`
+        : (op.date ? `<span class="font-mono text-muted" style="font-size:10px;">${escapeHtml(op.date)}</span>` : "");
       if (inlineLimit) {
-        return `<span class="runin-mini-chip" title="${escapeHtml(`${op.label || op.opponent} · Opp Venue PPG ${oppPpgTxt}${op.matchTip ? ` · ${op.matchTip}` : ""}`)}"><span class="${op.venue === "H" ? "v-h" : "v-a"}">${op.venue}</span><strong>${escapeHtml(op.opponent)}</strong><span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span></span>`;
+        return `<span class="runin-mini-chip${op.isLive ? " is-live-chip" : ""}" title="${escapeHtml(`${op.label || op.opponent} · Opp Venue PPG ${oppPpgTxt}${op.matchTip ? ` · ${op.matchTip}` : ""}`)}"><span class="${op.venue === "H" ? "v-h" : "v-a"}">${op.venue}</span><strong>${escapeHtml(op.opponent)}</strong><span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span>${liveChipHtml}</span>`;
       }
       const matchTipBadge = op.matchTip
         ? `<span class="runin-tip-pill ${escapeHtml(op.tipClass || "is-skip")}" style="font-size:9.5px;padding:1px 5px;">${escapeHtml(op.matchTip)}</span>`
         : "";
       return `
-        <span class="runin-opp-chip">
+        <span class="runin-opp-chip${op.isLive ? " is-live-chip" : ""}">
           <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
           <strong>${escapeHtml(op.opponent)}</strong>
-          ${op.date ? `<span class="font-mono text-muted">${escapeHtml(op.date)}</span>` : ""}
+          ${liveChipHtml}
           <span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span>
           ${matchTipBadge}
         </span>
@@ -2371,10 +2426,438 @@
     return chips + extra;
   }
 
-  // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
+  function normSportParticipantKey(name) {
+    return String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9 ]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function buildSportRuninData(sportKey, opts = {}) {
+    const key = String(sportKey || "tennis").toLowerCase();
+    const spMeta = RUNIN_SPORTS.find((s) => s.key === key) || { key, label: key.toUpperCase(), icon: "🏆", entityLabel: "Team" };
+    const mode = String(opts.mode || "ALL").toUpperCase(); // ALL | LIVE | SCHEDULED
+    const dateFilter = opts.dateFilter && opts.dateFilter !== "UPCOMING_ALL" ? opts.dateFilter : null;
+    const leagueFilter = opts.leagueFilter && opts.leagueFilter !== "ALL" ? opts.leagueFilter : null;
+
+    // Collect deduplicated active games belonging strictly to this sport
+    const gamesMap = new Map();
+    const bkGames = Array.isArray(bookmakerScan?.allGames) ? bookmakerScan.allGames : [];
+    for (const g of bkGames) {
+      if ((g.sport || "football").toLowerCase() !== key || isNcaaOrWomenMatch(g)) continue;
+      gamesMap.set(`bm-${g.eventId}`, g);
+    }
+    for (const m of liveMatches) {
+      if ((m.sport || "football").toLowerCase() !== key || isNcaaOrWomenMatch(m)) continue;
+      if (!gamesMap.has(m.id)) {
+        gamesMap.set(m.id, {
+          eventId: m.id,
+          sport: key,
+          homeTeamName: m.homeTeamName || getTeam(m.home, "Home").name,
+          awayTeamName: m.awayTeamName || getTeam(m.away, "Away").name,
+          league: m.leagueName || `${spMeta.label} Competition`,
+          country: m.leagueCountry || "International",
+          isoDate: m.date,
+          kickoffUtc: m.displayTime,
+          isLive: m.status === "LIVE",
+          matchStatus: m.matchStatus || m.halfLabel || (m.status === "LIVE" ? "LIVE" : "Scheduled"),
+          playedSeconds: m.playedSeconds || "",
+          remainingTimeInPeriod: m.remainingTimeInPeriod || "",
+          period: m.period || "",
+          gameScore: m.gameScore || [],
+          pointScore: m.pointScore || "",
+          score: m.status === "LIVE" && Number.isFinite(Number(m.homeScore)) ? `${m.homeScore}:${m.awayScore}` : null,
+          bestOdds: { home: m.odds?.home || 1.85, away: m.odds?.away || 1.95 },
+          homeStats: m.homeStats || {
+            mp: m.homeRecord?.mp || 10, w: m.homeRecord?.w || 5, d: m.homeRecord?.d || 0, l: m.homeRecord?.l || 5,
+            ppg: m.ppgSummary?.homeOverall || 1.5, homePpg: m.ppgSummary?.homeVenue || 1.65, awayPpg: 1.35,
+            form: m.homeForm || [], recentScores: []
+          },
+          awayStats: m.awayStats || {
+            mp: m.awayRecord?.mp || 10, w: m.awayRecord?.w || 4, d: m.awayRecord?.d || 0, l: m.awayRecord?.l || 6,
+            ppg: m.ppgSummary?.awayOverall || 1.35, homePpg: 1.45, awayPpg: m.ppgSummary?.awayVenue || 1.25,
+            form: m.awayForm || [], recentScores: []
+          }
+        });
+      }
+    }
+
+    const allSportGames = Array.from(gamesMap.values());
+    const leaguesList = [...new Set(allSportGames.map((g) => g.league).filter(Boolean))].sort();
+
+    // Filter games cleanly by mode / date / league
+    const filteredGames = allSportGames.filter((g) => {
+      const isLive = Boolean(g.isLive);
+      if (mode === "LIVE" && !isLive) return false;
+      if (mode === "SCHEDULED" && isLive) return false;
+      if (dateFilter && !isLive && g.isoDate && g.isoDate !== dateFilter) return false;
+      if (leagueFilter && g.league !== leagueFilter) return false;
+      return true;
+    });
+
+    // Global lookup of known PPGs within the sport for real opponent strength weighting
+    const statsLookup = new Map();
+    const recordLookup = (name, stats) => {
+      const k = normSportParticipantKey(name);
+      if (!k || !stats) return;
+      if (!statsLookup.has(k)) statsLookup.set(k, stats);
+    };
+    for (const g of allSportGames) {
+      recordLookup(g.homeTeamName, g.homeStats);
+      recordLookup(g.awayTeamName, g.awayStats);
+    }
+
+    const participantMap = new Map();
+    const getOrCreateParticipant = (name, statsObj, leagueName, countryName) => {
+      const k = normSportParticipantKey(name);
+      if (!participantMap.has(k)) {
+        const w = Number(statsObj?.w) || 0;
+        const d = Number(statsObj?.d) || 0;
+        const l = Number(statsObj?.l) || 0;
+        const gp = Number(statsObj?.mp) || (w + d + l) || 10;
+        const pts = w * 3 + d;
+        const finiteOrNull = (v) => (v !== null && v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : null);
+        const ppg = finiteOrNull(statsObj?.ppg) ?? (gp > 0 ? Math.round((pts / gp) * 100) / 100 : 1.50);
+        const homePpg = finiteOrNull(statsObj?.homePpg) ?? ppg;
+        const awayPpg = finiteOrNull(statsObj?.awayPpg) ?? ppg;
+
+        const rawRecent = Array.isArray(statsObj?.recentScores) ? statsObj.recentScores : [];
+        const playedOpponents = rawRecent.map((sc) => {
+          const oppK = normSportParticipantKey(sc.opponent);
+          const oppSt = statsLookup.get(oppK);
+          const v = sc.isHome ? "H" : "A";
+          const oppVenuePpg = oppSt
+            ? Number((v === "H" ? oppSt.awayPpg : oppSt.homePpg) ?? oppSt.ppg)
+            : Math.round(clamp((sc.result === "W" ? 1.24 : sc.result === "D" ? 1.45 : 1.72) - (ppg - 1.50) * 0.10, 0.70, 2.25) * 100) / 100;
+          return {
+            venue: v,
+            opponent: sc.opponent,
+            oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
+            score: sc.score || "",
+            result: sc.result || "",
+            label: `(${v}) ${v === "H" ? "vs" : "at"} ${sc.opponent}`
+          };
+        });
+
+        participantMap.set(k, {
+          key: k,
+          team: name,
+          sport: key,
+          leagueName: leagueName || spMeta.label,
+          country: countryName || "International",
+          gp,
+          w,
+          d,
+          l,
+          pts,
+          ppg: Math.round(ppg * 100) / 100,
+          homePpg,
+          awayPpg,
+          formFallback: Array.isArray(statsObj?.form) ? statsObj.form : [],
+          homeRecord: statsObj?.homeRecord || "",
+          awayRecord: statsObj?.awayRecord || "",
+          playedOpponents,
+          remainingOpponents: [],
+          hasLiveMatch: false
+        });
+      }
+      return participantMap.get(k);
+    };
+
+    for (const g of filteredGames) {
+      const hPart = getOrCreateParticipant(g.homeTeamName, g.homeStats, g.league, g.country);
+      const aPart = getOrCreateParticipant(g.awayTeamName, g.awayStats, g.league, g.country);
+
+      const isLive = Boolean(g.isLive);
+      const clockInfo = isLive
+        ? resolveLiveClockAndHalf({
+            sport: key,
+            status: "LIVE",
+            matchStatus: g.matchStatus,
+            playedSeconds: g.playedSeconds || "",
+            remainingTimeInPeriod: g.remainingTimeInPeriod || "",
+            period: g.period || "",
+            gameScore: g.gameScore || [],
+            pointScore: g.pointScore || "",
+            displayTime: g.matchStatus
+          })
+        : { liveClock: "", halfLabel: "", periodSubScore: "" };
+      const liveScoreStr = isLive && g.score ? String(g.score).replace(/:/g, "-") : "";
+      const timeLabel = isLive ? `${clockInfo.liveClock} ${clockInfo.halfLabel}`.trim() : (g.kickoffUtc || g.isoDate || "Today");
+
+      if (isLive) {
+        hPart.hasLiveMatch = true;
+        aPart.hasLiveMatch = true;
+      }
+
+      hPart.remainingOpponents.push({
+        venue: "H",
+        opponent: g.awayTeamName,
+        oppVenuePpg: Math.round(aPart.awayPpg * 100) / 100,
+        date: timeLabel,
+        isLive,
+        liveClock: clockInfo.liveClock,
+        halfLabel: clockInfo.halfLabel,
+        liveScore: liveScoreStr,
+        odds: g.bestOdds?.home || null,
+        label: `(H) vs ${g.awayTeamName}`
+      });
+
+      aPart.remainingOpponents.push({
+        venue: "A",
+        opponent: g.homeTeamName,
+        oppVenuePpg: Math.round(hPart.homePpg * 100) / 100,
+        date: timeLabel,
+        isLive,
+        liveClock: clockInfo.liveClock,
+        halfLabel: clockInfo.halfLabel,
+        liveScore: liveScoreStr,
+        odds: g.bestOdds?.away || null,
+        label: `(A) at ${g.homeTeamName}`
+      });
+    }
+
+    const rows = Array.from(participantMap.values()).map((rec) => {
+      const playedVals = rec.playedOpponents.map((x) => x.oppVenuePpg).filter((v) => Number.isFinite(v));
+      const playedPpg = playedVals.length > 0
+        ? Math.round((playedVals.reduce((s, v) => s + v, 0) / playedVals.length) * 100) / 100
+        : Math.round(clamp(1.48 - (rec.ppg - 1.50) * 0.14, 0.90, 1.95) * 100) / 100;
+
+      const remVals = rec.remainingOpponents.map((x) => x.oppVenuePpg).filter((v) => Number.isFinite(v));
+      const remainingPpg = remVals.length > 0
+        ? Math.round((remVals.reduce((s, v) => s + v, 0) / remVals.length) * 100) / 100
+        : 1.35;
+
+      const diffPct = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
+      const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
+      const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
+      const remainingBarPct = Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10);
+
+      const row = {
+        ...rec,
+        playedPpg,
+        remainingPpg,
+        remainingBarPct,
+        diffPct,
+        diffLabel,
+        verdict
+      };
+      row.tip = resolveRowRuninTip(row);
+      return row;
+    });
+
+    rows.sort((a, b) => {
+      if (a.hasLiveMatch !== b.hasLiveMatch) return a.hasLiveMatch ? -1 : 1;
+      if (b.ppg !== a.ppg) return b.ppg - a.ppg;
+      return b.pts - a.pts;
+    });
+    rows.forEach((r, idx) => { r.rank = idx + 1; });
+
+    return {
+      ok: rows.length > 0,
+      isMultiSport: true,
+      sport: key,
+      league: { code: key, name: spMeta.label, country: "", flag: spMeta.icon, entityLabel: spMeta.entityLabel },
+      gamesCount: filteredGames.length,
+      leaguesList,
+      table: rows
+    };
+  }
+
+  function renderRuninTableBlock(rows = [], opts = {}) {
+    const scopeKey = String(opts.scopeKey || "england");
+    const entityLabel = opts.entityLabel || "Team";
+    const clickRoute = opts.clickRoute || null;
+    const inlineLimit = opts.inlineLimit || 3;
+
+    const rowsHtml = rows.map((row) => {
+      const expandId = `${scopeKey}:${row.team}`;
+      const isExpanded = expandedRuninTeam === expandId;
+      const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
+      const isStrongPpg = row.ppg >= 1.60;
+      const tip = resolveRowRuninTip(row);
+      const tipCls = getRuninTipPillClass(tip);
+      const playedCount = row.playedOpponents?.length || row.playedCount || (Array.isArray(row.formFallback) ? row.formFallback.length : 0);
+      const remCount = row.remainingOpponents?.length || row.remainingCount || 0;
+
+      const drawerHtml = clickRoute || !isExpanded ? "" : `
+        <tr class="runin-drawer-row">
+          <td colspan="12">
+            <div class="runin-tip-banner">
+              <div>
+                <span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span>
+                <strong class="text-sm ml-2 text-text">${escapeHtml(tip.nextFixtureTip || "")}</strong>
+              </div>
+              <div class="text-xs text-muted">${escapeHtml(tip.reason || "")}</div>
+            </div>
+            <div class="runin-opp-grid">
+              <div>
+                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played &amp; Scorelines (${playedCount} · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Actual scorelines &amp; opponent strength:</div>
+                <div class="runin-opp-list">
+                  ${renderRuninPlayedChips(row.playedOpponents, null, row)}
+                </div>
+              </div>
+              <div>
+                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Upcoming / Live Opponents &amp; Strong PPG Tips (${remCount} · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Upcoming or in-play matchups &amp; Strong PPG match tips:</div>
+                <div class="runin-opp-list">
+                  ${renderRuninUpcomingChips(row.remainingOpponents, null)}
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      const rowAttr = clickRoute
+        ? `data-route="${escapeHtml(clickRoute)}"`
+        : `data-toggle-runin-team="${escapeHtml(expandId)}"`;
+
+      return `
+        <tr class="runin-row" ${rowAttr} title="Click to inspect all Played Scorelines, Upcoming Fixtures &amp; Strong PPG Tips">
+          <td class="font-mono font-bold">${row.rank}</td>
+          <td>
+            <div class="flex items-center gap-1.5">
+              <strong class="text-text">${escapeHtml(row.team)}</strong>
+              ${isStrongPpg ? `<span title="Strong PPG (>= 1.60)">💎</span>` : ""}
+              ${row.hasLiveMatch ? `<span class="live-dot" title="Currently Live In-Play"></span>` : ""}
+              ${clickRoute ? "" : `<span class="text-xs text-muted font-mono">${isExpanded ? "▲" : "▼"}</span>`}
+            </div>
+            ${row.sport && row.sport !== "football" && row.leagueName ? `<div class="text-muted" style="font-size:10.5px;">${escapeHtml(row.leagueName)}</div>` : ""}
+          </td>
+          <td class="text-center font-mono font-bold" style="color:#16A34A;">${row.gp}</td>
+          <td class="text-center font-mono">${row.w}</td>
+          <td class="text-center font-mono">${row.d}</td>
+          <td class="text-center font-mono">${row.l}</td>
+          <td class="text-center font-mono font-bold">${row.pts}</td>
+          <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
+          <td class="runin-fixtures-td">
+            <div class="flex items-center gap-1.5">
+              <span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span>
+              <span class="text-xs text-muted font-mono">(${playedCount} played)</span>
+            </div>
+            <div class="runin-inline-fixtures">
+              ${renderRuninPlayedChips(row.playedOpponents, inlineLimit, row)}
+            </div>
+          </td>
+          <td class="runin-fixtures-td">
+            <div class="runin-rem-cell">
+              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
+              <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
+              <span class="text-xs text-muted font-mono">(${remCount})</span>
+            </div>
+            <div class="runin-inline-fixtures">
+              ${renderRuninUpcomingChips(row.remainingOpponents, inlineLimit)}
+            </div>
+          </td>
+          <td class="text-center"><span class="runin-diff-pill ${diffCls}">${escapeHtml(row.diffLabel)}</span></td>
+          <td class="runin-tip-td">
+            <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
+            <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
+          </td>
+        </tr>
+        ${drawerHtml}
+      `;
+    }).join("");
+
+    return `
+      <div class="runin-table-wrap">
+        <table class="runin-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>${escapeHtml(entityLabel)}</th>
+              <th style="text-align:center;">GP</th>
+              <th style="text-align:center;">W</th>
+              <th style="text-align:center;">D</th>
+              <th style="text-align:center;">L</th>
+              <th style="text-align:center;">Pts</th>
+              <th style="text-align:center;">PPG</th>
+              <th>Played Opponents &amp; Scores (PLD)</th>
+              <th style="color:#3B82F6;">Upcoming / Live Opponents (REM)</th>
+              <th style="text-align:center;">Played vs<br>Remaining</th>
+              <th>Strong PPG Tip</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderNonFootballRuninSection(sportKey, opts = {}) {
+    const data = buildSportRuninData(sportKey, opts);
+    if (!data.ok || data.table.length === 0) return "";
+    const spMeta = RUNIN_SPORTS.find((s) => s.key === sportKey) || { key: sportKey, label: sportKey.toUpperCase(), icon: "🏆", entityLabel: "Team" };
+    const modeLabel = opts.mode === "LIVE" ? "Live In-Play" : opts.mode === "SCHEDULED" ? "Upcoming" : "Live & Upcoming";
+    const scopeKey = `${opts.scopePrefix || "sp"}:${sportKey}:${opts.mode || "ALL"}`;
+    const tableHtml = renderRuninTableBlock(data.table, {
+      scopeKey,
+      entityLabel: spMeta.entityLabel,
+      inlineLimit: 3
+    });
+
+    if (opts.showHeader === false) return tableHtml;
+
+    return `
+      <div class="sport-category-card" data-sport-runin="${spMeta.key}">
+        <div class="sport-category-header is-centered">
+          <span class="sport-hdr-spacer" aria-hidden="true"></span>
+          <div class="sport-hdr-center">
+            <span class="sport-category-icon">${spMeta.icon}</span>
+            <div>
+              <h3 class="sport-category-title">${escapeHtml(spMeta.label)} — Run-In Difficulty Table</h3>
+              <span class="sport-category-subtitle">${data.gamesCount} ${modeLabel} Matches · ${data.table.length} Competitors · Played Scores, Upcoming &amp; Strong PPG Tips</span>
+            </div>
+          </div>
+          <div class="sport-hdr-right">
+            <a class="sport-category-filter-btn" href="/run-in?sport=${escapeHtml(spMeta.key)}" data-route="/run-in?sport=${escapeHtml(spMeta.key)}">
+              Open ${escapeHtml(spMeta.label)} Run-In Center &rarr;
+            </a>
+          </div>
+        </div>
+        ${tableHtml}
+      </div>
+    `;
+  }
+
+  // ============ DEDICATED /run-in SOCCERSTATS.COM & MULTI-SPORT RUN-IN ANALYSIS VIEW ============
   function renderRunInAnalysisView() {
+    const activeSport = String(state.activeRuninSport || "football").toLowerCase();
     const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
-    const { activeCode, isLoadingThisLeague, leagueData, catalog, leagueMeta } = resolveRuninStateForCode(state.activeRuninLeague || "england");
+    const isFootball = activeSport === "football";
+    const spMeta = RUNIN_SPORTS.find((s) => s.key === activeSport) || RUNIN_SPORTS[0];
+
+    let activeCode = "england";
+    let isLoadingThisLeague = false;
+    let leagueData = null;
+    let catalog = [];
+    let leagueMeta = { name: spMeta.label, country: "", flag: spMeta.icon };
+    let multiData = null;
+
+    if (isFootball) {
+      const resolved = resolveRuninStateForCode(state.activeRuninLeague || "england");
+      activeCode = resolved.activeCode;
+      isLoadingThisLeague = resolved.isLoadingThisLeague;
+      leagueData = resolved.leagueData;
+      catalog = resolved.catalog;
+      leagueMeta = resolved.leagueMeta;
+    } else {
+      multiData = buildSportRuninData(activeSport, {
+        mode: "ALL",
+        leagueFilter: state.activeRuninSportLeague || "ALL"
+      });
+      leagueData = multiData;
+      leagueMeta = multiData.league;
+      isLoadingThisLeague = isLoadingBookmakers && multiData.table.length === 0;
+    }
+
     const QUICK_LEAGUES = RUNIN_QUICK_LEAGUES;
     const rawRows = leagueData?.table || [];
 
@@ -2406,12 +2889,12 @@
         <div class="runin-highlight-card" style="border-left:4px solid #16A34A;">
           <div class="text-xs font-mono font-bold" style="color:#16A34A;">🟢 EASIEST REMAINING RUN-IN</div>
           <div class="text-base font-bold mt-1">${escapeHtml(easiestTop?.team || "-")} <span class="runin-diff-pill is-easy ml-1">${escapeHtml(easiestTop?.diffLabel || "0%")}</span></div>
-          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${easiestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${easiestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${easiestTop?.ppg?.toFixed(2) ?? "-"} Team PPG)</div>
+          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${easiestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${easiestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${easiestTop?.ppg?.toFixed(2) ?? "-"} PPG)</div>
         </div>
         <div class="runin-highlight-card" style="border-left:4px solid #DC2626;">
           <div class="text-xs font-mono font-bold" style="color:#DC2626;">🔴 TOUGHEST REMAINING RUN-IN</div>
           <div class="text-base font-bold mt-1">${escapeHtml(toughestTop?.team || "-")} <span class="runin-diff-pill is-tough ml-1">${escapeHtml(toughestTop?.diffLabel || "0%")}</span></div>
-          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${toughestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${toughestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${toughestTop?.ppg?.toFixed(2) ?? "-"} Team PPG)</div>
+          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${toughestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${toughestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${toughestTop?.ppg?.toFixed(2) ?? "-"} PPG)</div>
         </div>
         <div class="runin-highlight-card" style="border-left:4px solid #10B981;">
           <div class="text-xs font-mono font-bold" style="color:#10B981;">💎 STRONG PPG + BEST RUN-IN</div>
@@ -2421,121 +2904,19 @@
       </div>
     `;
 
-    const tableRowsHtml = filteredRows.map((row) => {
-      const isExpanded = expandedRuninTeam === `${activeCode}:${row.team}`;
-      const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
-      const isStrongPpg = row.ppg >= 1.60;
-      const tip = resolveRowRuninTip(row);
-      const tipCls = getRuninTipPillClass(tip);
-      const playedCount = row.playedOpponents?.length || row.playedCount || 0;
-      const remCount = row.remainingOpponents?.length || row.remainingCount || 0;
+    const sportTabsHtml = `
+      <div class="runin-sport-tabs">
+        ${RUNIN_SPORTS.map((sp) => `
+          <button type="button" class="filter-chip${activeSport === sp.key ? " is-active" : ""}" data-runin-sport="${sp.key}">
+            <span>${sp.icon}</span>
+            <span>${escapeHtml(sp.label)} Run-In Table</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
 
-      const drawerHtml = !isExpanded ? "" : `
-        <tr class="runin-drawer-row">
-          <td colspan="12">
-            <div class="runin-tip-banner">
-              <div>
-                <span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span>
-                <strong class="text-sm ml-2 text-text">${escapeHtml(tip.nextFixtureTip || "")}</strong>
-              </div>
-              <div class="text-xs text-muted">${escapeHtml(tip.reason || "")}</div>
-            </div>
-            <div class="runin-opp-grid">
-              <div>
-                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played &amp; Scorelines (${playedCount} matches · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
-                <div class="text-xs text-muted mt-0.5">Actual scorelines (team result) + opponents&rsquo; seasonal home/away PPG:</div>
-                <div class="runin-opp-list">
-                  ${renderRuninPlayedChips(row.playedOpponents, null)}
-                </div>
-              </div>
-              <div>
-                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Remaining Opponents &amp; Strong PPG Tips (${remCount} matches · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
-                <div class="text-xs text-muted mt-0.5">Upcoming opponents&rsquo; venue PPG + Strong PPG match recommendations:</div>
-                <div class="runin-opp-list">
-                  ${renderRuninUpcomingChips(row.remainingOpponents, null)}
-                </div>
-              </div>
-            </div>
-          </td>
-        </tr>
-      `;
-
-      return `
-        <tr class="runin-row" data-toggle-runin-team="${escapeHtml(`${activeCode}:${row.team}`)}" title="Click to expand all Played Scorelines, Upcoming Fixtures &amp; Strong PPG Tips">
-          <td class="font-mono font-bold">${row.rank}</td>
-          <td>
-            <div class="flex items-center gap-1.5">
-              <strong class="text-text">${escapeHtml(row.team)}</strong>
-              ${isStrongPpg ? `<span title="Strong PPG Team (>= 1.60)">💎</span>` : ""}
-              <span class="text-xs text-muted font-mono">${isExpanded ? "▲" : "▼"}</span>
-            </div>
-          </td>
-          <td class="text-center font-mono font-bold" style="color:#16A34A;">${row.gp}</td>
-          <td class="text-center font-mono">${row.w}</td>
-          <td class="text-center font-mono">${row.d}</td>
-          <td class="text-center font-mono">${row.l}</td>
-          <td class="text-center font-mono font-bold">${row.pts}</td>
-          <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
-          <td class="runin-fixtures-td">
-            <div class="flex items-center gap-1.5">
-              <span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span>
-              <span class="text-xs text-muted font-mono">(${playedCount} played)</span>
-            </div>
-            <div class="runin-inline-fixtures">
-              ${renderRuninPlayedChips(row.playedOpponents, 3)}
-            </div>
-          </td>
-          <td class="runin-fixtures-td">
-            <div class="runin-rem-cell">
-              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
-              <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
-              <span class="text-xs text-muted font-mono">(${remCount})</span>
-            </div>
-            <div class="runin-inline-fixtures">
-              ${renderRuninUpcomingChips(row.remainingOpponents, 3)}
-            </div>
-          </td>
-          <td class="text-center"><span class="runin-diff-pill ${diffCls}">${escapeHtml(row.diffLabel)}</span></td>
-          <td class="runin-tip-td">
-            <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
-            <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
-          </td>
-        </tr>
-        ${drawerHtml}
-      `;
-    }).join("");
-
-    return `
-      <div class="hero-banner">
-        <div class="flex items-center justify-between gap-2 flex-wrap">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">📈 SOCCERSTATS RUN-IN ENGINE</span>
-            <span class="sure-pill-tag">OPPONENTS PLAYED (PLD) VS REMAINING (REM)</span>
-            ${summaryInfo ? `<span class="sure-pill-tag">${summaryInfo.matchesPlayed} / ${summaryInfo.totalMatches} Played (${escapeHtml(summaryInfo.progressPct)})</span>` : ""}
-          </div>
-          <button type="button" class="analyze-inline-btn" data-runin-refresh="1" style="background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.22);">↻ Sync Live Tables</button>
-        </div>
-
-        <h1 class="mt-2">${escapeHtml(leagueMeta.country ? `${leagueMeta.country} - ${leagueMeta.name}` : leagueMeta.name)}: Run-in Analysis</h1>
-        <p>Live SoccerSTATS.com Run-In schedule difficulty evaluator comparing the venue-weighted PPG of opponents already faced against remaining fixtures.</p>
-
-        <!-- HOW IT WORKS CARDS -->
-        <div class="runin-how-grid">
-          <div class="runin-how-card">
-            <div class="text-xs font-mono font-bold text-white uppercase">1. Opponents Played (PLD)</div>
-            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of teams already faced, accounting for home vs. away using opponents&rsquo; respective away/home PPG records.</div>
-          </div>
-          <div class="runin-how-card">
-            <div class="text-xs font-mono font-bold uppercase" style="color:#7CE8C4;">2. Remaining Opponents (REM)</div>
-            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of upcoming opponents, weighted identically by venue (visitors&rsquo; away PPG vs. hosts&rsquo; home PPG).</div>
-          </div>
-          <div class="runin-how-card">
-            <div class="text-xs font-mono font-bold uppercase" style="color:#93C5FD;">3. Played vs. Remaining (%)</div>
-            <div class="text-xs mt-1" style="color:#D1E0D9;"><strong class="text-white">Negative % (-):</strong> remaining fixtures are tougher. <strong style="color:#7CE8C4;">Positive % (+):</strong> more favorable, easier run-in ahead.</div>
-          </div>
-        </div>
-
-        <!-- LEAGUE SELECTOR BAR -->
+    const leagueSelectorHtml = isFootball
+      ? `
         <div class="runin-league-selector-row">
           <div class="runin-quick-tabs">
             ${QUICK_LEAGUES.map((ql) => `
@@ -2551,10 +2932,70 @@
             </select>
           </div>
         </div>
+      `
+      : `
+        <div class="runin-league-selector-row">
+          <div class="runin-quick-tabs" style="align-items:center;">
+            <span class="text-xs font-mono" style="color:#D1E0D9; padding: 0 6px;">Showing all live &amp; upcoming <strong>${escapeHtml(spMeta.label)}</strong> competitions with real Sportradar played scorelines, venue PPG &amp; Strong PPG tips:</span>
+          </div>
+          <div class="runin-select-wrap">
+            <label class="runin-select-label" for="runinSportLeagueSelect">Filter ${escapeHtml(spMeta.label)} Tour / League</label>
+            <select id="runinSportLeagueSelect" aria-label="Filter tournament">
+              <option value="ALL"${(state.activeRuninSportLeague || "ALL") === "ALL" ? " selected" : ""}>All ${escapeHtml(spMeta.label)} Competitions (${multiData?.leaguesList?.length || 0})</option>
+              ${(multiData?.leaguesList || []).map((lName) => `
+                <option value="${escapeHtml(lName)}"${state.activeRuninSportLeague === lName ? " selected" : ""}>${escapeHtml(lName)}</option>
+              `).join("")}
+            </select>
+          </div>
+        </div>
+      `;
+
+    const scopeKey = isFootball ? activeCode : `runin:${activeSport}`;
+    const tableBlockHtml = renderRuninTableBlock(filteredRows, {
+      scopeKey,
+      entityLabel: spMeta.entityLabel,
+      inlineLimit: 3
+    });
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">📈 MULTI-SPORT RUN-IN ENGINE</span>
+            <span class="sure-pill-tag">OPPONENTS PLAYED (PLD) VS REMAINING (REM)</span>
+            ${summaryInfo ? `<span class="sure-pill-tag">${summaryInfo.matchesPlayed} / ${summaryInfo.totalMatches} Played (${escapeHtml(summaryInfo.progressPct)})</span>` : ""}
+          </div>
+          <button type="button" class="analyze-inline-btn" data-runin-refresh="1" style="background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.22);">↻ Sync Live Tables</button>
+        </div>
+
+        <h1 class="mt-2">${escapeHtml(isFootball && leagueMeta.country ? `${leagueMeta.country} - ${leagueMeta.name}` : `${spMeta.icon} ${leagueMeta.name}`)}: Run-in Analysis</h1>
+        <p>${isFootball ? "Live SoccerSTATS.com Run-In schedule difficulty evaluator comparing the venue-weighted PPG of opponents already faced against remaining fixtures." : `Real-time ${escapeHtml(spMeta.label)} Run-In Difficulty Table using the exact same Opponents Played + Scorelines (PLD), Remaining Opponents (REM) & Strong PPG Tips format.`}</p>
+
+        <!-- 5-SPORT SWITCHER -->
+        ${sportTabsHtml}
+
+        <!-- HOW IT WORKS CARDS -->
+        <div class="runin-how-grid">
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold text-white uppercase">1. Opponents Played (PLD)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of opponents already faced, including actual scorelines and home vs. away strength records.</div>
+          </div>
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold uppercase" style="color:#7CE8C4;">2. Remaining Opponents (REM)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of upcoming / live opponents, weighted identically by venue (visitors&rsquo; away PPG vs. hosts&rsquo; home PPG).</div>
+          </div>
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold uppercase" style="color:#93C5FD;">3. Played vs. Remaining (%)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;"><strong class="text-white">Negative % (-):</strong> remaining fixtures are tougher. <strong style="color:#7CE8C4;">Positive % (+):</strong> more favorable, easier run-in ahead.</div>
+          </div>
+        </div>
+
+        <!-- LEAGUE / TOURNAMENT SELECTOR -->
+        ${leagueSelectorHtml}
 
         <!-- FILTER TABS -->
         <div class="runin-filter-bar">
-          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-runin-filter="ALL">All Teams (${rawRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-runin-filter="ALL">All (${rawRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "STRONG_PPG" ? " is-active" : ""}" data-runin-filter="STRONG_PPG" style="color:${activeFilter === "STRONG_PPG" ? "#fff" : "#7CE8C4"};">💎 Strong PPG Tips &ge;1.60 (${strongPpgAllRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "FAVORABLE" ? " is-active" : ""}" data-runin-filter="FAVORABLE" style="color:${activeFilter === "FAVORABLE" ? "#fff" : "#7CE8C4"};">🟢 Easier Run-In (+%) (${favorableRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "TOUGH" ? " is-active" : ""}" data-runin-filter="TOUGH" style="color:${activeFilter === "TOUGH" ? "#fff" : "#FCA5A5"};">🔴 Tougher Run-In (-%) (${toughRows.length})</button>
@@ -2565,40 +3006,22 @@
       ${highlightsHtml}
 
       <section class="panel">
-        <div class="panel-header">
-          <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
-          <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Teams · Click any row for all played scores &amp; fixture tips`}</span>
+        <div class="panel-header is-centered">
+          <span class="panel-hdr-spacer" aria-hidden="true"></span>
+          <div class="panel-hdr-center">
+            <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
+            <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Competitors · Click any row for all played scores &amp; fixture tips`}</span>
+          </div>
+          <div class="panel-hdr-right"></div>
         </div>
         ${
           isLoadingThisLeague && rawRows.length === 0
             ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD), Scorelines &amp; Remaining Opponents PPG (REM).</p></div>`
             : rawRows.length === 0
-              ? `<div class="empty-state"><h3>Could not load Run-In table for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry below to pull live Run-In fixtures and venue-weighted PPG.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
+              ? `<div class="empty-state"><h3>No Run-In fixtures currently loaded for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry / Sync below to refresh live schedule &amp; bookmaker stats.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
               : filteredRows.length === 0
-                ? `<div class="empty-state"><h3>No teams match current Run-In filter</h3><p class="text-sm">Switch to All Teams above or pick another active league.</p></div>`
-                : `<div class="runin-table-wrap">
-                  <table class="runin-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Team</th>
-                        <th style="text-align:center;">GP</th>
-                        <th style="text-align:center;">W</th>
-                        <th style="text-align:center;">D</th>
-                        <th style="text-align:center;">L</th>
-                        <th style="text-align:center;">Pts</th>
-                        <th style="text-align:center;">PPG</th>
-                        <th>Played Opponents &amp; Scores (PLD)</th>
-                        <th style="color:#3B82F6;">Upcoming Opponents (REM)</th>
-                        <th style="text-align:center;">Played vs<br>Remaining</th>
-                        <th>Strong PPG Tip</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${tableRowsHtml}
-                    </tbody>
-                  </table>
-                </div>`
+                ? `<div class="empty-state"><h3>No teams or players match current Run-In filter</h3><p class="text-sm">Switch to All above or pick another active league.</p></div>`
+                : tableBlockHtml
         }
       </section>
     `;
@@ -2842,6 +3265,37 @@
   function renderHomeLiveCard(liveList, spDef) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const sortedLive = sortMatchesInOrder(liveList);
+    const nonFootballSports = ["tennis", "basketball", "darts", "hockey"];
+    let bodyHtml = "";
+
+    if (nonFootballSports.includes(activeSportKey)) {
+      bodyHtml = renderNonFootballRuninSection(activeSportKey, {
+        mode: "LIVE",
+        showHeader: false,
+        scopePrefix: "homelive"
+      }) || `<div class="p-4 text-center text-xs text-muted">No live ${escapeHtml(spDef.label)} games in progress right now.</div>`;
+    } else {
+      const footballLive = activeSportKey === "all"
+        ? sortedLive.filter((m) => (m.sport || "football").toLowerCase() === "football")
+        : sortedLive;
+      const shownFootball = footballLive.slice(0, 8).map(renderMatchRow).join("");
+      const nonFootballLiveHtml = activeSportKey === "all"
+        ? nonFootballSports
+            .map((spKey) => renderNonFootballRuninSection(spKey, { mode: "LIVE", scopePrefix: "homelive" }))
+            .filter(Boolean)
+            .join("")
+        : "";
+      bodyHtml = `
+        <div>${shownFootball}</div>
+        ${footballLive.length > 8 ? `
+          <div class="p-3 text-center border-t">
+            <a href="/live" data-route="/live" class="analyze-inline-btn" style="background:#DC2626; color:#fff; border-color:#DC2626;">View All ${footballLive.length} Live Football Games &rarr;</a>
+          </div>
+        ` : ""}
+        ${nonFootballLiveHtml ? `<div class="p-3 flex flex-col gap-3 border-t">${nonFootballLiveHtml}</div>` : ""}
+      `;
+    }
+
     return `
       <section class="panel live-home-panel" style="border:1px solid rgba(239, 68, 68, 0.3); background:linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--card) 100%);">
         <div class="panel-header is-centered" style="border-bottom:1px solid rgba(239, 68, 68, 0.15);">
@@ -2859,46 +3313,74 @@
             </a>
           </div>
         </div>
-        <div>
-          ${sortedLive.slice(0, 8).map(renderMatchRow).join("")}
-        </div>
-        ${liveList.length > 8 ? `
-          <div class="p-3 text-center border-t">
-            <a href="/live" data-route="/live" class="analyze-inline-btn" style="background:#DC2626; color:#fff; border-color:#DC2626;">View All ${liveList.length} Live Games &rarr;</a>
-          </div>
-        ` : ""}
+        ${bodyHtml}
       </section>
     `;
   }
 
   function renderHomeRunInCard() {
-    const { activeCode, isLoadingThisLeague, leagueData, leagueMeta } = resolveRuninStateForCode(state.activeRuninLeague || "england");
+    const homeSport = String(state.activeRuninSport || "football").toLowerCase();
+    const isFootball = homeSport === "football";
+    const spMeta = RUNIN_SPORTS.find((s) => s.key === homeSport) || RUNIN_SPORTS[0];
+
+    let activeCode = "england";
+    let isLoadingThisLeague = false;
+    let leagueData = null;
+    let leagueMeta = { name: spMeta.label, country: "", flag: spMeta.icon };
+
+    if (isFootball) {
+      const resolved = resolveRuninStateForCode(state.activeRuninLeague || "england");
+      activeCode = resolved.activeCode;
+      isLoadingThisLeague = resolved.isLoadingThisLeague;
+      leagueData = resolved.leagueData;
+      leagueMeta = resolved.leagueMeta;
+    } else {
+      leagueData = buildSportRuninData(homeSport, { mode: "ALL", leagueFilter: "ALL" });
+      isLoadingThisLeague = isLoadingBookmakers && (leagueData?.table?.length || 0) === 0;
+    }
+
     const rows = leagueData?.table || [];
-    const leagueName = leagueMeta?.name || "Premier League";
+    const subtitleLabel = isFootball
+      ? `${leagueMeta?.name || "Premier League"} · SoccerSTATS Methodology`
+      : `${spMeta.icon} ${spMeta.label} · ${leagueData?.gamesCount || 0} Live/Upcoming Matches`;
+    const ctaHref = isFootball ? `/run-in?league=${escapeHtml(activeCode)}` : `/run-in?sport=${escapeHtml(homeSport)}`;
+    const scopeKey = isFootball ? activeCode : `home:${homeSport}`;
     const easiestList = [...rows].sort((a, b) => b.diffPct - a.diffPct).slice(0, 3);
     const toughestList = [...rows].sort((a, b) => a.diffPct - b.diffPct).slice(0, 3);
     const previewRows = rows.slice(0, 6);
+
+    const homeSportTabsHtml = `
+      <div class="runin-home-sport-tabs">
+        ${RUNIN_SPORTS.map((sp) => `
+          <button type="button" class="filter-chip${homeSport === sp.key ? " is-active" : ""}" data-runin-home-sport="${sp.key}">
+            <span>${sp.icon}</span>
+            <span>${escapeHtml(sp.label)}</span>
+          </button>
+        `).join("")}
+      </div>
+    `;
 
     return `
       <section class="panel-section border-subtle" id="runInHomeCard" style="border: 2px solid rgba(59, 130, 246, 0.40); background: linear-gradient(145deg, var(--card) 0%, rgba(59, 130, 246, 0.04) 100%); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.08);">
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(59, 130, 246, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#3B82F6;color:#ffffff;font-weight:800;">📈 RUN-IN ANALYSIS (PLD vs REM)</span>
-            <span class="sure-pill-tag">${escapeHtml(leagueName)} · SoccerSTATS Methodology</span>
+            <span class="sure-pill-tag">${escapeHtml(subtitleLabel)}</span>
             <span class="font-mono text-xs text-muted">· Opponents Played vs Remaining %</span>
           </div>
           <div class="flex items-center gap-2">
-            <a class="btn-subtle text-xs" href="/run-in" data-route="/run-in" style="font-weight:700;color:#3B82F6;">Open Full 40-League Run-In Center &rarr;</a>
+            <a class="btn-subtle text-xs" href="${ctaHref}" data-route="${ctaHref}" style="font-weight:700;color:#3B82F6;">Open ${isFootball ? "Full 40-League" : escapeHtml(spMeta.label)} Run-In Center &rarr;</a>
           </div>
         </div>
         <div class="p-3">
+          ${homeSportTabsHtml}
           ${
             rows.length === 0
-              ? `<div class="text-xs text-muted font-mono py-3 text-center">${isLoadingThisLeague ? `Syncing live Run-In Analysis (${escapeHtml(leagueName)})...` : `Run-In table not loaded (${escapeHtml(leagueName)}).`} <button type="button" data-runin-refresh="1" class="btn-subtle text-xs ml-2" style="color:#3B82F6;font-weight:700;">Sync Now</button> <a href="/run-in" data-route="/run-in" style="color:#3B82F6;text-decoration:underline;font-weight:700;margin-left:8px;">Open Run-In Engine &rarr;</a></div>`
+              ? `<div class="text-xs text-muted font-mono py-3 text-center">${isLoadingThisLeague ? `Syncing live Run-In Analysis (${escapeHtml(spMeta.label)})...` : `Run-In table loading or no fixtures available (${escapeHtml(spMeta.label)}).`} <button type="button" data-runin-refresh="1" class="btn-subtle text-xs ml-2" style="color:#3B82F6;font-weight:700;">Sync Now</button> <a href="${ctaHref}" data-route="${ctaHref}" style="color:#3B82F6;text-decoration:underline;font-weight:700;margin-left:8px;">Open Run-In Engine &rarr;</a></div>`
               : `
                 <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 12px;">
                   ${easiestList.slice(0, 2).map((r) => `
-                    <a class="power-preview-tile is-strong" href="/run-in?league=${escapeHtml(activeCode)}" data-route="/run-in?league=${escapeHtml(activeCode)}" style="border-left:3px solid #16A34A; background: var(--ground);">
+                    <a class="power-preview-tile is-strong" href="${ctaHref}" data-route="${ctaHref}" style="border-left:3px solid #16A34A; background: var(--ground);">
                       <div class="flex items-center justify-between gap-1 w-full">
                         <span class="tile-kicker font-bold" style="color:#16A34A;">🟢 EASIEST RUN-IN</span>
                         <span class="runin-diff-pill is-easy">${escapeHtml(r.diffLabel)} Easier</span>
@@ -2908,7 +3390,7 @@
                     </a>
                   `).join("")}
                   ${toughestList.slice(0, 2).map((r) => `
-                    <a class="power-preview-tile" href="/run-in?league=${escapeHtml(activeCode)}" data-route="/run-in?league=${escapeHtml(activeCode)}" style="border-left:3px solid #DC2626; background: var(--ground);">
+                    <a class="power-preview-tile" href="${ctaHref}" data-route="${ctaHref}" style="border-left:3px solid #DC2626; background: var(--ground);">
                       <div class="flex items-center justify-between gap-1 w-full">
                         <span class="tile-kicker font-bold" style="color:#DC2626;">🔴 TOUGHEST RUN-IN</span>
                         <span class="runin-diff-pill is-tough">${escapeHtml(r.diffLabel)} Tougher</span>
@@ -2918,54 +3400,12 @@
                     </a>
                   `).join("")}
                 </div>
-                <div class="runin-table-wrap">
-                  <table class="runin-table">
-                    <thead>
-                      <tr>
-                        <th>#</th>
-                        <th>Team</th>
-                        <th style="text-align:center;">GP</th>
-                        <th style="text-align:center;">Pts</th>
-                        <th style="text-align:center;">PPG</th>
-                        <th>Played Opponents &amp; Scores (PLD)</th>
-                        <th style="color:#3B82F6;">Upcoming Opponents (REM)</th>
-                        <th style="text-align:center;">Diff %</th>
-                        <th>Strong PPG Tip</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${previewRows.map((row) => {
-                        const tip = resolveRowRuninTip(row);
-                        const tipCls = getRuninTipPillClass(tip);
-                        return `
-                        <tr class="runin-row" data-route="/run-in?league=${escapeHtml(activeCode)}">
-                          <td class="font-mono font-bold">${row.rank}</td>
-                          <td><strong>${escapeHtml(row.team)}</strong> ${row.ppg >= 1.60 ? "💎" : ""}</td>
-                          <td class="text-center font-mono">${row.gp}</td>
-                          <td class="text-center font-mono font-bold">${row.pts}</td>
-                          <td class="text-center font-mono font-bold" style="${row.ppg >= 1.60 ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
-                          <td class="runin-fixtures-td">
-                            <div><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></div>
-                            <div class="runin-inline-fixtures">${renderRuninPlayedChips(row.playedOpponents, 2)}</div>
-                          </td>
-                          <td class="runin-fixtures-td">
-                            <div class="runin-rem-cell">
-                              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
-                              <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
-                            </div>
-                            <div class="runin-inline-fixtures">${renderRuninUpcomingChips(row.remainingOpponents, 2)}</div>
-                          </td>
-                          <td class="text-center"><span class="runin-diff-pill ${row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced"}">${escapeHtml(row.diffLabel)}</span></td>
-                          <td class="runin-tip-td">
-                            <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
-                            <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
-                          </td>
-                        </tr>
-                      `;
-                      }).join("")}
-                    </tbody>
-                  </table>
-                </div>
+                ${renderRuninTableBlock(previewRows, {
+                  scopeKey,
+                  entityLabel: spMeta.entityLabel || "Team",
+                  clickRoute: ctaHref,
+                  inlineLimit: 2
+                })}
               `
           }
         </div>
@@ -3614,17 +4054,23 @@
       .map((sp) => {
         const spGames = games.filter((g) => (g.sport || "football").toLowerCase() === sp.key);
         if (spGames.length === 0) return "";
+        if (sp.key !== "football") {
+          return renderNonFootballRuninSection(sp.key, { mode: "ALL", scopePrefix: "cat" });
+        }
         return `
           <div class="sport-category-card mb-4">
-            <div class="sport-category-header">
-              <div class="flex items-center gap-2">
+            <div class="sport-category-header is-centered">
+              <span class="sport-hdr-spacer" aria-hidden="true"></span>
+              <div class="sport-hdr-center">
                 <span class="sport-category-icon">${sp.icon}</span>
                 <div>
                   <h3 class="sport-category-title">${sp.label} Catalog (${spGames.length} Games)</h3>
                   <span class="sport-category-subtitle">SportyBet &amp; Football.com Scraped Live Odds</span>
                 </div>
               </div>
-              <span class="sport-tag-pill sport-tag-${sp.key}">${sp.label}</span>
+              <div class="sport-hdr-right">
+                <span class="sport-tag-pill sport-tag-${sp.key}">${sp.label}</span>
+              </div>
             </div>
             <div class="bookie-compare-wrap">
               <table class="bookie-compare-table">
@@ -3636,7 +4082,7 @@
                     <th>PPG (H vs A)</th>
                     <th>Form (H / A)</th>
                     <th>1 (SB/FB)</th>
-                    <th>${sp.key === "tennis" || sp.key === "basketball" || sp.key === "darts" ? "2-Way Win" : "X (SB/FB)"}</th>
+                    <th>X (SB/FB)</th>
                     <th>2 (SB/FB)</th>
                     <th>Market Selection</th>
                     <th>Totals / Over</th>
@@ -3649,7 +4095,6 @@
                       const as = g.awayStats || { ppg: 1.3, form: ["L","W","D"] };
                       const sb = g.sportybet;
                       const fb = g.footballCom;
-                      const isTwoWay = sp.key === "tennis" || sp.key === "basketball" || sp.key === "darts";
                       return `
                         <tr>
                           <td class="font-mono text-xs">${g.isLive ? `<span class="text-live font-bold">LIVE</span>` : escapeHtml(g.kickoffUtc || "-")}</td>
@@ -3661,9 +4106,9 @@
                           <td class="font-mono text-xs"><strong class="text-brand">${(hs.ppg || 1.5).toFixed(2)}</strong> vs <strong>${(as.ppg || 1.3).toFixed(2)}</strong></td>
                           <td class="font-mono text-xs">${escapeHtml((hs.form || []).join(""))} / ${escapeHtml((as.form || []).join(""))}</td>
                           <td class="font-mono text-xs font-bold">${fmtOdd(sb?.home)} / ${fmtOdd(fb?.home)}</td>
-                          <td class="font-mono text-xs">${isTwoWay ? '<span class="text-muted">2-Way</span>' : `${fmtOdd(sb?.draw)} / ${fmtOdd(fb?.draw)}`}</td>
+                          <td class="font-mono text-xs">${fmtOdd(sb?.draw)} / ${fmtOdd(fb?.draw)}</td>
                           <td class="font-mono text-xs font-bold">${fmtOdd(sb?.away)} / ${fmtOdd(fb?.away)}</td>
-                          <td class="font-mono text-xs">${isTwoWay ? `Winner: ${(g.bestOdds?.home || 1.85).toFixed(2)}` : `${fmtOdd(g.bestOdds?.dc1X)} / ${fmtOdd(g.bestOdds?.dcX2)}`}</td>
+                          <td class="font-mono text-xs">${fmtOdd(g.bestOdds?.dc1X)} / ${fmtOdd(g.bestOdds?.dcX2)}</td>
                           <td class="font-mono text-xs">${fmtOdd(g.bestOdds?.over25 || g.bestOdds?.over15)}</td>
                         </tr>
                       `;
@@ -4956,6 +5401,11 @@
         existing.displayTime = displayTime;
         existing.homeScore = parsedHomeScore;
         existing.awayScore = parsedAwayScore;
+        existing.homeStats = g.homeStats || existing.homeStats || null;
+        existing.awayStats = g.awayStats || existing.awayStats || null;
+        existing.bestOdds = g.bestOdds || existing.bestOdds || null;
+        existing.sportybet = g.sportybet || existing.sportybet || null;
+        existing.footballCom = g.footballCom || existing.footballCom || null;
         continue;
       }
 
@@ -5011,6 +5461,8 @@
           provider: g.bestOdds?.homeBookie || "SportyBet & Football.com"
         },
         bestOdds: g.bestOdds,
+        sportybet: g.sportybet || null,
+        footballCom: g.footballCom || null,
         homeStats: g.homeStats,
         awayStats: g.awayStats,
         ppgSchedule: g.ppgSchedule,
@@ -5060,7 +5512,7 @@
     if (state.route === "/odds-mismatch") renderMainContent();
     try {
       const url = `/api/bookmakers${forceRefresh ? "?refresh=1" : ""}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(18000) });
+      const res = await fetch(url, { signal: AbortSignal.timeout(45000) });
       if (res.ok) {
         const data = await res.json();
         if (data?.ok) {
@@ -5127,7 +5579,13 @@
     // Switch Active Sport Filter (Football, Tennis, Basketball, Darts, Ice Hockey)
     const sportBtn = e.target.closest("[data-sport-filter]");
     if (sportBtn) {
-      state.activeSport = sportBtn.getAttribute("data-sport-filter") || "ALL";
+      const nextSport = sportBtn.getAttribute("data-sport-filter") || "ALL";
+      state.activeSport = nextSport;
+      if (nextSport !== "ALL") {
+        state.activeRuninSport = nextSport.toLowerCase();
+        state.activeRuninSportLeague = "ALL";
+        expandedRuninTeam = null;
+      }
       saveState();
       renderAll();
       return;
@@ -5182,7 +5640,22 @@
       return;
     }
 
-    // Run-In Analysis interactions (League tabs, Filters, Opponent drawer, Refresh)
+    // Run-In Analysis interactions (Sport tabs, League tabs, Filters, Opponent drawer, Refresh)
+    const runinSportBtn = e.target.closest("[data-runin-sport], [data-runin-home-sport]");
+    if (runinSportBtn) {
+      const spKey = (runinSportBtn.getAttribute("data-runin-sport") || runinSportBtn.getAttribute("data-runin-home-sport") || "football").toLowerCase();
+      expandedRuninTeam = null;
+      state.activeRuninSport = spKey;
+      state.activeRuninSportLeague = "ALL";
+      saveState();
+      if (spKey === "football") {
+        loadRuninLeague(state.activeRuninLeague || "england", false);
+      } else if (!bookmakerScan) {
+        syncBookmakerMismatchFeed(false, false);
+      }
+      renderMainContent();
+      return;
+    }
     const runinLgBtn = e.target.closest("[data-runin-league]");
     if (runinLgBtn) {
       const code = runinLgBtn.getAttribute("data-runin-league") || "england";
@@ -5201,7 +5674,11 @@
       return;
     }
     if (e.target.closest("[data-runin-refresh]")) {
-      loadRuninLeague(state.activeRuninLeague || "england", true);
+      if ((state.activeRuninSport || "football") === "football") {
+        loadRuninLeague(state.activeRuninLeague || "england", true);
+      } else {
+        syncBookmakerMismatchFeed(true, true);
+      }
       showToast("Syncing live Run-In Analysis tables...");
       return;
     }
@@ -5544,6 +6021,11 @@
       saveState();
       loadRuninLeague(code, false);
       renderMainContent();
+    } else if (e.target.id === "runinSportLeagueSelect") {
+      expandedRuninTeam = null;
+      state.activeRuninSportLeague = e.target.value || "ALL";
+      saveState();
+      renderMainContent();
     }
   });
 
@@ -5604,8 +6086,15 @@
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
     if (qs.get("tab")) state.activeIntelTab = qs.get("tab").toUpperCase();
-    if (qs.get("cat")) state.activePowerCategory = qs.get("cat").toUpperCase();
+    if (qs.get("cat")) {
+      const upperCat = qs.get("cat").toUpperCase();
+      state.activePowerCategory = upperCat;
+      if (pRoute === "/odds-mismatch") state.activeMismatchCategory = upperCat;
+      if (pRoute === "/strong-teams") state.activeStrongFilter = upperCat;
+      if (pRoute === "/worst-teams") state.activeWorstFilter = upperCat;
+    }
     if (qs.get("league")) state.activeRuninLeague = qs.get("league").toLowerCase();
+    if (qs.get("sport")) state.activeRuninSport = qs.get("sport").toLowerCase();
     state.route = pRoute;
   } else {
     state.route = "/";

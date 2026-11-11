@@ -225,7 +225,7 @@ async function fetchTeamLast10Stats(uid) {
     else l++;
 
     if (form.length < 5) form.push(resChar);
-    if (recentScores.length < 5) {
+    if (recentScores.length < 10) {
       recentScores.push({
         result: resChar,
         score: `${myG}-${opG}`,
@@ -946,17 +946,22 @@ async function runFullBookmakerScan(forceRefresh = false) {
         return a.estimateStartTime - b.estimateStartTime;
       });
 
-      // Hydrate team stats for first 60 games immediately, and trigger background hydration for the rest
+      // Hydrate team stats for first 60 priority games PLUS non-football sports (Tennis, Basketball, Darts, Hockey) immediately
       const immediateGames = games.slice(0, 60);
+      const nonFootballImmediate = [];
+      for (const sp of ["tennis", "basketball", "hockey", "darts"]) {
+        nonFootballImmediate.push(...games.filter((g) => g.sport === sp).slice(0, 20));
+      }
+      const hydratedBatch = [...immediateGames, ...nonFootballImmediate];
       const deferredGames = games.slice(60);
 
       const immediateUids = [
         ...new Set(
-          immediateGames.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean)
+          hydratedBatch.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean)
         )
       ];
 
-      await runPool(immediateUids, 24, (uid) => fetchTeamLast10Stats(uid));
+      await runPool(immediateUids, 28, (uid) => fetchTeamLast10Stats(uid));
 
       // Hydrate H2H for top 24 matches in parallel
       await runPool(immediateGames.slice(0, 24), 14, (g) => fetchH2hStats(g.homeUid, g.awayUid));

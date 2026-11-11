@@ -246,14 +246,15 @@ ul {
 
 /* Layout */
 .shell {
-  max-width: 1540px;
+  max-width: 1680px;
+  width: 100%;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 .main-layout {
   display: flex;
-  gap: 20px;
+  flex-direction: column;
   padding-bottom: 48px;
   padding-top: 16px;
   flex: 1;
@@ -262,8 +263,8 @@ ul {
 
 @media (min-width: 1024px) {
   .main-layout {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 20px;
+    padding-right: 20px;
   }
 }
 
@@ -271,31 +272,14 @@ ul {
   display: none !important;
 }
 
-.rail-right {
-  width: 350px;
-  flex-shrink: 0;
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .rail-right {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    position: sticky;
-    top: 76px;
-    align-self: flex-start;
-    max-height: calc(100vh - 90px);
-    overflow-y: auto;
-  }
-}
-
 .main-content {
+  width: 100%;
+  max-width: 100%;
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 /* Header */
@@ -2408,7 +2392,7 @@ ul {
 
 .modal-dialog {
   width: 100%;
-  max-width: 680px;
+  max-width: 780px;
   max-height: 90dvh;
   overflow-y: auto;
   background: var(--card);
@@ -2568,9 +2552,9 @@ ul {
 .footer-hero-content {
   position: relative;
   z-index: 1;
-  max-width: 1280px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 36px 16px;
+  padding: 36px 20px;
 }
 
 .footer-logo {
@@ -2617,9 +2601,9 @@ ul {
 }
 
 .footer-nav {
-  max-width: 1280px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 32px 16px;
+  padding: 32px 20px;
 }
 
 .footer-grid {
@@ -2747,9 +2731,9 @@ ul {
 }
 
 .footer-cta {
-  max-width: 1280px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 .footer-cta-inner {
@@ -2858,9 +2842,9 @@ ul {
 }
 
 .footer-legal {
-  max-width: 1280px;
+  max-width: 1680px;
   margin: 0 auto;
-  padding: 0 16px;
+  padding: 0 20px;
 }
 
 .footer-legal-inner {
@@ -3620,6 +3604,12 @@ ul {
   }
 }
 
+@media (min-width: 1100px) {
+  .intel-drop-scroller {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 .intel-drop-chip {
   display: flex;
   flex-direction: column;
@@ -3692,6 +3682,12 @@ ul {
 @media (min-width: 560px) {
   .power-preview-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .power-preview-grid {
+    grid-template-columns: repeat(4, 1fr);
   }
 }
 
@@ -4644,11 +4640,11 @@ ul {
   border-collapse: collapse;
   font-size: 12.5px;
   text-align: left;
-  min-width: 720px;
+  min-width: 960px;
 }
 .runin-table th {
   background: var(--ground-subtle);
-  padding: 9px 10px;
+  padding: 10px 10px;
   font-family: var(--font-mono);
   font-size: 10.5px;
   font-weight: 700;
@@ -4658,7 +4654,7 @@ ul {
   white-space: nowrap;
 }
 .runin-table td {
-  padding: 8px 10px;
+  padding: 10px 10px;
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
   white-space: nowrap;
@@ -4773,25 +4769,26 @@ ul {
 }
 .runin-fixtures-td {
   white-space: normal !important;
-  min-width: 235px;
-  max-width: 310px;
+  min-width: 245px;
+  max-width: 380px;
+  vertical-align: top !important;
 }
 .runin-inline-fixtures {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 4px;
+  margin-top: 5px;
 }
 .runin-mini-chip {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 4px;
   background: var(--ground-subtle);
   border: 1px solid var(--line-soft);
-  font-size: 10.5px;
-  line-height: 1.25;
+  font-size: 11px;
+  line-height: 1.3;
 }
 .runin-score-tag {
   font-family: var(--font-mono);
@@ -4814,8 +4811,9 @@ ul {
 }
 .runin-tip-td {
   white-space: normal !important;
-  min-width: 195px;
-  max-width: 240px;
+  min-width: 225px;
+  max-width: 310px;
+  vertical-align: top !important;
 }
 .runin-tip-pill {
   display: inline-flex;

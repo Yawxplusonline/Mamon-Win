@@ -286,13 +286,14 @@ ul {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   background: var(--card);
-  padding: 0 16px;
+  padding: 0 20px;
   height: var(--topbar-h);
   position: relative;
   z-index: 20;
   border-bottom: 1px solid var(--line);
+  width: 100%;
 }
 
 .topbar-logo {
@@ -317,15 +318,18 @@ ul {
 
 .topbar-nav {
   display: none;
+  flex: 1;
   align-items: center;
-  gap: 2px;
-  margin: 0 auto 0 10px;
-  padding: 3px 5px;
+  justify-content: space-between;
+  gap: 4px;
+  margin: 0 6px;
+  padding: 4px 6px;
   background: var(--ground-subtle);
   border: 1px solid var(--line-soft);
   border-radius: 9999px;
   overflow-x: auto;
   scrollbar-width: none;
+  min-width: 0;
   max-width: 100%;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
 }
@@ -335,17 +339,19 @@ ul {
 }
 
 @media (min-width: 768px) {
-  .topbar-nav { display: inline-flex; }
+  .topbar-nav { display: flex; }
 }
 
 .topbar-nav a {
   position: relative;
   display: inline-flex;
+  flex: 1 0 auto;
+  justify-content: center;
   align-items: center;
-  gap: 3px;
-  padding: 4px 7px;
+  gap: 4px;
+  padding: 5px 10px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -354,10 +360,10 @@ ul {
   user-select: none;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1240px) {
   .topbar-logo span { font-size: 18px; }
-  .topbar-nav { gap: 1px; padding: 2px 4px; margin-left: 6px; }
-  .topbar-nav a { padding: 3.5px 5.5px; font-size: 10.5px; }
+  .topbar-nav { gap: 2px; padding: 3px 4px; margin: 0 4px; }
+  .topbar-nav a { flex: 0 0 auto; padding: 4px 7px; font-size: 11px; }
 }
 
 .topbar-nav a:hover {
@@ -401,6 +407,7 @@ ul {
   align-items: center;
   gap: 8px;
   position: relative;
+  flex-shrink: 0;
 }
 
 @media (min-width: 768px) {
@@ -672,9 +679,15 @@ ul {
 .subnav-desktop {
   display: none;
   align-items: center;
-  gap: 4px;
-  padding: 0 12px;
+  gap: 12px;
+  padding: 0 20px;
   height: var(--subnav-h);
+  width: 100%;
+}
+
+.subnav-desktop > div:first-child {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 @media (min-width: 768px) {
@@ -3654,6 +3667,12 @@ ul {
 }
 
 /* Strong & Worst Teams Today (Power Picks View & Home Preview) */
+.hero-banner .intel-tabs .filter-chip {
+  flex: 1 1 auto;
+  justify-content: center;
+  text-align: center;
+}
+
 .hero-banner .filter-chip {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
@@ -3939,8 +3958,11 @@ ul {
 /* ============ 5 EXCLUSIVE SPORTS QUICK SELECTOR ============ */
 .sports-pills-bar {
   display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
   overflow-x: auto;
   scrollbar-width: none;
   padding: 4px 0;
@@ -3950,9 +3972,11 @@ ul {
 }
 .sport-pill {
   display: inline-flex;
+  flex: 1 0 auto;
+  justify-content: center;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 6px 16px;
   border-radius: var(--radius-pill);
   font-family: var(--font-headline);
   font-size: 12px;
@@ -4856,4 +4880,85 @@ ul {
   border-radius: var(--radius-sm);
   background: var(--card);
   border: 1px solid var(--line);
+}
+.runin-league-selector-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 14px;
+  align-items: stretch;
+  width: 100%;
+}
+@media (min-width: 960px) {
+  .runin-league-selector-row {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+}
+.runin-quick-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.runin-quick-tabs .filter-chip {
+  flex: 1 1 126px;
+  justify-content: center;
+  text-align: center;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.runin-select-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.runin-select-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7CE8C4;
+}
+#runinLeagueSelect {
+  width: 100%;
+  background: rgba(7, 16, 15, 0.88);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.runin-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+@media (min-width: 1100px) {
+  .runin-filter-bar {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+.runin-filter-bar .filter-chip {
+  width: 100%;
+  justify-content: center;
+  text-align: center;
+  padding: 7px 10px;
+  font-size: 12px;
 }

@@ -2428,21 +2428,24 @@
         </div>
 
         <!-- LEAGUE SELECTOR BAR -->
-        <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
-          <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);flex:1;">
+        <div class="runin-league-selector-row">
+          <div class="runin-quick-tabs">
             ${QUICK_LEAGUES.map((ql) => `
               <button type="button" class="filter-chip${activeCode === ql.code ? " is-active" : ""}" data-runin-league="${ql.code}">${ql.flag} ${escapeHtml(ql.label)}</button>
             `).join("")}
           </div>
-          <select id="runinLeagueSelect" aria-label="Select any SoccerSTATS league" style="background:rgba(7,16,15,0.85);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;font-weight:600;">
-            ${catalog.map((lg) => `
-              <option value="${escapeHtml(lg.code)}"${activeCode === lg.code ? " selected" : ""}>${lg.flag || "⚽"} ${lg.country ? `${escapeHtml(lg.country)} - ` : ""}${escapeHtml(lg.name)}</option>
-            `).join("")}
-          </select>
+          <div class="runin-select-wrap">
+            <label class="runin-select-label" for="runinLeagueSelect">All 40 Leagues (Country)</label>
+            <select id="runinLeagueSelect" aria-label="Select any SoccerSTATS league">
+              ${catalog.map((lg) => `
+                <option value="${escapeHtml(lg.code)}"${activeCode === lg.code ? " selected" : ""}>${lg.flag || "⚽"} ${lg.country ? `${escapeHtml(lg.country)} - ` : ""}${escapeHtml(lg.name)}</option>
+              `).join("")}
+            </select>
+          </div>
         </div>
 
         <!-- FILTER TABS -->
-        <div class="intel-tabs mt-2" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);">
+        <div class="runin-filter-bar">
           <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-runin-filter="ALL">All Teams (${rawRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "STRONG_PPG" ? " is-active" : ""}" data-runin-filter="STRONG_PPG" style="color:${activeFilter === "STRONG_PPG" ? "#fff" : "#7CE8C4"};">💎 Strong PPG Tips &ge;1.60 (${strongPpgAllRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "FAVORABLE" ? " is-active" : ""}" data-runin-filter="FAVORABLE" style="color:${activeFilter === "FAVORABLE" ? "#fff" : "#7CE8C4"};">🟢 Easier Run-In (+%) (${favorableRows.length})</button>

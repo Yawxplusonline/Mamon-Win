@@ -741,7 +741,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
             kickoffUtc: dt.toISOString().slice(11, 16),
             isLive: ev.status === 1 || /1st|2nd|half|live/i.test(ev.matchStatus || ""),
             matchStatus: ev.matchStatus || "Scheduled",
-            score: ev.setScore || null,
+            score: (ev.setScore && String(ev.setScore).toLowerCase() !== "null") ? String(ev.setScore).trim() : ((ev.score && String(ev.score).toLowerCase() !== "null") ? String(ev.score).trim() : null),
             topTeam: Boolean(ev.topTeam),
             sportybet: null,
             footballCom: null

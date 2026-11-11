@@ -42,6 +42,32 @@
     return `<img src="${safeSrc}" alt="${safeLabel}" width="${size}" height="${size}" loading="lazy" decoding="async" onerror="window.mamonFallbackImg(this,'${safeLabel.replace(/'/g, "")}','${escapeHtml(color)}')">`;
   }
 
+  function formatMatchScore(m) {
+    if (!m) return "vs";
+    const isLive = m.status === "LIVE";
+    const isFT = m.status === "FT";
+    if (!isLive && !isFT) return "vs";
+
+    const h = m.homeScore;
+    const a = m.awayScore;
+    const isValid = (v) => v !== null && v !== undefined && v !== "" && String(v).toLowerCase() !== "null" && !Number.isNaN(v);
+
+    if (isValid(h) && isValid(a)) {
+      return `${h} - ${a}`;
+    }
+    if (isLive) {
+      return "0 - 0";
+    }
+    return "vs";
+  }
+
+  function formatSingleScore(val, isLive) {
+    if (val !== null && val !== undefined && val !== "" && String(val).toLowerCase() !== "null" && !Number.isNaN(val)) {
+      return String(val);
+    }
+    return isLive ? "0" : "-";
+  }
+
   function loadState() {
     const defaults = {
       route: "/",
@@ -823,7 +849,7 @@
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="font-mono text-xs ${m.status === "LIVE" ? "text-live font-bold" : "text-muted"}">
-                            ${m.status === "LIVE" ? `● LIVE ${escapeHtml(m.displayTime)} (${m.homeScore}-${m.awayScore})` : `${escapeHtml(m.date)} · ${escapeHtml(m.displayTime)}`}
+                            ${m.status === "LIVE" ? `● LIVE ${escapeHtml(m.displayTime)} (${formatMatchScore(m)})` : `${escapeHtml(m.date)} · ${escapeHtml(m.displayTime)}`}
                           </span>
                         </div>
                       </div>
@@ -882,8 +908,11 @@
     const isLive = m.status === "LIVE";
     const isFT = m.status === "FT";
     const hasScore = isLive || isFT;
-    const homeWon = isFT && m.homeScore > m.awayScore;
-    const awayWon = isFT && m.awayScore > m.homeScore;
+    const homeScoreText = formatSingleScore(m.homeScore, isLive);
+    const awayScoreText = formatSingleScore(m.awayScore, isLive);
+    const matchScoreText = formatMatchScore(m);
+    const homeWon = isFT && Number(m.homeScore) > Number(m.awayScore);
+    const awayWon = isFT && Number(m.awayScore) > Number(m.homeScore);
     const bestLabel = m.analysis?.bestPick?.code || "1X";
 
     const redBadges = (count) =>
@@ -930,13 +959,13 @@
               ${crestImg(home.logo, home.name, home.color, 20)}
               <span class="team-name${homeWon ? " team-winner" : ""}">${escapeHtml(home.name)}</span>
               ${redBadges(m.homeRed)}
-              <span class="team-score${isLive ? " is-live" : ""}">${hasScore ? m.homeScore : "-"}</span>
+              <span class="team-score${isLive ? " is-live" : ""}">${homeScoreText}</span>
             </div>
             <div class="match-mobile-team">
               ${crestImg(away.logo, away.name, away.color, 20)}
               <span class="team-name${awayWon ? " team-winner" : ""}">${escapeHtml(away.name)}</span>
               ${redBadges(m.awayRed)}
-              <span class="team-score${isLive ? " is-live" : ""}">${hasScore ? m.awayScore : "-"}</span>
+              <span class="team-score${isLive ? " is-live" : ""}">${awayScoreText}</span>
             </div>
             ${
               dropChipHtml || ppgText || sosBadge
@@ -965,7 +994,7 @@
             <span class="team-name${homeWon ? " team-winner" : ""}">${escapeHtml(home.name)}</span>
           </div>
           <div class="score${isLive ? " is-live" : hasScore ? "" : " is-vs"}">
-            ${hasScore ? `${m.homeScore} - ${m.awayScore}` : "vs"}
+            ${matchScoreText}
           </div>
           <div class="team-away">
             ${crestImg(away.logo, away.name, away.color, 19)}
@@ -1021,7 +1050,7 @@
                         <span class="team-name">${escapeHtml(home.name)}</span>
                       </div>
                       <div class="must-watch-score${isLive ? "" : " is-upcoming"}">
-                        ${isLive ? `${m.homeScore} : ${m.awayScore}` : m.displayTime}
+                        ${isLive ? formatMatchScore(m) : escapeHtml(m.displayTime)}
                       </div>
                       <div class="must-watch-team">
                         ${crestImg(away.logo, away.name, away.color, 32)}
@@ -3963,7 +3992,7 @@
             <div class="font-semibold text-sm">${escapeHtml(home.name)}</div>
           </div>
           <div class="match-hero-score${isLive ? " is-live" : ""}">
-            ${hasScore ? `${m.homeScore} - ${m.awayScore}` : "VS"}
+            ${hasScore ? formatMatchScore(m) : "VS"}
           </div>
           <div class="match-hero-team">
             ${crestImg(away.logo, away.name, away.color, 48)}
@@ -4089,7 +4118,7 @@
           return `<button type="button" class="search-result-item" data-match-id="${m.id}">
             ${crestImg(h.logo, h.name, h.color, 18)}
             <span class="text-sm font-semibold flex-1 truncate">${escapeHtml(h.name)} vs ${escapeHtml(a.name)}</span>
-            <span class="font-mono text-xs text-brand">${m.status === "LIVE" ? `${m.homeScore}-${m.awayScore}` : m.displayTime}</span>
+            <span class="font-mono text-xs text-brand">${m.status === "LIVE" ? formatMatchScore(m) : escapeHtml(m.displayTime)}</span>
           </button>`;
         })
         .join("");
@@ -4155,6 +4184,29 @@
       const dateStr = g.isoDate || isoDateTime.slice(0, 10);
       const timeStr = g.kickoffUtc || isoDateTime.slice(11, 16);
 
+      let parsedHomeScore = null;
+      let parsedAwayScore = null;
+      if (g.score && typeof g.score === "string" && g.score.trim() && g.score.toLowerCase() !== "null") {
+        const parts = g.score.split(/[:\-–—]/).map((p) => p.trim());
+        if (parts.length >= 2 && parts[0] && parts[1] && parts[0].toLowerCase() !== "null" && parts[1].toLowerCase() !== "null") {
+          const hN = parseInt(parts[0], 10);
+          const aN = parseInt(parts[1], 10);
+          parsedHomeScore = Number.isFinite(hN) ? hN : parts[0];
+          parsedAwayScore = Number.isFinite(aN) ? aN : parts[1];
+        }
+      }
+      if (g.isLive && (parsedHomeScore === null || parsedAwayScore === null)) {
+        parsedHomeScore = 0;
+        parsedAwayScore = 0;
+      }
+
+      let liveDisplayStatus = "LIVE";
+      if (g.matchStatus && typeof g.matchStatus === "string" && g.matchStatus.trim() && g.matchStatus.toLowerCase() !== "null") {
+        liveDisplayStatus = g.matchStatus.trim();
+      }
+      const isGameLive = Boolean(g.isLive);
+      const displayTime = isGameLive ? liveDisplayStatus : timeStr;
+
       converted.push({
         id: matchId,
         espnId: matchId,
@@ -4168,15 +4220,15 @@
         priority: 15,
         date: dateStr,
         isoDateTime,
-        status: g.isLive ? "LIVE" : "SCHEDULED",
-        minute: g.isLive ? "LIVE" : "",
-        displayTime: g.isLive ? (g.score ? `LIVE ${g.score}` : "LIVE") : timeStr,
+        status: isGameLive ? "LIVE" : "SCHEDULED",
+        minute: isGameLive ? liveDisplayStatus : "",
+        displayTime,
         home: homeKey,
         away: awayKey,
         homeTeamName: homeName,
         awayTeamName: awayName,
-        homeScore: g.score ? (g.score.split("-")[0] || null) : null,
-        awayScore: g.score ? (g.score.split("-")[1] || null) : null,
+        homeScore: parsedHomeScore,
+        awayScore: parsedAwayScore,
         homeRed: 0,
         awayRed: 0,
         homeForm: g.homeStats?.form || ["W", "D", "W"],

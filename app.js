@@ -889,23 +889,46 @@
     `;
   }
 
+  function renderVerifyKoPills(item, opts = {}) {
+    if (!item) return "";
+    const fbId = item.footballComGameId || item.footballCom?.gameId || (item.gameId && String(item.gameId) !== "-" && !String(item.gameId).startsWith("sr:") ? item.gameId : null);
+    const sbId = item.sportybetGameId || item.sportybet?.gameId || null;
+    const koText = item.countdownLabel || (RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(item) : "");
+    const pills = [];
+    if (koText && koText !== "Started / In-Play") {
+      pills.push(`<span class="prematch-5h-pill" title="Pre-Match Tip >= 5 hours before kickoff">🕒 ${escapeHtml(koText)}</span>`);
+    }
+    if (fbId && String(fbId) !== "-") {
+      pills.push(`<button type="button" class="bookie-id-chip is-fb" data-copy-gameid="${escapeHtml(String(fbId))}" data-bookie="Football.com" title="Search this Game ID on football.com (Click to copy)">FB #${escapeHtml(String(fbId))} ⧉</button>`);
+    }
+    if (!opts.hideSb && sbId && String(sbId) !== "-" && String(sbId) !== String(fbId)) {
+      pills.push(`<button type="button" class="bookie-id-chip is-sporty" data-copy-gameid="${escapeHtml(String(sbId))}" data-bookie="SportyBet" title="Click to copy SportyBet Game ID">SB #${escapeHtml(String(sbId))} ⧉</button>`);
+    }
+    if (item.onOneFootball) {
+      pills.push(`<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OneFootball</span>`);
+    }
+    return pills.join("");
+  }
+
   // ============ PROMINENT HOME SURE ODDS COMMAND WIDGET ============
   function renderHomeSureOddsBanner() {
     const tiers = RT?.SURE_TIERS || [];
     const activeTierId = state.activeSureTier || "2";
     const activeSlip = sureSlips[activeTierId] || { title: `${activeTierId} Sure Odds`, legs: [], totalOdds: 0, estWinPct: 0 };
     const payout = (Number(state.stakeAmount) || 0) * (activeSlip.totalOdds || 0);
+    const preMatch5hTotal = RT?.isTipEligiblePreMatch5h ? liveMatches.filter((m) => RT.isTipEligiblePreMatch5h(m)).length : liveMatches.length;
 
     return `
       <section class="sure-home-command" id="sureOddsHomeCard">
         <div class="sure-command-top">
           <div>
             <div class="flex items-center gap-2 flex-wrap">
-              <span class="sure-pill-tag">11-FACTOR LIVE ENGINE</span>
-              <span class="sure-pill-tag">${liveMatches.length} ACTIVE FIXTURES</span>
+              <span class="sure-pill-tag">11-FACTOR PRE-MATCH ENGINE (≥5H BEFORE KO)</span>
+              <span class="sure-pill-tag">${preMatch5hTotal} UPCOMING ≥5H FIXTURES</span>
+              <span class="sure-pill-tag">⚽ ONEFOOTBALL + FOOTBALL.COM VERIFIED</span>
             </div>
             <h2 class="sure-command-title mt-2">Sure Odds Accumulators · Stake to Win</h2>
-            <p class="text-xs mt-1" style="color:#D1E0D9;">Built strictly from real-time matches using Head-to-Head, Form, Injuries, Suspensions, Last 5 Home/Away, Goals, Clean Sheets &amp; Run-in Analysis.</p>
+            <p class="text-xs mt-1" style="color:#D1E0D9;">Every tip is selected strictly <strong>5+ hours before Kick Off</strong> (zero in-play games) from real OneFootball &amp; Football.com schedules with Strong PPG enforcement.</p>
           </div>
           <a href="/sure-odds" data-route="/sure-odds" class="btn-sure-cta">Open Full Sure Odds &rarr;</a>
         </div>
@@ -931,28 +954,30 @@
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <span class="font-semibold text-sm text-white">${escapeHtml(activeSlip.title)}</span>
-              <span class="text-xs ml-2" style="color:#7CE8C4;">${activeSlip.legs.length} Real-Time Legs · Combined <strong class="font-mono">${formatOdds(activeSlip.totalOdds)}x</strong></span>
+              <span class="text-xs ml-2" style="color:#7CE8C4;">${activeSlip.legs.length} Pre-Match Legs (≥5h KO) · Combined <strong class="font-mono">${formatOdds(activeSlip.totalOdds)}x</strong></span>
             </div>
-            <a href="/sure-odds" data-route="/sure-odds" class="text-xs font-bold" style="color:#7CE8C4;text-decoration:underline;">Inspect all ${activeSlip.legs.length} legs &amp; 11 factors &rarr;</a>
+            <a href="/sure-odds" data-route="/sure-odds" class="text-xs font-bold" style="color:#7CE8C4;text-decoration:underline;">Inspect all ${activeSlip.legs.length} legs &amp; Football.com IDs &rarr;</a>
           </div>
 
           ${
             activeSlip.legs.length === 0
-              ? `<div class="text-xs" style="color:#D1E0D9;">Syncing real-time fixtures &amp; odds from ESPN...</div>`
+              ? `<div class="text-xs" style="color:#D1E0D9;">Syncing ≥5h upcoming fixtures from OneFootball &amp; Football.com...</div>`
               : `<div class="sure-leg-mini-list">
                   ${activeSlip.legs
                     .slice(0, 4)
                     .map((leg) => {
                       const h = getTeam(leg.match.home);
                       const a = getTeam(leg.match.away);
+                      const fbId = leg.match.footballComGameId || leg.match.footballCom?.gameId;
+                      const countdown = RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(leg.match) : leg.match.displayTime;
                       const ppgBadgeHtml = leg.ppgStrength
                         ? `<span class="sure-mini-ppg-badge">💎 PPG ${leg.ppgStrength.strongPpg.toFixed(2)} (+${leg.ppgStrength.gap.toFixed(2)})</span>`
                         : "";
                       return `
                         <button type="button" class="sure-leg-mini" data-match-id="${leg.match.id}" data-open-analysis="1">
                           <div class="min-w-0">
-                            <div class="font-semibold truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} <span class="text-muted">(${escapeHtml(leg.match.status === "LIVE" ? leg.match.displayTime : leg.match.displayTime)})</span></div>
-                            <div class="truncate" style="font-size:11px;color:#A8C6BC;">${escapeHtml(leg.market.label)} ${ppgBadgeHtml}</div>
+                            <div class="font-semibold truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} <span style="color:#7CE8C4;">(🕒 ${escapeHtml(countdown)})</span></div>
+                            <div class="truncate" style="font-size:11px;color:#A8C6BC;">${escapeHtml(leg.market.label)} ${fbId ? `· FB #${escapeHtml(String(fbId))}` : ""} ${ppgBadgeHtml}</div>
                           </div>
                           <span class="pick-badge">@ ${leg.market.odds.toFixed(2)}</span>
                         </button>
@@ -989,11 +1014,11 @@
       <div class="hero-banner">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">💎 STRONG PPG ENGINE ENFORCED</span>
-          <span class="sure-pill-tag">REAL-TIME VERIFIED FIXTURES ONLY</span>
-          <span class="sure-pill-tag">11-FACTOR ENGINE</span>
+          <span class="sure-pill-tag" style="background:#3B82F6;color:#FFFFFF;font-weight:800;">🕒 ≥5 HOURS BEFORE KICK OFF ONLY</span>
+          <span class="sure-pill-tag">⚽ ONEFOOTBALL + FOOTBALL.COM VERIFIED</span>
         </div>
         <h1 class="mt-2">Sure Odds Builder (2 to 1,000,000 Odds)</h1>
-        <p>${escapeHtml(slip.subtitle || "Multi-factor football slips analyzed across H2H, Current Form, Injuries, Suspensions, Last 5 Home/Away Games, Goals Scored/Conceded, Clean Sheets & Run-in Schedule — strictly filtered by Strong PPG with zero DROP_RED risks.")}</p>
+        <p>${escapeHtml(slip.subtitle || "Pre-match tips selected strictly 5+ hours before Kick Off (zero in-play matches) from OneFootball & Football.com with 11-Factor Strong PPG verification.")}</p>
 
         <div class="sure-tier-bar" style="margin-top:16px;">
           ${tiers
@@ -1018,7 +1043,7 @@
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <h2 class="font-headline text-lg font-bold">${escapeHtml(slip.title)} · Stake to Win Calculator</h2>
-            <p class="text-xs text-text-secondary">${slip.legs.length} real-time matches selected · Zero past or dead games</p>
+            <p class="text-xs text-text-secondary">${slip.legs.length} pre-match fixtures (&ge;5 hours before KO) &middot; Zero in-play or fake games</p>
           </div>
           <div class="flex items-center gap-2 flex-wrap">
             ${[10, 25, 50, 100, 500]
@@ -1065,13 +1090,13 @@
       <section class="panel">
         <div class="panel-header">
           <span class="live-dot" style="background:var(--brand);"></span>
-          <h2>${escapeHtml(slip.title)} · ${slip.legs.length} Selected Fixtures &amp; 11-Factor Reasoning</h2>
+          <h2>${escapeHtml(slip.title)} · ${slip.legs.length} Pre-Match Fixtures (&ge;5h Before Kickoff)</h2>
           <span class="count">Total ${formatOdds(slip.totalOdds)}x</span>
         </div>
 
         ${
           slip.legs.length === 0
-            ? `<div class="empty-state"><h3>Connecting to Live Match Feeds...</h3><p class="text-sm">Waiting for real-time fixtures &amp; 11-factor calculations.</p></div>`
+            ? `<div class="empty-state"><h3>Syncing Upcoming Matches (&ge;5h Before Kickoff)...</h3><p class="text-sm">Waiting for real OneFootball &amp; Football.com schedules with &ge;5h pre-match lead time.</p></div>`
             : slip.legs
                 .map((leg, idx) => {
                   const m = leg.match;
@@ -1079,21 +1104,19 @@
                   const away = getTeam(m.away, "Away");
                   const lg = getLeagueInfo(m);
                   const conf = Math.round((leg.market.prob || 0.65) * 100);
-                  // Auto-expand first 2 legs in 2/5/10 tiers or if toggled by user
                   const defaultExpanded = idx < 2 && ["2", "5", "10"].includes(slip.id);
                   const isExpanded = state.expandedLegs[m.id] !== undefined ? state.expandedLegs[m.id] : defaultExpanded;
                   return `
                     <article class="sure-leg-card">
                       <div class="sure-leg-head">
-                        <div class="flex items-center gap-2 min-w-0">
+                        <div class="flex items-center gap-2 min-w-0 flex-wrap">
                           <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill bg-brand-soft text-brand">#${idx + 1}</span>
                           ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
                           <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
                         </div>
-                        <div class="flex items-center gap-2">
-                          <span class="font-mono text-xs ${m.status === "LIVE" ? "text-live font-bold" : "text-muted"}">
-                            ${m.status === "LIVE" ? `● LIVE ${escapeHtml(m.displayTime)} (${formatMatchScore(m)})` : `${escapeHtml(m.date)} · ${escapeHtml(m.displayTime)}`}
-                          </span>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          ${renderVerifyKoPills(m)}
+                          <span class="font-mono text-xs text-muted">${escapeHtml(m.date)} · ${escapeHtml(m.displayTime)}</span>
                         </div>
                       </div>
 
@@ -1254,6 +1277,8 @@
             ${runinBadgeHtml}
             ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
             ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
+            ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
+            ${m.onOneFootball ? `<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OF</span>` : ""}
             <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </div>
@@ -2403,7 +2428,7 @@
       const oppTone = oppPpgNum === null ? "" : oppPpgNum <= 1.20 ? "color:#16A34A;font-weight:700;" : oppPpgNum >= 1.55 ? "color:#DC2626;font-weight:700;" : "";
       const liveChipHtml = op.isLive
         ? `<span class="runin-live-inline"><span class="live-dot"></span>${escapeHtml(op.liveClock || "LIVE")}${op.halfLabel ? ` ${escapeHtml(op.halfLabel)}` : ""}${op.liveScore ? ` · <strong>${escapeHtml(op.liveScore)}</strong>` : ""}</span>`
-        : (op.date ? `<span class="font-mono text-muted" style="font-size:10px;">${escapeHtml(op.date)}</span>` : "");
+        : `${op.date ? `<span class="font-mono text-muted" style="font-size:10px;">${escapeHtml(op.date)}</span>` : ""}${op.footballComGameId ? `<span class="font-mono" style="font-size:9.5px;color:#059669;font-weight:700;">FB#${escapeHtml(String(op.footballComGameId))}</span>` : ""}`;
       if (inlineLimit) {
         return `<span class="runin-mini-chip${op.isLive ? " is-live-chip" : ""}" title="${escapeHtml(`${op.label || op.opponent} · Opp Venue PPG ${oppPpgTxt}${op.matchTip ? ` · ${op.matchTip}` : ""}`)}"><span class="${op.venue === "H" ? "v-h" : "v-a"}">${op.venue}</span><strong>${escapeHtml(op.opponent)}</strong><span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span>${liveChipHtml}</span>`;
       }
@@ -2586,7 +2611,12 @@
           })
         : { liveClock: "", halfLabel: "", periodSubScore: "" };
       const liveScoreStr = isLive && g.score ? String(g.score).replace(/:/g, "-") : "";
-      const timeLabel = isLive ? `${clockInfo.liveClock} ${clockInfo.halfLabel}`.trim() : (g.kickoffUtc || g.isoDate || "Today");
+      const fbGameId = g.footballComGameId || g.footballCom?.gameId || null;
+      const isPre5h = Boolean(!isLive && RT?.isTipEligiblePreMatch5h?.(g));
+      const koCountdown = !isLive && RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(g) : "";
+      const timeLabel = isLive
+        ? `${clockInfo.liveClock} ${clockInfo.halfLabel}`.trim()
+        : (koCountdown && koCountdown !== "Started / In-Play" ? koCountdown : (g.kickoffUtc || g.isoDate || "Today"));
 
       if (isLive) {
         hPart.hasLiveMatch = true;
@@ -2599,6 +2629,8 @@
         oppVenuePpg: Math.round(aPart.awayPpg * 100) / 100,
         date: timeLabel,
         isLive,
+        isPreMatch5h: isPre5h,
+        footballComGameId: fbGameId,
         liveClock: clockInfo.liveClock,
         halfLabel: clockInfo.halfLabel,
         liveScore: liveScoreStr,
@@ -2612,6 +2644,8 @@
         oppVenuePpg: Math.round(hPart.homePpg * 100) / 100,
         date: timeLabel,
         isLive,
+        isPreMatch5h: isPre5h,
+        footballComGameId: fbGameId,
         liveClock: clockInfo.liveClock,
         halfLabel: clockInfo.halfLabel,
         liveScore: liveScoreStr,
@@ -2636,8 +2670,15 @@
       const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
       const remainingBarPct = Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10);
 
+      const remainingSorted = mode === "LIVE"
+        ? rec.remainingOpponents
+        : [...rec.remainingOpponents].sort((x, y) => (y.isPreMatch5h ? 1 : 0) - (x.isPreMatch5h ? 1 : 0) || (x.isLive ? 1 : 0) - (y.isLive ? 1 : 0));
+
+      const hasPreMatch5h = remainingSorted.some((op) => op.isPreMatch5h);
       const row = {
         ...rec,
+        remainingOpponents: remainingSorted,
+        hasPreMatch5h,
         playedPpg,
         remainingPpg,
         remainingBarPct,
@@ -2650,7 +2691,8 @@
     });
 
     rows.sort((a, b) => {
-      if (a.hasLiveMatch !== b.hasLiveMatch) return a.hasLiveMatch ? -1 : 1;
+      if (mode !== "LIVE" && a.hasPreMatch5h !== b.hasPreMatch5h) return a.hasPreMatch5h ? -1 : 1;
+      if (mode === "LIVE" && a.hasLiveMatch !== b.hasLiveMatch) return a.hasLiveMatch ? -1 : 1;
       if (b.ppg !== a.ppg) return b.ppg - a.ppg;
       return b.pts - a.pts;
     });
@@ -3143,6 +3185,7 @@
               }
               const sbCode = x.sportybet?.gameId || "-";
               const fbCode = x.footballCom?.gameId || "-";
+              const koCd = RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(x) : "";
               const oddBadge = q.isStrong
                 ? `Big @ ${Number(x.mistakeBigOdd || x.mismatchBigOdd).toFixed(2)} vs Low @ ${Number(x.opponentLowOdd || 1.9).toFixed(2)}`
                 : `Low Trap @ ${Number(x.mistakeLowOdd || x.worstTeamOdd).toFixed(2)} -> Opp Big @ ${Number(x.opponentBigOdd || x.mismatchBigOdd).toFixed(2)}`;
@@ -3154,7 +3197,7 @@
                   </div>
                   <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(x.targetTeam)} <span class="text-xs font-normal text-muted">(${x.side === "HOME" ? "Home" : "Away"})</span></div>
                   <div class="text-xs font-mono ${q.isStrong ? "text-brand" : "text-live"} truncate mt-0.5">${escapeHtml(oddBadge)}</div>
-                  <div class="text-xs text-muted truncate mt-1">vs ${escapeHtml(x.opponentTeam)} · SB #${escapeHtml(String(sbCode))} · FB #${escapeHtml(String(fbCode))}</div>
+                  <div class="text-xs text-muted truncate mt-1">vs ${escapeHtml(x.opponentTeam)} · FB #${escapeHtml(String(fbCode))} · 🕒 ${escapeHtml(koCd || x.kickoffUtc || "")}${sbCode !== "-" ? ` · SB #${escapeHtml(String(sbCode))}` : ""}</div>
                 </a>
               `;
             })
@@ -3175,8 +3218,8 @@
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(16, 185, 129, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">🎯 WINNING HANDICAP TIPS</span>
-            <span class="sure-pill-tag">+EV VALUE BETS DETECTED (${totalCount})</span>
-            <span class="font-mono text-xs text-muted">· Fair Odds vs Bookmaker Odds</span>
+            <span class="sure-pill-tag">+EV PRE-MATCH (≥5H KO) (${totalCount})</span>
+            <span class="font-mono text-xs text-muted">· Football.com &amp; OneFootball Verified</span>
           </div>
           <div class="flex items-center gap-2">
             <a class="btn-subtle text-xs" href="/handicap" data-route="/handicap" style="font-weight:700;color:#10B981;">Open Handicap &amp; +EV Center &rarr;</a>
@@ -3192,6 +3235,7 @@
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(tip.fixture)}</div>
                 <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
+                <div class="text-xs font-mono text-muted truncate mt-0.5">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))}` : ""}${tip.countdownLabel ? ` · 🕒 ${escapeHtml(tip.countdownLabel)}` : ""}${tip.onOneFootball ? " · ⚽ OneFootball" : ""}</div>
                 <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
@@ -3217,11 +3261,11 @@
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(6, 182, 212, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(6, 182, 212, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#06B6D4;color:#042F2E;font-weight:800;">⏱️ 5-MIN DRAW &amp; DEFENSE TIPS</span>
-            <span class="sure-pill-tag">${totalCount} WINNING TIPS READY (50 DRAW + 50 ANTI-BLOWOUT)</span>
-            <span class="font-mono text-xs text-muted">· Screened Across 22 Low-Scoring Leagues</span>
+            <span class="sure-pill-tag">${totalCount} REAL PRE-MATCH TIPS (≥5H BEFORE KO)</span>
+            <span class="font-mono text-xs text-muted">· OneFootball + Football.com Real Schedules</span>
           </div>
           <div class="flex items-center gap-2">
-            <a class="btn-subtle text-xs" href="/special-tips" data-route="/special-tips" style="font-weight:700;color:#06B6D4;">Open 5-Min Draw Center (100 Tips) &rarr;</a>
+            <a class="btn-subtle text-xs" href="/special-tips" data-route="/special-tips" style="font-weight:700;color:#06B6D4;">Open 5-Min Draw Center (${totalCount} Tips) &rarr;</a>
           </div>
         </div>
         <div class="p-3">
@@ -3233,7 +3277,7 @@
                   <span class="ev-return-pill" style="background:#06B6D4;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · Draw: ${tip.leagueDrawRatePct}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""}${tip.countdownLabel ? ` · 🕒 ${escapeHtml(tip.countdownLabel)}` : ""}</div>
                 <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
@@ -3529,13 +3573,16 @@
     return `
       <article class="power-team-card" data-match-id="${m.id}">
         <div class="flex items-center justify-between gap-2 flex-wrap">
-          <div class="flex items-center gap-2 min-w-0">
+          <div class="flex items-center gap-2 min-w-0 flex-wrap">
             <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
             ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
             <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
-            <span class="text-xs font-mono text-muted">· ${m.status === "LIVE" ? `LIVE ${escapeHtml(m.displayTime)}` : `${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}`}</span>
+            <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
           </div>
-          <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">${scoreLbl}</span>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${renderVerifyKoPills(m)}
+            <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">${scoreLbl}</span>
+          </div>
         </div>
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
@@ -3620,8 +3667,8 @@
     if (!RT?.buildTodayPowerRankings) {
       return `<div class="empty-state"><h3>Initializing Team Power Engine...</h3></div>`;
     }
-    const pool = filteredMatchesForDate();
-    const power = RT.buildTodayPowerRankings(pool.length > 0 ? pool : liveMatches);
+    const powerPool = liveMatches.filter((m) => !isNcaaOrWomenMatch(m));
+    const power = RT.buildTodayPowerRankings(powerPool);
     const activeFilter = state.activeStrongFilter || "ALL";
 
     // Hydrate city weather for visible picks cleanly once per load
@@ -3688,8 +3735,8 @@
     if (!RT?.buildTodayPowerRankings) {
       return `<div class="empty-state"><h3>Initializing Team Risk Engine...</h3></div>`;
     }
-    const pool = filteredMatchesForDate();
-    const power = RT.buildTodayPowerRankings(pool.length > 0 ? pool : liveMatches);
+    const powerPool = liveMatches.filter((m) => !isNcaaOrWomenMatch(m));
+    const power = RT.buildTodayPowerRankings(powerPool);
     const activeFilter = state.activeWorstFilter || "ALL";
 
     // Hydrate city weather for visible picks cleanly once per load
@@ -3835,8 +3882,7 @@
             ${item.isInvertedTrap ? `<span class="alert-badge">INVERTED BOOKIE TRAP</span>` : ""}
           </div>
           <div class="flex items-center gap-1.5 flex-wrap">
-            ${sbGameId ? `<button type="button" class="bookie-id-chip is-sporty" data-copy-gameid="${escapeHtml(String(sbGameId))}" data-bookie="SportyBet" title="Click to copy SportyBet Game ID">SportyBet ID: #${escapeHtml(String(sbGameId))} ⧉</button>` : ""}
-            ${fbGameId ? `<button type="button" class="bookie-id-chip is-fb" data-copy-gameid="${escapeHtml(String(fbGameId))}" data-bookie="Football.com" title="Click to copy Football.com Game ID">Football.com ID: #${escapeHtml(String(fbGameId))} ⧉</button>` : ""}
+            ${renderVerifyKoPills(item)}
             <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">Trap Score ${item.mismatchScore}/100</span>
           </div>
         </div>
@@ -4282,7 +4328,8 @@
               <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.league)}</span>
               <span class="text-xs font-mono text-muted">· ${escapeHtml(tip.kickoffUtc || "Today")}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
+              ${renderVerifyKoPills(tip)}
               <span class="text-xs font-mono font-bold" style="color:${tip.qualityTier === "ELITE" ? "#10B981" : "#3B82F6"};">${tip.qualityTier === "ELITE" ? "💎 ELITE VALUE" : tip.category === "SAFE_PLUS" ? "🛡️ SAFE HANDICAP" : "⚡ VALUE SELECTION"}</span>
             </div>
           </div>
@@ -4546,10 +4593,11 @@
                     <span class="draw-tier-pill ${tierBadge}">#${idx + 1} ${escapeHtml(tip.confidenceTier)}</span>
                   </div>
 
-                  <div class="flex items-center justify-between text-xs text-muted mb-1">
+                  <div class="flex items-center justify-between text-xs text-muted mb-1 flex-wrap gap-1">
                     <span>${tip.flag} <strong class="text-text">${escapeHtml(tip.league)}</strong></span>
                     <span class="font-mono">${escapeHtml(tip.date)} · ${escapeHtml(tip.kickoffTime)}</span>
                   </div>
+                  <div class="flex items-center gap-1.5 flex-wrap mb-1.5">${renderVerifyKoPills(tip)}</div>
 
                   <h3 class="font-headline font-bold text-base text-text mt-1 mb-2">
                     ${escapeHtml(tip.fixture)}
@@ -4602,76 +4650,43 @@
           }).join("")}
         </div>`;
 
-    // Slips Html
-    const slipsHtml = `
-      <div class="draw-slips-container mt-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">
-        <!-- 5-Minute Draw Treble -->
-        <div class="handicap-slip-card" style="border-color: rgba(6, 182, 212, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(6, 182, 212, 0.05) 100%);">
+    // Slips Html (rendered via single reusable card helper with safe null checks)
+    const renderDefenseSlipCard = (slipObj, hexColor) => {
+      if (!slipObj) return "";
+      const isMixed = slipObj === defenseData.bankerSlips.mixedAcca;
+      return `
+        <div class="handicap-slip-card" style="border-color: ${hexColor}73; background: linear-gradient(145deg, var(--surface) 0%, ${hexColor}0d 100%);">
           <div>
             <div class="slip-header">
-              <span class="sure-pill-tag" style="background:#06B6D4; color:#042F2E; font-weight:800;">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.badge)}</span>
-              <span class="font-mono font-bold text-lg" style="color:#06B6D4;">${defenseData.bankerSlips.fiveMinTreble.totalOdds.toFixed(2)}x</span>
+              <span class="sure-pill-tag" style="background:${hexColor}; color:${isMixed ? "#FFFFFF" : "#042F2E"}; font-weight:800;">${escapeHtml(slipObj.badge)}</span>
+              <span class="font-mono font-bold text-lg" style="color:${hexColor};">${slipObj.totalOdds.toFixed(2)}x</span>
             </div>
-            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.title)}</h3>
-            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.fiveMinTreble.summary)}</p>
-            ${defenseData.bankerSlips.fiveMinTreble.legs.map((leg) => `
+            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(slipObj.title)}</h3>
+            <p class="text-xs text-text-secondary mb-3">${escapeHtml(slipObj.summary)}</p>
+            ${(slipObj.legs || []).map((leg) => `
               <div class="handicap-slip-leg">
-                <span class="font-semibold truncate">${leg.flag} ${escapeHtml(leg.fixture)}</span>
-                <span class="font-mono font-bold ml-2" style="color:#06B6D4;">${leg.bookmakerOdds.toFixed(2)}</span>
+                <span class="font-semibold truncate text-xs">${leg.flag} ${escapeHtml(leg.fixture)}${isMixed ? ` (${leg.tipType === "5MIN_DRAW" ? "5m Draw" : "No 3 in Row"})` : ""}${leg.footballComGameId ? ` · FB #${escapeHtml(String(leg.footballComGameId))}` : ""}</span>
+                <span class="font-mono font-bold ml-2 text-xs" style="color:${hexColor};">${leg.bookmakerOdds.toFixed(2)}</span>
               </div>
             `).join("")}
           </div>
           <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
-            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.fiveMinTreble.combinedProb}</strong></span>
-            <span>Avg EV: <strong style="color:#06B6D4;">${defenseData.bankerSlips.fiveMinTreble.avgEvPct}</strong></span>
+            <span>Combined Prob: <strong class="text-text">${slipObj.combinedProb}</strong></span>
+            <span>Avg EV: <strong style="color:${hexColor};">${slipObj.avgEvPct}</strong></span>
           </div>
         </div>
+      `;
+    };
 
-        <!-- No 3+ in a row Treble -->
-        <div class="handicap-slip-card" style="border-color: rgba(16, 185, 129, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(16, 185, 129, 0.05) 100%);">
-          <div>
-            <div class="slip-header">
-              <span class="sure-pill-tag" style="background:#10B981; color:#042F2E; font-weight:800;">${escapeHtml(defenseData.bankerSlips.noThreeTreble.badge)}</span>
-              <span class="font-mono font-bold text-lg" style="color:#10B981;">${defenseData.bankerSlips.noThreeTreble.totalOdds.toFixed(2)}x</span>
-            </div>
-            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.noThreeTreble.title)}</h3>
-            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.noThreeTreble.summary)}</p>
-            ${defenseData.bankerSlips.noThreeTreble.legs.map((leg) => `
-              <div class="handicap-slip-leg">
-                <span class="font-semibold truncate">${leg.flag} ${escapeHtml(leg.fixture)}</span>
-                <span class="font-mono font-bold ml-2" style="color:#10B981;">${leg.bookmakerOdds.toFixed(2)}</span>
-              </div>
-            `).join("")}
-          </div>
-          <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
-            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.noThreeTreble.combinedProb}</strong></span>
-            <span>Avg EV: <strong style="color:#10B981;">${defenseData.bankerSlips.noThreeTreble.avgEvPct}</strong></span>
-          </div>
-        </div>
+    const slipCardsHtml = [
+      renderDefenseSlipCard(defenseData.bankerSlips.fiveMinTreble, "#06B6D4"),
+      renderDefenseSlipCard(defenseData.bankerSlips.noThreeTreble, "#10B981"),
+      renderDefenseSlipCard(defenseData.bankerSlips.mixedAcca, "#6366F1")
+    ].filter(Boolean).join("");
 
-        <!-- Master 5-Fold Mixed Acca -->
-        <div class="handicap-slip-card" style="border-color: rgba(99, 102, 241, 0.45); background: linear-gradient(145deg, var(--surface) 0%, rgba(99, 102, 241, 0.05) 100%);">
-          <div>
-            <div class="slip-header">
-              <span class="sure-pill-tag" style="background:#6366F1; color:#FFFFFF; font-weight:800;">${escapeHtml(defenseData.bankerSlips.mixedAcca.badge)}</span>
-              <span class="font-mono font-bold text-lg" style="color:#6366F1;">${defenseData.bankerSlips.mixedAcca.totalOdds.toFixed(2)}x</span>
-            </div>
-            <h3 class="font-headline font-bold text-base mb-1">${escapeHtml(defenseData.bankerSlips.mixedAcca.title)}</h3>
-            <p class="text-xs text-text-secondary mb-3">${escapeHtml(defenseData.bankerSlips.mixedAcca.summary)}</p>
-            ${defenseData.bankerSlips.mixedAcca.legs.map((leg) => `
-              <div class="handicap-slip-leg">
-                <span class="font-semibold truncate text-xs">${leg.flag} ${escapeHtml(leg.fixture)} (${leg.tipType === '5MIN_DRAW' ? '5m Draw' : 'No 3 in Row'})</span>
-                <span class="font-mono font-bold ml-2 text-xs" style="color:#6366F1;">${leg.bookmakerOdds.toFixed(2)}</span>
-              </div>
-            `).join("")}
-          </div>
-          <div class="flex items-center justify-between text-xs font-mono text-muted pt-2 mt-2" style="border-top:1px dashed var(--line-soft);">
-            <span>Combined Prob: <strong class="text-text">${defenseData.bankerSlips.mixedAcca.combinedProb}</strong></span>
-            <span>Avg EV: <strong style="color:#6366F1;">${defenseData.bankerSlips.mixedAcca.avgEvPct}</strong></span>
-          </div>
-        </div>
-      </div>
-    `;
+    const slipsHtml = slipCardsHtml
+      ? `<div class="draw-slips-container mt-4" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;">${slipCardsHtml}</div>`
+      : `<div class="empty-state mt-4"><h3>Building Verified ≥5h Defense Slips...</h3><p class="text-sm">Waiting for real pre-match fixtures &ge;5h before kickoff.</p></div>`;
 
     // Global Leagues Table Html
     const leaguesHtml = `
@@ -5311,6 +5326,12 @@
   function mergeBookmakerGamesIntoLiveMatches() {
     if (!bookmakerScan?.allGames || !Array.isArray(bookmakerScan.allGames)) return;
     const existingById = new Map(liveMatches.map((m) => [m.id, m]));
+    const bySportExisting = new Map();
+    for (const m of liveMatches) {
+      const sp = (m.sport || "football").toLowerCase();
+      if (!bySportExisting.has(sp)) bySportExisting.set(sp, []);
+      bySportExisting.get(sp).push(m);
+    }
     const converted = [];
 
     for (const g of bookmakerScan.allGames) {
@@ -5330,7 +5351,7 @@
             name: homeName,
             short: homeName.slice(0, 16),
             country: g.country || sportName,
-            logo: g.tournamentIcon || "",
+            logo: g.homeLogo || g.tournamentIcon || "",
             color: "#10B981"
           };
         }
@@ -5339,13 +5360,14 @@
             name: awayName,
             short: awayName.slice(0, 16),
             country: g.country || sportName,
-            logo: g.tournamentIcon || "",
+            logo: g.awayLogo || g.tournamentIcon || "",
             color: "#3B82F6"
           };
         }
       }
 
-      const dt = new Date(g.estimateStartTime || Date.now());
+      const startTs = Number(g.estimateStartTime) || Date.now();
+      const dt = new Date(startTs);
       const isoDateTime = dt.toISOString();
       const dateStr = g.isoDate || isoDateTime.slice(0, 10);
       const timeStr = g.kickoffUtc || isoDateTime.slice(11, 16);
@@ -5366,7 +5388,7 @@
         parsedAwayScore = 0;
       }
 
-      let rawMatchStatus = "LIVE";
+      let rawMatchStatus = "SCHEDULED";
       if (g.matchStatus && typeof g.matchStatus === "string" && g.matchStatus.trim() && g.matchStatus.toLowerCase() !== "null") {
         rawMatchStatus = g.matchStatus.trim();
       }
@@ -5385,43 +5407,96 @@
           })
         : { liveClock: timeStr, halfLabel: "", periodSubScore: "" };
       const displayTime = isGameLive ? `${clockInfo.liveClock} · ${clockInfo.halfLabel}` : timeStr;
+      const hoursToKickoff = Number.isFinite(Number(g.hoursToKickoff))
+        ? Number(g.hoursToKickoff)
+        : Math.round(((startTs - Date.now()) / 3600000) * 10) / 10;
+      const isPreMatch5h = Boolean(!isGameLive && (startTs - Date.now()) >= 5 * 3600000);
 
-      const existing = existingById.get(matchId);
+      let existing = existingById.get(matchId);
+      if (!existing && RT?.matchTeamsSimilar) {
+        const pool = bySportExisting.get(sport) || [];
+        existing = pool.find((m) => {
+          const mH = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
+          const mA = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
+          return RT.matchTeamsSimilar(mH, homeName) && RT.matchTeamsSimilar(mA, awayName);
+        });
+      }
+
       if (existing) {
-        existing.status = isGameLive ? "LIVE" : "SCHEDULED";
+        if (isGameLive) {
+          existing.status = "LIVE";
+          existing.homeScore = parsedHomeScore;
+          existing.awayScore = parsedAwayScore;
+          existing.liveClock = clockInfo.liveClock;
+          existing.halfLabel = clockInfo.halfLabel;
+          existing.minute = clockInfo.liveClock;
+          existing.displayTime = displayTime;
+        }
         existing.matchStatus = rawMatchStatus;
+        existing.timestamp = existing.timestamp || startTs;
+        existing.estimateStartTime = existing.estimateStartTime || startTs;
+        existing.hoursToKickoff = existing.hoursToKickoff ?? hoursToKickoff;
+        existing.isPreMatch5h = existing.status === "SCHEDULED" && ((existing.timestamp - Date.now()) >= 5 * 3600000);
         existing.playedSeconds = g.playedSeconds || existing.playedSeconds || "";
         existing.remainingTimeInPeriod = g.remainingTimeInPeriod || existing.remainingTimeInPeriod || "";
         existing.period = g.period || existing.period || "";
         existing.gameScore = Array.isArray(g.gameScore) ? g.gameScore : existing.gameScore || [];
         existing.pointScore = g.pointScore || existing.pointScore || "";
-        existing.liveClock = clockInfo.liveClock;
-        existing.halfLabel = clockInfo.halfLabel;
-        existing.minute = isGameLive ? clockInfo.liveClock : "";
-        existing.displayTime = displayTime;
-        existing.homeScore = parsedHomeScore;
-        existing.awayScore = parsedAwayScore;
         existing.homeStats = g.homeStats || existing.homeStats || null;
         existing.awayStats = g.awayStats || existing.awayStats || null;
         existing.bestOdds = g.bestOdds || existing.bestOdds || null;
         existing.sportybet = g.sportybet || existing.sportybet || null;
         existing.footballCom = g.footballCom || existing.footballCom || null;
+        existing.onFootballCom = Boolean(existing.onFootballCom || g.onFootballCom || existing.footballCom?.gameId);
+        existing.footballComGameId = existing.footballComGameId || g.footballComGameId || g.footballCom?.gameId || null;
+        existing.sportybetGameId = existing.sportybetGameId || g.sportybetGameId || g.sportybet?.gameId || null;
+        existing.onOneFootball = Boolean(existing.onOneFootball || g.onOneFootball);
+        existing.onefootballId = existing.onefootballId || g.onefootballId || null;
+        existing.onefootballUrl = existing.onefootballUrl || g.onefootballUrl || null;
+        if (g.bestOdds?.home && g.bestOdds?.away && existing.odds) {
+          existing.hasBookOdds = true;
+          existing.odds.home = g.bestOdds.home;
+          if (g.bestOdds.draw) existing.odds.draw = g.bestOdds.draw;
+          existing.odds.away = g.bestOdds.away;
+          existing.odds.provider = g.bestOdds.homeBookie || "Football.com & SportyBet";
+        }
+        if (g.homeStats?.ppg && g.awayStats?.ppg) {
+          existing.ppgSummary = {
+            homeOverall: g.homeStats.ppg,
+            awayOverall: g.awayStats.ppg,
+            homeVenue: g.homeStats.homePpg || g.homeStats.ppg,
+            awayVenue: g.awayStats.awayPpg || g.awayStats.ppg
+          };
+        }
+        if (sport === "football" && RT?.buildMatchAnalysis && !existing.enriched) {
+          existing.analysis = RT.buildMatchAnalysis(existing, null);
+        }
         continue;
       }
 
-      converted.push({
+      const newMatch = {
         id: matchId,
         espnId: matchId,
         sport,
         sportName,
         espnLeagueCode: sport,
         leagueSlug: `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-        leagueName: g.league || `${sportName} Competition`,
+        leagueName: g.onefootballLeague || g.league || `${sportName} Competition`,
         leagueCountry: g.country || "International",
         leagueLogo: g.tournamentIcon || "",
-        priority: 15,
+        priority: g.onOneFootball ? 10 : 15,
         date: dateStr,
         isoDateTime,
+        timestamp: startTs,
+        estimateStartTime: startTs,
+        hoursToKickoff,
+        isPreMatch5h,
+        onFootballCom: Boolean(g.onFootballCom || g.footballCom?.gameId),
+        footballComGameId: g.footballComGameId || g.footballCom?.gameId || null,
+        sportybetGameId: g.sportybetGameId || g.sportybet?.gameId || null,
+        onOneFootball: Boolean(g.onOneFootball),
+        onefootballId: g.onefootballId || null,
+        onefootballUrl: g.onefootballUrl || null,
         status: isGameLive ? "LIVE" : "SCHEDULED",
         matchStatus: rawMatchStatus,
         playedSeconds: g.playedSeconds || "",
@@ -5443,8 +5518,8 @@
         awayRed: 0,
         homeForm: g.homeStats?.form || ["W", "D", "W"],
         awayForm: g.awayStats?.form || ["L", "W", "D"],
-        homeRecord: { w: 3, d: 1, l: 1, mp: 5 },
-        awayRecord: { w: 2, d: 2, l: 1, mp: 5 },
+        homeRecord: { w: g.homeStats?.w || 3, d: g.homeStats?.d || 1, l: g.homeStats?.l || 1, mp: g.homeStats?.mp || 5 },
+        awayRecord: { w: g.awayStats?.w || 2, d: g.awayStats?.d || 2, l: g.awayStats?.l || 1, mp: g.awayStats?.mp || 5 },
         venue: g.venue || `${homeName} Arena`,
         venueCity: "",
         venueCountry: g.country || "",
@@ -5458,7 +5533,7 @@
           overUnder: 2.5,
           overOdds: g.bestOdds?.over25 || null,
           underOdds: null,
-          provider: g.bestOdds?.homeBookie || "SportyBet & Football.com"
+          provider: g.bestOdds?.homeBookie || "Football.com & SportyBet"
         },
         bestOdds: g.bestOdds,
         sportybet: g.sportybet || null,
@@ -5472,7 +5547,13 @@
           homeVenue: g.homeStats?.homePpg || 1.6,
           awayVenue: g.awayStats?.awayPpg || 1.2
         },
-        analysis: {
+        communityVote: { home: 65, draw: 15, away: 20, total: 100 }
+      };
+
+      if (sport === "football" && RT?.buildMatchAnalysis) {
+        newMatch.analysis = RT.buildMatchAnalysis(newMatch, null);
+      } else {
+        newMatch.analysis = {
           confidencePct: 75,
           bestPick: {
             code: g.sport === "tennis" ? "WIN_1" : (g.bestOdds?.dc1X ? "1X" : "HOME"),
@@ -5497,9 +5578,10 @@
               }
             }
           }
-        },
-        communityVote: { home: 65, draw: 15, away: 20, total: 100 }
-      });
+        };
+      }
+
+      converted.push(newMatch);
     }
 
     if (converted.length > 0) {

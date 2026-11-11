@@ -5,6 +5,7 @@ const handleEspnProxy = require("./api/espn");
 const handleWeatherProxy = require("./api/weather");
 const handleBookmakersProxy = require("./api/bookmakers");
 const handleRuninProxy = require("./api/runin");
+const handleOnefootballProxy = require("./api/onefootball");
 
 const PORT = 8080;
 const HOST = "127.0.0.1";
@@ -39,6 +40,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (reqUrl.pathname === "/api/runin") {
       await handleRuninProxy(req, res);
+      return;
+    }
+    if (reqUrl.pathname === "/api/onefootball") {
+      await handleOnefootballProxy(req, res);
       return;
     }
 
@@ -80,6 +85,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`MAMON WIN server running at http://${HOST}:${PORT}/`);
+  if (typeof handleOnefootballProxy.fetchOneFootballSchedule === "function") {
+    handleOnefootballProxy.fetchOneFootballSchedule(false).catch(() => {});
+  }
   if (typeof handleBookmakersProxy.runFullBookmakerScan === "function") {
     handleBookmakersProxy.runFullBookmakerScan(false).catch(() => {});
   }

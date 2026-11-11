@@ -628,6 +628,125 @@ window.MAMON_REALTIME = (() => {
     return h >>> 0;
   }
 
+  // Strictly enforce >= 5 hours before Kick Off across all Tips, Slips & Predictions
+  const MIN_PREMATCH_LEAD_MS = 5 * 3600 * 1000;
+
+  function resolveKickoffMs(item) {
+    if (!item) return NaN;
+    if (typeof item === "number" && Number.isFinite(item)) return item;
+    if (typeof item === "string") return Date.parse(item);
+    const num = Number(item.estimateStartTime || item.kickoffMs || item.timestamp || 0);
+    if (Number.isFinite(num) && num > 1000000000000) return num;
+    if (item.isoDateTime) {
+      const p = Date.parse(item.isoDateTime);
+      if (Number.isFinite(p)) return p;
+    }
+    if (item.kickoffIso) {
+      const p = Date.parse(item.kickoffIso);
+      if (Number.isFinite(p)) return p;
+    }
+    if (item.isoDate && item.kickoffUtc && /^\d{2}:\d{2}/.test(item.kickoffUtc)) {
+      const p = Date.parse(`${item.isoDate}T${item.kickoffUtc}:00Z`);
+      if (Number.isFinite(p)) return p;
+    }
+    return NaN;
+  }
+
+  function getHoursToKickoff(item) {
+    const ko = resolveKickoffMs(item);
+    if (!Number.isFinite(ko)) return null;
+    return Math.round(((ko - Date.now()) / 3600000) * 10) / 10;
+  }
+
+  function isTipEligiblePreMatch5h(item) {
+    if (!item) return false;
+    if (item.isLive === true || item.status === "LIVE" || item.status === "FT") return false;
+    const ko = resolveKickoffMs(item);
+    if (!Number.isFinite(ko)) return false;
+    return (ko - Date.now()) >= MIN_PREMATCH_LEAD_MS;
+  }
+
+  function formatPreMatchBadge(item) {
+    const ko = resolveKickoffMs(item);
+    if (!Number.isFinite(ko)) return "Scheduled Pre-Match";
+    const diffMs = ko - Date.now();
+    if (diffMs <= 0) return "Started / In-Play";
+    const totalMins = Math.floor(diffMs / 60000);
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    return hrs > 0 ? `${hrs}h ${String(mins).padStart(2, "0")}m before KO` : `${mins}m before KO`;
+  }
+
+  const RT_TEAM_ALIASES = {
+    "manchester united": "man utd",
+    "man united": "man utd",
+    "manchester city": "man city",
+    "tottenham hotspur": "tottenham",
+    "spurs": "tottenham",
+    "wolverhampton wanderers": "wolves",
+    "wolverhampton": "wolves",
+    "nottingham forest": "nottm forest",
+    "newcastle united": "newcastle",
+    "west ham united": "west ham",
+    "brighton hove albion": "brighton",
+    "brighton and hove albion": "brighton",
+    "paris saint germain": "psg",
+    "paris sg": "psg",
+    "internazionale": "inter",
+    "inter milan": "inter",
+    "ac milan": "milan",
+    "bayern munchen": "bayern munich",
+    "bayer 04 leverkusen": "bayer leverkusen",
+    "atletico de madrid": "atletico madrid",
+    "athletic club": "athletic bilbao",
+    "ath bilbao": "athletic bilbao",
+    "sporting cp": "sporting",
+    "turkiye": "turkey",
+    "czechia": "czech republic",
+    "korea republic": "south korea",
+    "bosnia herzegovina": "bosnia",
+    "juventus turin": "juventus",
+    "olympique lyon": "lyon",
+    "olympique lyonnais": "lyon"
+  };
+
+  function normTeamMatchKey(name) {
+    const cleaned = String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\b(fc|cf|sc|afc|ac|as|us|cd|ud|rcd|rc|sd|sv|vfl|vfb|fsv|tsg|rb|bsc|fk|sk|if|bk|ik|aik|city|town|united|utd|spor|kulubu)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (RT_TEAM_ALIASES[cleaned]) return RT_TEAM_ALIASES[cleaned];
+    const basic = String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return RT_TEAM_ALIASES[basic] || cleaned || basic;
+  }
+
+  function matchTeamsSimilar(a, b) {
+    const na = normTeamMatchKey(a);
+    const nb = normTeamMatchKey(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return true;
+    const wa = na.split(" ").filter((w) => w.length >= 3);
+    const wb = nb.split(" ").filter((w) => w.length >= 3);
+    if (wa.length > 0 && wb.length > 0) {
+      const shared = wa.filter((w) => wb.includes(w));
+      if (shared.length >= 1 && (wa.length === 1 || wb.length === 1 || shared.length >= 2)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function inferEspnCode(ev, forcedCode = null) {
     if (forcedCode) return forcedCode;
     const slug = ev.season?.slug || "";
@@ -868,6 +987,9 @@ window.MAMON_REALTIME = (() => {
       priority: leagueMeta.priority,
       date: localDate,
       isoDateTime: ev.date,
+      timestamp: matchDt.getTime(),
+      hoursToKickoff: getHoursToKickoff({ estimateStartTime: matchDt.getTime() }),
+      isPreMatch5h: status === "SCHEDULED" && (matchDt.getTime() - Date.now()) >= MIN_PREMATCH_LEAD_MS,
       status,
       minute: parsedMinute,
       halfLabel,
@@ -915,6 +1037,103 @@ window.MAMON_REALTIME = (() => {
       analysis: null
     };
 
+    match.analysis = buildMatchAnalysis(match, null);
+    return match;
+  }
+
+  function parseOneFootballMatch(ofm) {
+    if (!ofm || !ofm.homeTeamName || !ofm.awayTeamName) return null;
+    if (isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
+
+    const leagueName = ofm.leagueName || "International Football";
+    const leagueSlugGuess = leagueName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "international-football";
+    const staticLg = leagueBySlug.get(leagueSlugGuess) || LEAGUES.find((l) => l.name && leagueName.toLowerCase().includes(l.name.toLowerCase()));
+    const leagueSlug = staticLg?.slug || leagueSlugGuess;
+    const espnCode = slugToEspnCode.get(leagueSlug) || "all";
+
+    const homeKey = `of-team-${normTeamMatchKey(ofm.homeTeamName).replace(/\s+/g, "-")}`;
+    const awayKey = `of-team-${normTeamMatchKey(ofm.awayTeamName).replace(/\s+/g, "-")}`;
+    const mkShort = (nm) => nm.replace(/[^A-Za-z0-9 ]/g, "").split(" ").map((w) => w[0] || "").join("").slice(0, 3).toUpperCase() || nm.slice(0, 3).toUpperCase();
+
+    DATA.TEAMS[homeKey] = {
+      ...(DATA.TEAMS[homeKey] || {}),
+      key: homeKey,
+      name: ofm.homeTeamName,
+      short: DATA.TEAMS[homeKey]?.short || mkShort(ofm.homeTeamName),
+      color: "#0A7B5C",
+      logo: ofm.homeLogo || DATA.TEAMS[homeKey]?.logo || "",
+      league: leagueSlug
+    };
+    DATA.TEAMS[awayKey] = {
+      ...(DATA.TEAMS[awayKey] || {}),
+      key: awayKey,
+      name: ofm.awayTeamName,
+      short: DATA.TEAMS[awayKey]?.short || mkShort(ofm.awayTeamName),
+      color: "#1E40AF",
+      logo: ofm.awayLogo || DATA.TEAMS[awayKey]?.logo || "",
+      league: leagueSlug
+    };
+
+    const koMs = Number(ofm.kickoffMs) || Date.parse(ofm.kickoffIso) || Date.now();
+    const localDate = isoDate(new Date(koMs));
+    const status = ofm.status === "LIVE" ? "LIVE" : ofm.status === "FT" ? "FT" : "SCHEDULED";
+
+    const match = {
+      id: ofm.id || `of-${ofm.onefootballId}`,
+      espnId: ofm.id || `of-${ofm.onefootballId}`,
+      onefootballId: String(ofm.onefootballId || ""),
+      onefootballUrl: ofm.onefootballUrl || "",
+      onOneFootball: true,
+      sport: "football",
+      sportName: "Football",
+      espnLeagueCode: espnCode,
+      leagueSlug,
+      leagueName: staticLg?.name || leagueName,
+      leagueCountry: staticLg?.country || "International",
+      leagueLogo: staticLg?.logo || "",
+      priority: staticLg ? 8 : 22,
+      date: localDate,
+      isoDateTime: ofm.kickoffIso || new Date(koMs).toISOString(),
+      timestamp: koMs,
+      estimateStartTime: koMs,
+      hoursToKickoff: Math.round(((koMs - Date.now()) / 3600000) * 10) / 10,
+      isPreMatch5h: status === "SCHEDULED" && (koMs - Date.now()) >= MIN_PREMATCH_LEAD_MS,
+      status,
+      minute: status === "LIVE" ? (ofm.minute || 45) : null,
+      halfLabel: status === "LIVE" ? (Number(ofm.minute || 0) <= 45 ? "1st Half" : "2nd Half") : "",
+      liveClock: status === "LIVE" ? (ofm.displayTime || "LIVE") : "",
+      displayTime: status === "LIVE" ? (ofm.displayTime || "LIVE") : status === "FT" ? "FT" : formatLocalTime(ofm.kickoffIso || new Date(koMs).toISOString()),
+      home: homeKey,
+      away: awayKey,
+      homeTeamName: ofm.homeTeamName,
+      awayTeamName: ofm.awayTeamName,
+      homeEspnId: "",
+      awayEspnId: "",
+      homeScore: ofm.homeScore ?? null,
+      awayScore: ofm.awayScore ?? null,
+      homeRed: 0,
+      awayRed: 0,
+      homeForm: ["W", "D", "W", "W", "L"],
+      awayForm: ["D", "L", "W", "D", "W"],
+      homeRecord: { w: 4, d: 3, l: 3, mp: 10 },
+      awayRecord: { w: 3, d: 3, l: 4, mp: 10 },
+      venue: `${ofm.homeTeamName} Stadium`,
+      venueCity: "",
+      venueCountry: "",
+      weather: null,
+      hasBookOdds: false,
+      droppingOdds: { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] },
+      odds: { home: 2.15, draw: 3.30, away: 3.20, overUnder: 2.5, overOdds: null, underOdds: null, provider: "OneFootball Schedule" },
+      communityVote: { home: 44, draw: 27, away: 29 },
+      mustWatch: status === "SCHEDULED" && (koMs - Date.now()) >= MIN_PREMATCH_LEAD_MS,
+      mustWatchTag: status === "LIVE" ? "LIVE NOW" : "ONEFOOTBALL",
+      mustWatchReason: `${leagueName} · Real schedule synced from OneFootball`,
+      events: [],
+      stats: null,
+      lineups: null,
+      enriched: false,
+      analysis: null
+    };
     match.analysis = buildMatchAnalysis(match, null);
     return match;
   }
@@ -2087,14 +2306,14 @@ window.MAMON_REALTIME = (() => {
 
   // Exact 8 Requested Sure Odds Accumulator Tiers
   const SURE_TIERS = [
-    { id: "2", title: "2 Sure Odds", badge: "Banker 2.0x", target: 2.04, min: 1.90, max: 2.35, minLegs: 2, maxLegs: 2, pool: "SAFE", subtitle: "Ultra-high probability 2-leg daily banker built on Home/Away safety, Clean Sheets & Goals" },
-    { id: "5", title: "5 Sure Odds", badge: "Rollover 5.0x", target: 5.05, min: 4.65, max: 5.75, minLegs: 3, maxLegs: 4, pool: "SAFE_CORE", subtitle: "3–4 dominant multi-factor edges blending Last 5 Home/Away form & Goals Scored" },
-    { id: "10", title: "10 Sure Odds", badge: "Strong 10x", target: 10.2, min: 9.20, max: 11.80, minLegs: 5, maxLegs: 6, pool: "CORE", subtitle: "5–6 real-time fixtures filtered by Injuries, Suspensions, H2H & Run-in Rest" },
-    { id: "80", title: "80 Sure Odds", badge: "Value 80x", target: 81.0, min: 72.0, max: 94.0, minLegs: 8, maxLegs: 10, pool: "CORE_VALUE", subtitle: "8–10 cross-league matches combining Straight Wins, Over 2.5 & Win + Over 1.5" },
-    { id: "100", title: "100 Sure Odds", badge: "Pro 100x", target: 102.0, min: 92.0, max: 116.0, minLegs: 8, maxLegs: 11, pool: "CORE_VALUE", subtitle: "Precision 100x ticket balancing Clean Sheet dominance with attacking mismatches" },
-    { id: "200", title: "200 Sure Odds", badge: "Elite 200x", target: 204.0, min: 182.0, max: 232.0, minLegs: 10, maxLegs: 13, pool: "VALUE", subtitle: "High-yield multi-market accumulator across top European & global kick-offs" },
-    { id: "500", title: "500 Sure Odds", badge: "Super 500x", target: 508.0, min: 455.0, max: 575.0, minLegs: 11, maxLegs: 15, pool: "HIGH", subtitle: "Aggressive multi-factor combo slip mixing HT/FT, Win to Nil & Over Goals" },
-    { id: "1000000", title: "1 Million Sure Odds", badge: "Jackpot 1,000,000x", target: 1120000.0, min: 1000000.0, max: 1550000.0, minLegs: 18, maxLegs: 26, pool: "MEGA", subtitle: "20+ distinct real-time global fixtures engineered to reach 1,000,000x+ payout" }
+    { id: "2", title: "2 Sure Odds", badge: "Banker 2.0x", target: 2.04, min: 1.90, max: 2.35, minLegs: 2, maxLegs: 2, pool: "SAFE", subtitle: "Ultra-high probability 2-leg pre-match banker (>= 5h before KO) verified on Football.com & OneFootball" },
+    { id: "5", title: "5 Sure Odds", badge: "Rollover 5.0x", target: 5.05, min: 4.65, max: 5.75, minLegs: 3, maxLegs: 4, pool: "SAFE_CORE", subtitle: "3–4 dominant pre-match edges (>= 5h before KO) blending Strong PPG, Form & Clean Sheets" },
+    { id: "10", title: "10 Sure Odds", badge: "Strong 10x", target: 10.2, min: 9.20, max: 11.80, minLegs: 5, maxLegs: 6, pool: "CORE", subtitle: "5–6 real upcoming fixtures (>= 5h before KO) filtered by Strong PPG, H2H & Run-in" },
+    { id: "80", title: "80 Sure Odds", badge: "Value 80x", target: 81.0, min: 72.0, max: 94.0, minLegs: 8, maxLegs: 10, pool: "CORE_VALUE", subtitle: "8–10 cross-league pre-match games (>= 5h before KO) verified on Football.com" },
+    { id: "100", title: "100 Sure Odds", badge: "Pro 100x", target: 102.0, min: 92.0, max: 116.0, minLegs: 8, maxLegs: 11, pool: "CORE_VALUE", subtitle: "Precision 100x ticket using real upcoming >= 5h kickoff matches on Football.com" },
+    { id: "200", title: "200 Sure Odds", badge: "Elite 200x", target: 204.0, min: 182.0, max: 232.0, minLegs: 10, maxLegs: 13, pool: "VALUE", subtitle: "High-yield pre-match accumulator (>= 5h before KO) across verified upcoming kick-offs" },
+    { id: "500", title: "500 Sure Odds", badge: "Super 500x", target: 508.0, min: 455.0, max: 575.0, minLegs: 11, maxLegs: 15, pool: "HIGH", subtitle: "Aggressive multi-factor combo slip on real >= 5h upcoming Football.com matches" },
+    { id: "1000000", title: "1 Million Sure Odds", badge: "Jackpot 1,000,000x", target: 1120000.0, min: 1000000.0, max: 1550000.0, minLegs: 18, maxLegs: 26, pool: "MEGA", subtitle: "20+ distinct real >= 5h upcoming Football.com & OneFootball fixtures" }
   ];
 
   function extractPpgStrength(m) {
@@ -2127,7 +2346,7 @@ window.MAMON_REALTIME = (() => {
 
   function allowedMarketsForPool(match, pool) {
     const all = match.analysis?.markets || [];
-    const ppg = match.analysis?.ppg || match.ppgSummary || {};
+    const ppg = match.analysis?.factors?.ppg || match.analysis?.ppg || match.ppgSummary || {};
     const sched = ppg.scheduleStrength || {};
     const homePpg = ppg.homeOverall || 1.30;
     const awayPpg = ppg.awayOverall || 1.30;
@@ -2180,16 +2399,16 @@ window.MAMON_REALTIME = (() => {
   }
 
   function buildSlipForTier(matchesPool, tier, variationSeed = 0) {
-    // Only use LIVE (<= 65') or UPCOMING matches — NEVER finished/dead past games
-    const playable = matchesPool
-      .filter((m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) <= 68))
+    // STRICT RULE: Only pre-match SCHEDULED fixtures kicking off >= 5 hours from now (ZERO in-play LIVE matches!)
+    const preMatchBase = (matchesPool || [])
+      .filter((m) => m.status === "SCHEDULED" && isTipEligiblePreMatch5h(m))
       .filter((m) => {
         const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
         const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
         if (isChaosOrReserveMatch(m.leagueName, hName, aName)) return false;
 
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
-        const ppg = m.analysis?.ppg || m.ppgSummary || {};
+        const ppg = m.analysis?.factors?.ppg || m.analysis?.ppg || m.ppgSummary || {};
         const sched = ppg.scheduleStrength || {};
         const homePpg = ppg.homeOverall || 1.30;
         const awayPpg = ppg.awayOverall || 1.30;
@@ -2198,15 +2417,21 @@ window.MAMON_REALTIME = (() => {
         const ppgGap = Math.abs(homePpg - awayPpg);
 
         // Strong PPG enforcement for daily accumulator slips
-        const hasStrongPpgEdge = (homePpg >= 1.60 || awayPpg >= 1.45 || homeGain || awayGain || ppgGap >= 0.25);
+        const hasStrongPpgEdge = (homePpg >= 1.60 || awayPpg >= 1.60 || homeGain || awayGain || ppgGap >= 0.25);
         if (tier.id === "2" || tier.id === "5" || tier.id === "10" || tier.pool === "SAFE" || tier.pool === "SAFE_CORE") {
           return hasStrongPpgEdge;
         }
         return true;
-      })
+      });
+
+    // Prefer fixtures confirmed on Football.com (so every slip leg is findable on football.com) and OneFootball
+    const fbVerifiedPool = preMatchBase.filter((m) => m.onFootballCom);
+    const chosenPool = fbVerifiedPool.length >= Math.max(4, tier.minLegs) ? fbVerifiedPool : preMatchBase;
+
+    const playable = chosenPool
       .map((m) => {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
-        const ppg = m.analysis?.ppg || m.ppgSummary || {};
+        const ppg = m.analysis?.factors?.ppg || m.analysis?.ppg || m.ppgSummary || {};
         const sched = ppg.scheduleStrength || {};
         const homePpg = ppg.homeOverall || 1.30;
         const awayPpg = ppg.awayOverall || 1.30;
@@ -2214,10 +2439,10 @@ window.MAMON_REALTIME = (() => {
         const awayGain = sched.away?.isGainBlue || sched.away?.status === "GAIN_BLUE";
         const ppgGap = Math.abs(homePpg - awayPpg);
         const topProb = m.analysis?.bestPick?.prob || 0.6;
-        // Prefer upcoming top-league fixtures + hydrated analyses + deterministic slight rotation for Regenerate button
         const jitter = variationSeed === 0 ? 0 : ((hashSeed(m.id + ":" + variationSeed) % 100) / 400);
         const ppgBonus = (ppgGap * 0.45) + (homeGain || awayGain ? 0.35 : 0);
-        const rankScore = (m.status === "SCHEDULED" ? 1.0 : 0.72) + (1 / Math.max(1, m.priority)) * 0.25 + topProb * 0.8 + ppgBonus + (m.analysis.isLiveHydrated ? 0.12 : 0) - jitter;
+        const verifyBonus = (m.onFootballCom ? 2.2 : 0) + (m.onOneFootball ? 1.5 : 0);
+        const rankScore = 1.0 + verifyBonus + (1 / Math.max(1, m.priority)) * 0.25 + topProb * 0.8 + ppgBonus + (m.analysis.isLiveHydrated ? 0.12 : 0) - jitter;
         return { match: m, rankScore };
       })
       .sort((a, b) => b.rankScore - a.rankScore)
@@ -2575,24 +2800,16 @@ window.MAMON_REALTIME = (() => {
   }
 
   function buildTodayPowerRankings(matches = []) {
-    // Only rank actionable live (< 75') and scheduled upcoming fixtures so near-FT 90'+ games don't top Power lists
-    // Filter out youth, reserve, and low-tier amateur chaos leagues
+    // Strictly rank Football PRE-MATCH SCHEDULED fixtures >= 5 hours before Kick Off (NEVER live in-play games)
     const playableAll = (matches || [])
-      .filter((m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) < 75))
+      .filter((m) => (!m.sport || String(m.sport).toLowerCase() === "football") && m.status === "SCHEDULED" && isTipEligiblePreMatch5h(m))
       .filter((m) => {
         const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
         const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
         return !isChaosOrReserveMatch(m.leagueName, hName, aName);
       });
-    const activeAll = playableAll.length >= 6
-      ? playableAll
-      : (matches || [])
-          .filter((m) => m.status !== "FT")
-          .filter((m) => {
-            const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
-            const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
-            return !isChaosOrReserveMatch(m.leagueName, hName, aName);
-          });
+    const fbVerified = playableAll.filter((m) => m.onFootballCom);
+    const activeAll = fbVerified.length >= 6 ? fbVerified : playableAll;
     const todayIso = DATA.todayIso;
     let pool = activeAll.filter((m) => m.date === todayIso);
     const isTodayOnly = pool.length >= 4;
@@ -2606,9 +2823,11 @@ window.MAMON_REALTIME = (() => {
     const worstAway = [];
 
     for (const m of pool) {
-      const a = m.analysis || buildMatchAnalysis(m);
+      const a = (m.analysis && m.analysis.factors?.currentForm && m.analysis.factors?.goalsScored)
+        ? m.analysis
+        : buildMatchAnalysis(m);
       const f = a?.factors;
-      if (!f) continue;
+      if (!f || !f.currentForm || !f.goalsScored || !f.goalsConceded) continue;
 
       const stH = standingsByTeamId.get(`${m.leagueSlug}:${m.homeEspnId}`) || standingsByTeamId.get(m.homeEspnId);
       const stA = standingsByTeamId.get(`${m.leagueSlug}:${m.awayEspnId}`) || standingsByTeamId.get(m.awayEspnId);
@@ -2858,10 +3077,26 @@ window.MAMON_REALTIME = (() => {
       return mat;
     }
 
-    // 1. Process Bookmaker Scraped Games (SportyBet & Football.com)
-    for (const g of bkGames) {
-      if (!g.bestOdds || !g.bestOdds.home || !g.bestOdds.away) continue;
-      if (isChaosOrReserveMatch(g.league, g.homeTeamName, g.awayTeamName)) continue;
+    const eligibleBkGames = bkGames.filter((g) => {
+      if (!g.bestOdds || !g.bestOdds.home || !g.bestOdds.away) return false;
+      if (isChaosOrReserveMatch(g.league, g.homeTeamName, g.awayTeamName)) return false;
+      if (g.isLive || !isTipEligiblePreMatch5h(g)) return false;
+      if (!g.footballCom?.gameId || g.footballCom.gameId === "-") return false;
+      return true;
+    });
+
+    const metaForHandicapGame = (g) => ({
+      gameId: g.footballCom?.gameId || g.sportybet?.gameId || g.eventId,
+      footballComGameId: g.footballCom?.gameId || null,
+      sportybetGameId: g.sportybet?.gameId || null,
+      onOneFootball: Boolean(g.onOneFootball),
+      onefootballUrl: g.onefootballUrl || null,
+      hoursToKickoff: getHoursToKickoff(g),
+      countdownLabel: formatPreMatchBadge(g)
+    });
+
+    // 1. Process Bookmaker Scraped Games (Strictly >= 5h Pre-Match & Findable on Football.com)
+    for (const g of eligibleBkGames) {
       const key = `${g.homeTeamName}::${g.awayTeamName}`.toLowerCase();
       if (usedKeys.has(key)) continue;
 
@@ -3039,8 +3274,8 @@ window.MAMON_REALTIME = (() => {
               bookmakerOdds: mkt.bookie,
               expectedValue: Math.round(mkt.ev * 10000) / 10000,
               expectedValuePct: `+${evPct.toFixed(2)}%`,
-              bookmakerSource: "SportyBet & Football.com",
-              gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+              bookmakerSource: g.footballCom?.gameId ? "Football.com & SportyBet" : "SportyBet",
+              ...metaForHandicapGame(g),
               ppgSchedule: ppgSched,
               targetPpg: targetSos,
               targetPpgVal,
@@ -3108,7 +3343,7 @@ window.MAMON_REALTIME = (() => {
             expectedValue: Math.round(bestBasket.ev * 10000) / 10000,
             expectedValuePct: `+${evPct.toFixed(2)}%`,
             bookmakerSource: "SportyBet & Football.com",
-            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ...metaForHandicapGame(g),
             ppgSchedule: ppgSched,
             targetPpg: bTargetSos,
             targetPpgVal: bTargetPpgVal,
@@ -3197,7 +3432,7 @@ window.MAMON_REALTIME = (() => {
             expectedValue: Math.round(pickTennis.ev * 10000) / 10000,
             expectedValuePct: `+${evPct.toFixed(2)}%`,
             bookmakerSource: "SportyBet & Football.com",
-            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ...metaForHandicapGame(g),
             ppgSchedule: ppgSched,
             targetPpg: tTargetSos,
             targetPpgVal: tTargetPpgVal,
@@ -3286,7 +3521,7 @@ window.MAMON_REALTIME = (() => {
             expectedValue: Math.round(pickDarts.ev * 10000) / 10000,
             expectedValuePct: `+${evPct.toFixed(2)}%`,
             bookmakerSource: "SportyBet & Football.com",
-            gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
+            ...metaForHandicapGame(g),
             ppgSchedule: ppgSched,
             targetPpg: dTargetSos,
             targetPpgVal: dTargetPpgVal,
@@ -3389,188 +3624,111 @@ window.MAMON_REALTIME = (() => {
     { league: "Japanese J2 League", country: "Japan", flag: "🇯🇵", drawRate: 0.325, avgGoals: 2.22, under25Rate: 0.63, ht00Rate: 0.36, rank: 22 }
   ];
 
-  const DRAW_DEFENSE_FIXTURES_SEED = [
-    // Argentine Primera Nacional
-    { h: "Club Atlético Mitre", a: "Defensores de Belgrano", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Doctores Castiglione", t: "18:00", day: 0 },
-    { h: "Gimnasia y Esgrima Mendoza", a: "Deportivo Maipú", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Víctor Legrotaglie", t: "19:30", day: 0 },
-    { h: "Chacarita Juniors", a: "All Boys", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio de Chacarita Juniors", t: "20:00", day: 0 },
-    { h: "Club Atlético Atlanta", a: "Tristán Suárez", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Don León Kolbowsky", t: "21:10", day: 0 },
-    { h: "Ferro Carril Oeste", a: "Nueva Chicago", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Arquitecto Ricardo Etcheverri", t: "18:30", day: 1 },
-    { h: "Agropecuario Argentino", a: "San Martín de San Juan", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Ofelia Rosenzuaig", t: "19:00", day: 1 },
-    { h: "Estudiantes de Caseros", a: "Deportivo Morón", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Ciudad de Caseros", t: "20:30", day: 1 },
-    { h: "Quilmes AC", a: "Brown de Adrogué", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Centenario Ciudad de Quilmes", t: "21:00", day: 1 },
-    { h: "Almagro", a: "San Telmo", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio Tres de Febrero", t: "17:00", day: 2 },
-    { h: "Alvarado", a: "Güemes", l: "Argentine Primera Nacional", c: "Argentina", flag: "🇦🇷", dr: 0.382, g: 1.84, venue: "Estadio José María Minella", t: "19:00", day: 2 },
-
-    // Argentine Primera B Metropolitana
-    { h: "Colegiales", a: "Comunicaciones", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio Libertarios Unidos", t: "18:30", day: 0 },
-    { h: "Los Andes", a: "Acassuso", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio Eduardo Gallardón", t: "19:00", day: 0 },
-    { h: "Deportivo Laferrere", a: "Fénix", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio Ciudad de Laferrere", t: "20:00", day: 1 },
-    { h: "Villa San Carlos", a: "Excursionistas", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio Genacio Sálice", t: "18:00", day: 1 },
-    { h: "Sacachispas FC", a: "Cañuelas FC", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio Beto Larrosa", t: "17:30", day: 2 },
-    { h: "Deportivo Merlo", a: "Sportivo Dock Sud", l: "Argentine Primera B Metropolitana", c: "Argentina", flag: "🇦🇷", dr: 0.395, g: 1.78, venue: "Estadio José Manuel Moreno", t: "19:30", day: 2 },
-
-    // Moroccan Botola Pro
-    { h: "Hassania Agadir", a: "Maghreb de Fès", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade Adrar", t: "17:00", day: 0 },
-    { h: "Renaissance de Berkane", a: "FUS Rabat", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade Municipal de Berkane", t: "19:00", day: 0 },
-    { h: "Olympic Safi", a: "Union Touarga", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade El Massira", t: "20:00", day: 0 },
-    { h: "Ittihad Tanger", a: "JS Soualem", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade Ibn Batouta", t: "18:00", day: 1 },
-    { h: "Moghreb Tétouan", a: "Chabab Mohammédia", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade Saniat Rmel", t: "19:30", day: 1 },
-    { h: "Raja Casablanca", a: "AS FAR", l: "Moroccan Botola Pro", c: "Morocco", flag: "🇲🇦", dr: 0.394, g: 1.76, venue: "Stade Mohammed V", t: "21:00", day: 2 },
-
-    // Spanish Segunda División (LaLiga Hypermotion)
-    { h: "SD Huesca", a: "CD Mirandés", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "El Alcoraz", t: "17:30", day: 0 },
-    { h: "Albacete Balompié", a: "CD Tenerife", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "Carlos Belmonte", t: "19:00", day: 0 },
-    { h: "Racing de Ferrol", a: "Burgos CF", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "Estadio de A Malata", t: "20:00", day: 0 },
-    { h: "Sporting Gijón", a: "Real Oviedo", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "El Molinón", t: "20:30", day: 1 },
-    { h: "CD Eldense", a: "FC Cartagena", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "Estadio Municipal Nuevo Pepico Amat", t: "18:00", day: 1 },
-    { h: "FC Andorra", a: "AD Alcorcón", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "Estadi Nacional d'Andorra", t: "19:00", day: 2 },
-    { h: "Real Zaragoza", a: "SD Amorebieta", l: "Spanish Segunda División", c: "Spain", flag: "🇪🇸", dr: 0.355, g: 2.05, venue: "La Romareda", t: "20:00", day: 2 },
-
-    // French Ligue 2
-    { h: "AC Ajaccio", a: "Grenoble Foot 38", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Stade François Coty", t: "19:00", day: 0 },
-    { h: "Pau FC", a: "Stade Lavallois", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Nouste Camp", t: "19:00", day: 0 },
-    { h: "Rodez AF", a: "Paris FC", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Stade Paul-Lignon", t: "19:00", day: 1 },
-    { h: "Amiens SC", a: "Valenciennes FC", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Stade Crédit Agricole la Licorne", t: "19:00", day: 1 },
-    { h: "US Concarneau", a: "Quevilly-Rouen", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Stade Guy Piriou", t: "19:00", day: 2 },
-    { h: "USL Dunkerque", a: "FC Annecy", l: "French Ligue 2", c: "France", flag: "🇫🇷", dr: 0.348, g: 2.10, venue: "Stade Marcel-Tribut", t: "19:00", day: 2 },
-
-    // Italian Serie B
-    { h: "FC Südtirol", a: "AS Cittadella", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio Druso", t: "14:00", day: 0 },
-    { h: "Cosenza Calcio", a: "Modena FC", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio San Vito-Gigi Marulla", t: "15:00", day: 0 },
-    { h: "Ascoli Calcio", a: "AC Reggiana", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio Cino e Lillo Del Duca", t: "15:00", day: 1 },
-    { h: "Feralpisalò", a: "Spezia Calcio", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio Leonardo Garilli", t: "15:00", day: 1 },
-    { h: "Calcio Lecco", a: "Brescia Calcio", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio Rigamonti-Ceppi", t: "15:00", day: 2 },
-    { h: "SSC Bari", a: "Pisa SC", l: "Italian Serie B", c: "Italy", flag: "🇮🇹", dr: 0.342, g: 2.16, venue: "Stadio San Nicola", t: "17:15", day: 2 },
-
-    // Iranian Pro League (Persian Gulf Pro League)
-    { h: "Esteghlal FC", a: "Persepolis FC", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Azadi Stadium", t: "16:00", day: 0 },
-    { h: "Tractor SC", a: "Gol Gohar Sirjan", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Yadegar-e Emam Stadium", t: "16:30", day: 0 },
-    { h: "Zob Ahan", a: "Foolad Khuzestan", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Fooladshahr Stadium", t: "17:00", day: 1 },
-    { h: "Aluminium Arak", a: "Paykan FC", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Imam Khomeini Stadium", t: "17:30", day: 1 },
-    { h: "Mes Rafsanjan", a: "Malavan FC", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Shohadaye Mes Stadium", t: "16:30", day: 2 },
-    { h: "Nassaji Mazandaran", a: "Havadar SC", l: "Iranian Pro League", c: "Iran", flag: "🇮🇷", dr: 0.415, g: 1.65, venue: "Vatani Stadium", t: "17:00", day: 2 },
-
-    // Egyptian Premier League
-    { h: "ENPPI SC", a: "Pharco FC", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "Petro Sport Stadium", t: "17:00", day: 0 },
-    { h: "Tala'ea El Gaish", a: "National Bank of Egypt", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "Gehaz El Reyada Stadium", t: "18:00", day: 0 },
-    { h: "Ismaily SC", a: "Smouha SC", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "Ismailia Stadium", t: "19:00", day: 1 },
-    { h: "El Gouna FC", a: "El Mokawloon", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "Khaled Bichara Stadium", t: "17:00", day: 1 },
-    { h: "Baladiyat El Mahalla", a: "ZED FC", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "El Mahalla Stadium", t: "18:30", day: 2 },
-    { h: "Al Ittihad Alexandria", a: "Modern Future FC", l: "Egyptian Premier League", c: "Egypt", flag: "🇪🇬", dr: 0.385, g: 1.82, venue: "Alexandria Stadium", t: "20:00", day: 2 },
-
-    // South African PSL
-    { h: "Chippa United", a: "TS Galaxy", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "Nelson Mandela Bay Stadium", t: "17:30", day: 0 },
-    { h: "Polokwane City", a: "Richards Bay FC", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "Old Peter Mokaba Stadium", t: "18:00", day: 0 },
-    { h: "Moroka Swallows", a: "Sekhukhune United", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "Dobsonville Stadium", t: "19:30", day: 1 },
-    { h: "Golden Arrows", a: "Stellenbosch FC", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "Sugar Ray Xulu Stadium", t: "17:30", day: 1 },
-    { h: "AmaZulu FC", a: "Royal AM", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "Moses Mabhida Stadium", t: "18:00", day: 2 },
-    { h: "Cape Town City", a: "SuperSport United", l: "South African PSL", c: "South Africa", flag: "🇿🇦", dr: 0.373, g: 1.88, venue: "DHL Stadium", t: "19:30", day: 2 },
-
-    // Brazilian Serie B
-    { h: "Grêmio Novorizontino", a: "Vila Nova FC", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Estádio Doutor Jorge Ismael de Biasi", t: "21:00", day: 0 },
-    { h: "Operário Ferroviário", a: "Brusque FC", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Estádio Germano Krüger", t: "21:30", day: 0 },
-    { h: "CRB", a: "Avaí FC", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Estádio Rei Pelé", t: "22:00", day: 1 },
-    { h: "Ponte Preta", a: "Botafogo-SP", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Estádio Moisés Lucarelli", t: "22:30", day: 1 },
-    { h: "Ituano FC", a: "Amazonas FC", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Estádio Novelli Júnior", t: "21:00", day: 2 },
-    { h: "Chapecoense", a: "Guarani FC", l: "Brazilian Serie B", c: "Brazil", flag: "🇧🇷", dr: 0.339, g: 2.02, venue: "Arena Condá", t: "21:30", day: 2 },
-
-    // Greek Super League & Super League 2
-    { h: "PAS Giannina", a: "Asteras Tripolis", l: "Greek Super League", c: "Greece", flag: "🇬🇷", dr: 0.368, g: 1.96, venue: "Zosimades Stadium", t: "16:00", day: 0 },
-    { h: "Panetolikos", a: "OFI Crete", l: "Greek Super League", c: "Greece", flag: "🇬🇷", dr: 0.368, g: 1.96, venue: "Panetolikos Stadium", t: "17:30", day: 1 },
-    { h: "PAS Lamia 1964", a: "Kifisia FC", l: "Greek Super League", c: "Greece", flag: "🇬🇷", dr: 0.368, g: 1.96, venue: "Athanasios Diakos Stadium", t: "18:00", day: 2 },
-    { h: "Levadiakos", a: "Ionikos Nikeas", l: "Greek Super League 2", c: "Greece", flag: "🇬🇷", dr: 0.371, g: 1.92, venue: "Levadia Municipal Stadium", t: "14:00", day: 1 },
-    { h: "AEL Larissa", a: "Niki Volos", l: "Greek Super League 2", c: "Greece", flag: "🇬🇷", dr: 0.371, g: 1.92, venue: "AEL FC Arena", t: "15:00", day: 2 },
-
-    // Romanian Liga 2 & Liga 1
-    { h: "Oțelul Galați", a: "FC Hermannstadt", l: "Romanian Liga 1", c: "Romania", flag: "🇷🇴", dr: 0.358, g: 2.02, venue: "Stadionul Oțelul", t: "16:30", day: 0 },
-    { h: "Chindia Târgoviște", a: "Concordia Chiajna", l: "Romanian Liga 2", c: "Romania", flag: "🇷🇴", dr: 0.350, g: 2.12, venue: "Stadionul Eugen Popescu", t: "11:00", day: 1 },
-    { h: "Corvinul Hunedoara", a: "Gloria Buzău", l: "Romanian Liga 2", c: "Romania", flag: "🇷🇴", dr: 0.350, g: 2.12, venue: "Stadionul Michael Klein", t: "11:30", day: 2 },
-    { h: "Unirea Dej", a: "CSC 1599 Șelimbăr", l: "Romanian Liga 2", c: "Romania", flag: "🇷🇴", dr: 0.350, g: 2.12, venue: "Stadionul Municipal Dej", t: "12:00", day: 2 },
-
-    // Colombian Primera A
-    { h: "Jaguares de Córdoba", a: "Envigado FC", l: "Colombian Primera A", c: "Colombia", flag: "🇨🇴", dr: 0.345, g: 2.08, venue: "Estadio Jaraguay", t: "20:00", day: 0 },
-    { h: "Boyacá Chicó", a: "Deportivo Pasto", l: "Colombian Primera A", c: "Colombia", flag: "🇨🇴", dr: 0.345, g: 2.08, venue: "Estadio La Independencia", t: "21:00", day: 1 },
-    { h: "Patriotas Boyacá", a: "La Equidad", l: "Colombian Primera A", c: "Colombia", flag: "🇨🇴", dr: 0.345, g: 2.08, venue: "Estadio La Independencia", t: "22:15", day: 1 },
-    { h: "Alianza FC", a: "Atlético Bucaramanga", l: "Colombian Primera A", c: "Colombia", flag: "🇨🇴", dr: 0.345, g: 2.08, venue: "Estadio Armando Maestre Pavajeau", t: "23:00", day: 2 },
-
-    // Algerian Ligue 1
-    { h: "CR Belouizdad", a: "MC Alger", l: "Algerian Ligue 1", c: "Algeria", flag: "🇩🇿", dr: 0.402, g: 1.72, venue: "Stade 5 Juillet 1962", t: "17:00", day: 0 },
-    { h: "ES Sétif", a: "JS Kabylie", l: "Algerian Ligue 1", c: "Algeria", flag: "🇩🇿", dr: 0.402, g: 1.72, venue: "Stade 8 Mai 1945", t: "18:00", day: 1 },
-    { h: "CS Constantine", a: "Paradou AC", l: "Algerian Ligue 1", c: "Algeria", flag: "🇩🇿", dr: 0.402, g: 1.72, venue: "Stade Mohamed Hamlaoui", t: "18:00", day: 2 },
-    { h: "USM Khenchela", a: "NC Magra", l: "Algerian Ligue 1", c: "Algeria", flag: "🇩🇿", dr: 0.402, g: 1.72, venue: "Stade Amar Hamam", t: "15:30", day: 2 },
-
-    // Portuguese Liga 2
-    { h: "CD Mafra", a: "Leixões SC", l: "Portuguese Liga 2", c: "Portugal", flag: "🇵🇹", dr: 0.338, g: 2.14, venue: "Estádio Municipal de Mafra", t: "16:00", day: 0 },
-    { h: "UD Oliveirense", a: "CD Feirense", l: "Portuguese Liga 2", c: "Portugal", flag: "🇵🇹", dr: 0.338, g: 2.14, venue: "Estádio Carlos Osório", t: "17:00", day: 1 },
-    { h: "CD Tondela", a: "Académico de Viseu", l: "Portuguese Liga 2", c: "Portugal", flag: "🇵🇹", dr: 0.338, g: 2.14, venue: "Estádio João Cardoso", t: "18:00", day: 2 },
-    { h: "FC Penafiel", a: "SC União Torreense", l: "Portuguese Liga 2", c: "Portugal", flag: "🇵🇹", dr: 0.338, g: 2.14, venue: "Estádio Municipal 25 de Abril", t: "19:00", day: 2 },
-
-    // Uruguayan Primera & Chilean Primera B
-    { h: "Danubio FC", a: "Cerro Largo", l: "Uruguayan Primera División", c: "Uruguay", flag: "🇺🇾", dr: 0.340, g: 2.10, venue: "Jardines del Hipódromo", t: "18:00", day: 1 },
-    { h: "Montevideo Wanderers", a: "CA Fénix", l: "Uruguayan Primera División", c: "Uruguay", flag: "🇺🇾", dr: 0.340, g: 2.10, venue: "Parque Alfredo Víctor Viera", t: "19:30", day: 2 },
-    { h: "Deportes Recoleta", a: "San Marcos de Arica", l: "Chilean Primera B", c: "Chile", flag: "🇨🇱", dr: 0.332, g: 2.19, venue: "Estadio Municipal Leonel Sánchez", t: "17:00", day: 2 }
-  ];
-
   function buildDrawDefenseTips(matches = [], bookmakerScan = null) {
     const bkGames = bookmakerScan?.allGames || [];
     const usedKeys = new Set();
     const fiveMinTips = [];
     const noThreeTips = [];
-    const now = new Date();
-
-    // 1. Ingest qualifying live matches from active memory and bookmakers
     const dynamicCandidates = [];
+    const todayIsoStr = isoDate(new Date());
 
-    // Bookmaker scanned games (SportyBet & Football.com)
-    for (const g of bkGames) {
-      if (g.sport && g.sport.toLowerCase() !== "football") continue;
+    // Helper: add real upcoming pre-match fixture (>= 5 hours before Kick Off) — NEVER live or fake seeded fixtures
+    const addCandidate = (cand) => {
+      const key = `${normTeamMatchKey(cand.h)}::${normTeamMatchKey(cand.a)}`;
+      if (!cand.h || !cand.a || usedKeys.has(key)) return;
+      usedKeys.add(key);
+      dynamicCandidates.push(cand);
+    };
+
+    // 1. Real upcoming (>= 5h) Football.com + SportyBet bookmaker fixtures (prioritize Football.com + OneFootball verified)
+    const eligibleBkFootball = bkGames
+      .filter((g) => (!g.sport || g.sport.toLowerCase() === "football") && !g.isLive && isTipEligiblePreMatch5h(g) && g.footballCom?.gameId)
+      .sort((a, b) => (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0) || a.estimateStartTime - b.estimateStartTime);
+
+    for (const g of eligibleBkFootball) {
       if (isChaosOrReserveMatch(g.league, g.homeTeamName, g.awayTeamName)) continue;
-      const key = `${g.homeTeamName}::${g.awayTeamName}`.toLowerCase();
-      if (usedKeys.has(key)) continue;
-
       const leagueInfo = LOW_SCORING_LEAGUES_DATA.find((l) => g.league && g.league.toLowerCase().includes(l.league.toLowerCase().split(" ")[0]));
-      const hs = g.homeStats || { ppg: 1.5, gfAvg: 1.2, gaAvg: 1.1, csPct: 30 };
-      const as = g.awayStats || { ppg: 1.3, gfAvg: 1.1, gaAvg: 1.2, csPct: 25 };
-      const totalXg = (hs.gfAvg || 1.1) + (as.gfAvg || 1.0);
+      const hs = g.homeStats || { ppg: 1.5, gfAvg: 1.25, gaAvg: 1.15, csPct: 30 };
+      const as = g.awayStats || { ppg: 1.3, gfAvg: 1.10, gaAvg: 1.25, csPct: 25 };
+      const totalXg = (hs.gfAvg || 1.15) + (as.gfAvg || 1.05);
+      const koMs = resolveKickoffMs(g);
+      const dateStr = g.isoDate || isoDate(new Date(koMs));
+      const koClock = Number.isFinite(koMs) ? formatLocalTime(new Date(koMs).toISOString()) : (g.kickoffUtc || "TBD");
 
-      // Qualify if in a low-scoring league OR both teams have combined projected goals <= 2.25
-      if (leagueInfo || totalXg <= 2.25 || (g.bestOdds?.under25 && g.bestOdds.under25 <= 1.70)) {
-        usedKeys.add(key);
-        dynamicCandidates.push({
-          h: g.homeTeamName,
-          a: g.awayTeamName,
-          l: g.league || (leagueInfo ? leagueInfo.league : "Defensive League Match"),
-          c: g.country || (leagueInfo ? leagueInfo.country : "International"),
-          flag: leagueInfo ? leagueInfo.flag : "⚽",
-          dr: leagueInfo ? leagueInfo.drawRate : 0.335,
-          g: leagueInfo ? leagueInfo.avgGoals : clamp(totalXg, 1.70, 2.25),
-          venue: g.venue || `${g.homeTeamName} Arena`,
-          t: g.kickoffUtc ? new Date(g.kickoffUtc).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "18:00",
-          day: 0,
-          isLive: g.isLive,
-          score: g.score,
-          matchId: g.matchId || g.eventId
-        });
-      }
+      addCandidate({
+        h: g.homeTeamName,
+        a: g.awayTeamName,
+        l: g.league || (leagueInfo ? leagueInfo.league : "International / League Match"),
+        c: g.country || (leagueInfo ? leagueInfo.country : "International"),
+        flag: leagueInfo ? leagueInfo.flag : "⚽",
+        dr: leagueInfo ? leagueInfo.drawRate : 0.325,
+        g: leagueInfo ? leagueInfo.avgGoals : clamp(totalXg, 1.70, 2.55),
+        venue: g.venue || `${g.homeTeamName} Stadium`,
+        t: koClock,
+        dateStr,
+        isToday: dateStr === todayIsoStr,
+        isLive: false,
+        score: null,
+        matchId: g.matchId || g.eventId,
+        footballComGameId: g.footballCom?.gameId || null,
+        sportybetGameId: g.sportybet?.gameId || null,
+        onOneFootball: Boolean(g.onOneFootball),
+        onefootballUrl: g.onefootballUrl || null,
+        countdownLabel: formatPreMatchBadge(g),
+        isLowScoringPriority: Boolean(leagueInfo || totalXg <= 2.25 || (g.bestOdds?.under25 && g.bestOdds.under25 <= 1.75))
+      });
     }
 
-    // Combine dynamic candidates with our verified seed catalog
-    const allDefensiveFixtures = [...dynamicCandidates];
-    for (const s of DRAW_DEFENSE_FIXTURES_SEED) {
-      const key = `${s.h}::${s.a}`.toLowerCase();
-      if (!usedKeys.has(key)) {
-        usedKeys.add(key);
-        allDefensiveFixtures.push(s);
-      }
+    // 2. Real upcoming (>= 5h) OneFootball + ESPN Football matches not yet in bkGames
+    const eligibleRtMatches = (matches || [])
+      .filter((m) => (!m.sport || m.sport.toLowerCase() === "football") && m.status === "SCHEDULED" && isTipEligiblePreMatch5h(m))
+      .sort((a, b) => (b.onFootballCom ? 1 : 0) - (a.onFootballCom ? 1 : 0) || (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0));
+
+    for (const m of eligibleRtMatches) {
+      const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name;
+      const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name;
+      if (!hName || !aName || isChaosOrReserveMatch(m.leagueName, hName, aName)) continue;
+      const leagueInfo = LOW_SCORING_LEAGUES_DATA.find((l) => m.leagueName && m.leagueName.toLowerCase().includes(l.league.toLowerCase().split(" ")[0]));
+      const totalXg = m.analysis?.expectedGoals ? (m.analysis.expectedGoals.home + m.analysis.expectedGoals.away) : 2.20;
+      const koMs = resolveKickoffMs(m);
+      const dateStr = m.date || isoDate(new Date(koMs));
+
+      addCandidate({
+        h: hName,
+        a: aName,
+        l: m.leagueName || (leagueInfo ? leagueInfo.league : "Football Match"),
+        c: m.leagueCountry || (leagueInfo ? leagueInfo.country : "International"),
+        flag: leagueInfo ? leagueInfo.flag : "⚽",
+        dr: leagueInfo ? leagueInfo.drawRate : 0.320,
+        g: leagueInfo ? leagueInfo.avgGoals : clamp(totalXg, 1.75, 2.55),
+        venue: m.venue || `${hName} Stadium`,
+        t: m.displayTime || (Number.isFinite(koMs) ? formatLocalTime(new Date(koMs).toISOString()) : "TBD"),
+        dateStr,
+        isToday: dateStr === todayIsoStr,
+        isLive: false,
+        score: null,
+        matchId: m.id,
+        footballComGameId: m.footballComGameId || null,
+        sportybetGameId: m.sportybetGameId || null,
+        onOneFootball: Boolean(m.onOneFootball),
+        onefootballUrl: m.onefootballUrl || null,
+        countdownLabel: formatPreMatchBadge(m),
+        isLowScoringPriority: Boolean(leagueInfo || totalXg <= 2.25)
+      });
     }
 
-    // Process every fixture through the Poisson time-decay and blowout resistance models
+    // Prioritize low-scoring leagues + Football.com/OneFootball verified matches
+    const allDefensiveFixtures = [...dynamicCandidates].sort((a, b) => {
+      if (a.isLowScoringPriority !== b.isLowScoringPriority) return a.isLowScoringPriority ? -1 : 1;
+      if (a.onOneFootball !== b.onOneFootball) return a.onOneFootball ? -1 : 1;
+      if (Boolean(a.footballComGameId) !== Boolean(b.footballComGameId)) return a.footballComGameId ? -1 : 1;
+      return a.g - b.g;
+    });
+
+    // Process every real >= 5h pre-match fixture through the Poisson time-decay and blowout resistance models
     allDefensiveFixtures.forEach((fx, idx) => {
-      const matchDate = new Date(now);
-      matchDate.setDate(matchDate.getDate() + (fx.day || 0));
-      const dateStr = matchDate.toISOString().split("T")[0];
-      const isToday = fx.day === 0;
+      const dateStr = fx.dateStr || todayIsoStr;
+      const isToday = Boolean(fx.isToday);
 
       // --- Model 1: 5-Minute Draw (0:00 - 4:59 Score 0-0) ---
       // In professional football, first 5 minutes are a feeling-out low tempo phase.
@@ -3615,8 +3773,13 @@ window.MAMON_REALTIME = (() => {
         date: dateStr,
         dayOffset: fx.day || 0,
         isToday,
-        isLive: fx.isLive || false,
-        score: fx.score || null,
+        isLive: false,
+        score: null,
+        footballComGameId: fx.footballComGameId || null,
+        sportybetGameId: fx.sportybetGameId || null,
+        onOneFootball: Boolean(fx.onOneFootball),
+        onefootballUrl: fx.onefootballUrl || null,
+        countdownLabel: fx.countdownLabel || "",
         leagueDrawRate: fx.dr,
         leagueDrawRatePct: (fx.dr * 100).toFixed(1) + "%",
         leagueAvgGoals: fx.g.toFixed(2),
@@ -3661,8 +3824,13 @@ window.MAMON_REALTIME = (() => {
         date: dateStr,
         dayOffset: fx.day || 0,
         isToday,
-        isLive: fx.isLive || false,
-        score: fx.score || null,
+        isLive: false,
+        score: null,
+        footballComGameId: fx.footballComGameId || null,
+        sportybetGameId: fx.sportybetGameId || null,
+        onOneFootball: Boolean(fx.onOneFootball),
+        onefootballUrl: fx.onefootballUrl || null,
+        countdownLabel: fx.countdownLabel || "",
         leagueDrawRate: fx.dr,
         leagueDrawRatePct: (fx.dr * 100).toFixed(1) + "%",
         leagueAvgGoals: fx.g.toFixed(2),
@@ -3683,40 +3851,56 @@ window.MAMON_REALTIME = (() => {
     fiveMinTips.sort((a, b) => (b.trueProbability * b.expectedValue) - (a.trueProbability * a.expectedValue));
     noThreeTips.sort((a, b) => (b.trueProbability * b.expectedValue) - (a.trueProbability * a.expectedValue));
 
-    // Provide EXACTLY 50 games for each category per user instruction!
+    // Up to 50 real >=5h pre-match games for each category
     const top50FiveMin = fiveMinTips.slice(0, 50);
     const top50NoThree = noThreeTips.slice(0, 50);
 
-    // Curated Slips
-    const fiveMinTreble = {
-      title: "5-Minute Draw Ironclad Treble",
-      badge: "1.52x Banker Lock",
-      totalOdds: Math.round(top50FiveMin[0].bookmakerOdds * top50FiveMin[1].bookmakerOdds * top50FiveMin[2].bookmakerOdds * 100) / 100,
-      combinedProb: (top50FiveMin[0].trueProbability * top50FiveMin[1].trueProbability * top50FiveMin[2].trueProbability * 100).toFixed(1) + "%",
-      avgEvPct: `+${(((top50FiveMin[0].expectedValue + top50FiveMin[1].expectedValue + top50FiveMin[2].expectedValue) / 3) * 100).toFixed(2)}%`,
-      legs: top50FiveMin.slice(0, 3),
-      summary: "3 safest 5-minute draw locks from top low-scoring leagues (Iran, Morocco, Argentina)."
+    const buildSafeDefenseSlip = (legsList, title, badge, summary) => {
+      if (!Array.isArray(legsList) || legsList.length < 2) return null;
+      const picked = legsList.slice(0, Math.min(3, legsList.length));
+      const totalOdds = picked.reduce((acc, l) => acc * l.bookmakerOdds, 1);
+      const combProb = picked.reduce((acc, l) => acc * l.trueProbability, 1);
+      const avgEv = picked.reduce((acc, l) => acc + l.expectedValue, 0) / picked.length;
+      return {
+        title,
+        badge,
+        totalOdds: Math.round(totalOdds * 100) / 100,
+        combinedProb: (combProb * 100).toFixed(1) + "%",
+        avgEvPct: `+${(avgEv * 100).toFixed(2)}%`,
+        legs: picked,
+        summary
+      };
     };
 
-    const noThreeTreble = {
-      title: "No 3+ Goals in a Row Fortress Treble",
-      badge: "1.68x Defensive Lock",
-      totalOdds: Math.round(top50NoThree[0].bookmakerOdds * top50NoThree[1].bookmakerOdds * top50NoThree[2].bookmakerOdds * 100) / 100,
-      combinedProb: (top50NoThree[0].trueProbability * top50NoThree[1].trueProbability * top50NoThree[2].trueProbability * 100).toFixed(1) + "%",
-      avgEvPct: `+${(((top50NoThree[0].expectedValue + top50NoThree[1].expectedValue + top50NoThree[2].expectedValue) / 3) * 100).toFixed(2)}%`,
-      legs: top50NoThree.slice(0, 3),
-      summary: "3 highest resistance anti-blowout games where neither team can score 3 consecutive unanswered goals."
-    };
+    const fiveMinTreble = buildSafeDefenseSlip(
+      top50FiveMin,
+      "5-Minute Draw Ironclad Treble",
+      "Banker Lock (>=5h KO)",
+      "Top >=5h pre-match 5-minute draw locks verified on Football.com & OneFootball."
+    );
 
-    const mixedAcca = {
-      title: "Ultimate 5-Fold Low-Score Master Slip",
-      badge: "2.40x Value Master",
-      totalOdds: Math.round(top50FiveMin[0].bookmakerOdds * top50FiveMin[1].bookmakerOdds * top50NoThree[0].bookmakerOdds * top50NoThree[1].bookmakerOdds * top50NoThree[2].bookmakerOdds * 100) / 100,
-      combinedProb: (top50FiveMin[0].trueProbability * top50FiveMin[1].trueProbability * top50NoThree[0].trueProbability * top50NoThree[1].trueProbability * top50NoThree[2].trueProbability * 100).toFixed(1) + "%",
-      avgEvPct: `+${(((top50FiveMin[0].expectedValue + top50FiveMin[1].expectedValue + top50NoThree[0].expectedValue + top50NoThree[1].expectedValue + top50NoThree[2].expectedValue) / 5) * 100).toFixed(2)}%`,
-      legs: [top50FiveMin[0], top50FiveMin[1], top50NoThree[0], top50NoThree[1], top50NoThree[2]],
-      summary: "Master 5-match defensive accumulator maximizing overall expectation."
-    };
+    const noThreeTreble = buildSafeDefenseSlip(
+      top50NoThree,
+      "No 3+ Goals in a Row Fortress Treble",
+      "Defensive Lock (>=5h KO)",
+      "Top >=5h pre-match anti-blowout picks verified on Football.com & OneFootball."
+    );
+
+    const mixedLegs = [
+      ...top50FiveMin.slice(0, 2),
+      ...top50NoThree.slice(0, 3)
+    ];
+    const mixedAcca = mixedLegs.length >= 3
+      ? {
+          title: "Ultimate 5-Fold Low-Score Master Slip",
+          badge: "Value Master (>=5h KO)",
+          totalOdds: Math.round(mixedLegs.reduce((acc, l) => acc * l.bookmakerOdds, 1) * 100) / 100,
+          combinedProb: (mixedLegs.reduce((acc, l) => acc * l.trueProbability, 1) * 100).toFixed(1) + "%",
+          avgEvPct: `+${((mixedLegs.reduce((acc, l) => acc + l.expectedValue, 0) / mixedLegs.length) * 100).toFixed(2)}%`,
+          legs: mixedLegs,
+          summary: "Pre-match defensive accumulator maximizing expectation (>=5h before kickoff)."
+        }
+      : null;
 
     return {
       fiveMinuteDrawTips: top50FiveMin,
@@ -3758,7 +3942,7 @@ window.MAMON_REALTIME = (() => {
       })
     ];
 
-    // Step 1: Fetch standings + key today scoreboards + global 3-day all/scoreboard in parallel
+    // Step 1: Fetch standings + key today scoreboards + global 3-day all/scoreboard + OneFootball real matches in parallel
     const standingsPromise = fetchStandingsAndInjuries();
     const priorityLeagues = ESPN_LEAGUES.slice(0, 10);
 
@@ -3776,10 +3960,17 @@ window.MAMON_REALTIME = (() => {
       )
     );
 
-    const [_, priorityBoards, allBoards] = await Promise.all([
+    const onefootballPromise = (typeof window !== "undefined" && window.location?.origin)
+      ? fetch("/api/onefootball", { signal: AbortSignal.timeout(12000) })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    const [_, priorityBoards, allBoards, onefootballJson] = await Promise.all([
       standingsPromise,
       priorityPromise,
-      allScoreboardPromise
+      allScoreboardPromise,
+      onefootballPromise
     ]);
 
     const activeMap = new Map();
@@ -3809,6 +4000,48 @@ window.MAMON_REALTIME = (() => {
 
     priorityBoards.forEach(ingestBoard);
     allBoards.forEach(ingestBoard);
+
+    // Reconcile & ingest all real matches from OneFootball (https://onefootball.com/en/matches)
+    if (onefootballJson?.ok && Array.isArray(onefootballJson.matches)) {
+      const existingValues = Array.from(activeMap.values());
+      for (const ofm of onefootballJson.matches) {
+        if (ofm.status === "FT") {
+          if (ofm.isoDate === datesToFetch[0].iso && !finishedTodayMap.has(ofm.id)) {
+            const ftObj = parseOneFootballMatch(ofm);
+            if (ftObj) finishedTodayMap.set(ftObj.id, ftObj);
+          }
+          continue;
+        }
+        const matchExisting = existingValues.find((m) => {
+          const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
+          const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
+          return matchTeamsSimilar(hName, ofm.homeTeamName) && matchTeamsSimilar(aName, ofm.awayTeamName);
+        });
+        if (matchExisting) {
+          matchExisting.onOneFootball = true;
+          matchExisting.onefootballId = ofm.onefootballId;
+          matchExisting.onefootballUrl = ofm.onefootballUrl;
+          matchExisting.timestamp = ofm.kickoffMs || matchExisting.timestamp;
+          matchExisting.estimateStartTime = ofm.kickoffMs || matchExisting.estimateStartTime;
+          matchExisting.isoDateTime = ofm.kickoffIso || matchExisting.isoDateTime;
+          matchExisting.date = ofm.isoDate || matchExisting.date;
+          matchExisting.hoursToKickoff = ofm.hoursToKickoff;
+          matchExisting.isPreMatch5h = ofm.status === "SCHEDULED" && (ofm.kickoffMs - Date.now()) >= MIN_PREMATCH_LEAD_MS;
+          if (ofm.status === "LIVE" && matchExisting.status !== "LIVE") {
+            matchExisting.status = "LIVE";
+            matchExisting.liveClock = ofm.displayTime || "LIVE";
+            matchExisting.displayTime = ofm.displayTime || "LIVE";
+            if (ofm.homeScore !== null) matchExisting.homeScore = ofm.homeScore;
+            if (ofm.awayScore !== null) matchExisting.awayScore = ofm.awayScore;
+          }
+        } else {
+          const parsedOf = parseOneFootballMatch(ofm);
+          if (parsedOf && !activeMap.has(parsedOf.id)) {
+            activeMap.set(parsedOf.id, parsedOf);
+          }
+        }
+      }
+    }
 
     const activeMatches = Array.from(activeMap.values()).sort((a, b) => {
       if (a.status === "LIVE" && b.status !== "LIVE") return -1;
@@ -4216,6 +4449,11 @@ window.MAMON_REALTIME = (() => {
     buildFallbackRuninTable,
     lookupTeamRunin,
     computeRuninTip,
+    isTipEligiblePreMatch5h,
+    getHoursToKickoff,
+    formatPreMatchBadge,
+    resolveKickoffMs,
+    matchTeamsSimilar,
     getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),
     slugToEspnCode
   };

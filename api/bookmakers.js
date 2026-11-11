@@ -1,4 +1,5 @@
 // Real-Time Bookmaker Scraper & Odds Mismatch Engine for SportyBet (sportybet.com) & Football.com (football.com)
+const onefootballApi = require("./onefootball");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 const teamStatsCache = new Map(); // uid -> { data, expiresAt }
@@ -193,7 +194,7 @@ async function fetchTeamLast10Stats(uid) {
   if (cached && now < cached.expiresAt) return cached.data;
 
   const url = `https://stats.fn.sportradar.com/sportybet/en/Europe:London/gismo/stats_team_lastx/${encodeURIComponent(key)}/10`;
-  const json = await fetchJsonSafe(url, 6000);
+  const json = await fetchJsonSafe(url, 4500, "https://www.sportybet.com/", 1);
   if (!json) return null;
   const rawMatches = (json?.doc?.[0]?.data?.matches || []).filter(
     (m) => m && m.result && typeof m.result.home === "number" && typeof m.result.away === "number"
@@ -296,7 +297,7 @@ async function fetchH2hStats(homeUid, awayUid) {
   if (cached && now < cached.expiresAt) return cached.data;
 
   const url = `https://stats.fn.sportradar.com/sportybet/en/Europe:London/gismo/stats_team_versusrecent/${encodeURIComponent(homeUid)}/${encodeURIComponent(awayUid)}`;
-  const json = await fetchJsonSafe(url, 5000);
+  const json = await fetchJsonSafe(url, 4000, "https://www.sportybet.com/", 1);
   if (!json) return null;
   const ms = (json?.doc?.[0]?.data?.matches || []).filter(
     (m) => m && m.result && typeof m.result.home === "number" && typeof m.result.away === "number"
@@ -682,6 +683,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
   if (!forceRefresh && cachedScan && now < cachedScanExpiresAt) {
     return cachedScan;
   }
+  if (!forceRefresh && cachedScan && (now - cachedScanExpiresAt) < 15 * 60 * 1000) {
+    if (!scanInFlight) runFullBookmakerScan(true).catch(() => {});
+    return cachedScan;
+  }
   if (scanInFlight) return scanInFlight;
 
   scanInFlight = (async () => {
@@ -696,25 +701,47 @@ async function runFullBookmakerScan(forceRefresh = false) {
 
       const sbEvents = [];
       const fbEvents = [];
+      const ofSchedulePromise = onefootballApi.fetchOneFootballSchedule(forceRefresh).catch(() => ({ ok: false, matches: [] }));
 
       const sportFetches = SPORTS_CONFIG.map(async (sp) => {
         const marketParam = "marketId=1%2C10%2C14%2C16%2C18%2C29%2C186%2C202%2C219%2C225";
-        const [sbLiveJson, sbTodayJson, fbLiveJson, fbTodayJson] = await Promise.all([
-          fetchJsonSafe(`https://www.sportybet.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/"),
-          fetchJsonSafe(`https://www.sportybet.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}`, 7500, "https://www.sportybet.com/"),
-          fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
-          fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}`, 7500, "https://www.football.com/")
-        ]);
+        const fbBase = "https://www.football.com/api/gh/factsCenter";
+        const sbBase = "https://www.sportybet.com/api/gh/factsCenter";
+        const upcUrls = sp.key === "football"
+          ? [
+              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.football.com/"),
+              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.football.com/"),
+              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=2`, 8500, "https://www.football.com/"),
+              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.sportybet.com/"),
+              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.sportybet.com/"),
+              fetchJsonSafe(`${fbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
+              fetchJsonSafe(`${sbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/")
+            ]
+          : [
+              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.football.com/"),
+              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.sportybet.com/"),
+              fetchJsonSafe(`${fbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
+              fetchJsonSafe(`${sbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/")
+            ];
 
-        sbEvents.push(...extractEventsFromFactCenter(sbLiveJson, sp.key, sp.label));
-        sbEvents.push(...extractEventsFromFactCenter(sbTodayJson, sp.key, sp.label));
-        fbEvents.push(...extractEventsFromFactCenter(fbLiveJson, sp.key, sp.label));
-        fbEvents.push(...extractEventsFromFactCenter(fbTodayJson, sp.key, sp.label));
+        const results = await Promise.all(upcUrls);
+        if (sp.key === "football") {
+          const [fbT48, fbP1, fbP2, sbT48, sbP1, fbLive, sbLive] = results;
+          for (const j of [fbT48, fbP1, fbP2, fbLive]) fbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
+          for (const j of [sbT48, sbP1, sbLive]) sbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
+        } else {
+          const [fbUpc, sbUpc, fbLive, sbLive] = results;
+          fbEvents.push(...extractEventsFromFactCenter(fbUpc, sp.key, sp.label));
+          fbEvents.push(...extractEventsFromFactCenter(fbLive, sp.key, sp.label));
+          sbEvents.push(...extractEventsFromFactCenter(sbUpc, sp.key, sp.label));
+          sbEvents.push(...extractEventsFromFactCenter(sbLive, sp.key, sp.label));
+        }
       });
 
-      await Promise.all(sportFetches);
+      const [, ofSchedule] = await Promise.all([Promise.all(sportFetches), ofSchedulePromise]);
 
       const mergedMap = new Map();
+      const nowMs = Date.now();
 
       const upsertEvent = (ev, sourceName) => {
         const eventId = String(ev.eventId || "");
@@ -727,7 +754,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
         if (!parsedMkt.home || !parsedMkt.away) return;
 
         const evStatusStr = String(ev.matchStatus || "").trim();
-        const evIsLive = ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr);
+        const isNotStarted = /^(not\s*start|scheduled|prematch)/i.test(evStatusStr);
+        const evIsLive = !isNotStarted && (ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr));
         const evPlayedSecs = ev.playedSeconds && String(ev.playedSeconds).toLowerCase() !== "null" ? String(ev.playedSeconds).trim() : "";
         const evRemTime = ev.remainingTimeInPeriod && String(ev.remainingTimeInPeriod).toLowerCase() !== "null" ? String(ev.remainingTimeInPeriod).trim() : "";
         const evPeriod = ev.period !== undefined && ev.period !== null && String(ev.period).toLowerCase() !== "null" ? String(ev.period).trim() : "";
@@ -759,7 +787,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
             estimateStartTime: startTs,
             isoDate: dt.toISOString().slice(0, 10),
             kickoffUtc: dt.toISOString().slice(11, 16),
+            hoursToKickoff: Math.round(((startTs - nowMs) / 3600000) * 10) / 10,
             isLive: evIsLive,
+            isPreMatch5h: !evIsLive && (startTs - nowMs) >= 5 * 3600000,
             matchStatus: evStatusStr || (evIsLive ? "LIVE" : "Scheduled"),
             playedSeconds: evPlayedSecs,
             remainingTimeInPeriod: evRemTime,
@@ -774,7 +804,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
           mergedMap.set(eventId, item);
         } else if (evIsLive) {
           item.isLive = true;
-          if (evStatusStr && (!item.matchStatus || item.matchStatus === "Scheduled" || item.matchStatus === "LIVE")) {
+          item.isPreMatch5h = false;
+          if (evStatusStr && (!item.matchStatus || item.matchStatus === "Scheduled" || item.matchStatus === "Not start" || item.matchStatus === "LIVE")) {
             item.matchStatus = evStatusStr;
           }
           if (evPlayedSecs && !item.playedSeconds) item.playedSeconds = evPlayedSecs;
@@ -811,100 +842,14 @@ async function runFullBookmakerScan(forceRefresh = false) {
       for (const e of sbEvents) upsertEvent(e, "sportybet");
       for (const e of fbEvents) upsertEvent(e, "footballCom");
 
-      // Ensure Darts fixtures from active PDC Grand Slam & Modus tournaments are present
-      const dartsEventsCount = Array.from(mergedMap.values()).filter((g) => g.sport === "darts").length;
-      if (dartsEventsCount === 0) {
-        const fallbackDarts = [
-          {
-            eventId: "sr:match:darts:59701",
-            sport: "darts",
-            sportName: "Darts",
-            homeTeamName: "Luke Littler",
-            awayTeamName: "Lourence Ilagan",
-            league: "Grand Slam of Darts",
-            country: "International",
-            estimateStartTime: Date.now() + 7200000,
-            homeStats: { ppg: 2.8, homePpg: 2.85, formPts: 15, form: ["W", "W", "W", "W", "W"], gfAvg: 5.2, gaAvg: 1.8, csPct: 60, homeCsPct: 65, awayCsPct: 55 },
-            awayStats: { ppg: 1.1, awayPpg: 1.0, formPts: 4, form: ["L", "L", "W", "L", "L"], gfAvg: 2.1, gaAvg: 5.0, csPct: 15, homeCsPct: 20, awayCsPct: 10 },
-            markets: [
-              { id: "186", desc: "Winner", outcomes: [{ id: "4", desc: "Home", odds: 1.12 }, { id: "5", desc: "Away", odds: 6.20 }] }
-            ]
-          },
-          {
-            eventId: "sr:match:darts:59702",
-            sport: "darts",
-            sportName: "Darts",
-            homeTeamName: "Michael van Gerwen",
-            awayTeamName: "Gary Anderson",
-            league: "Grand Slam of Darts",
-            country: "International",
-            estimateStartTime: Date.now() + 10800000,
-            homeStats: { ppg: 2.4, homePpg: 2.5, formPts: 12, form: ["W", "W", "L", "W", "W"], gfAvg: 5.0, gaAvg: 2.5, csPct: 45, homeCsPct: 50, awayCsPct: 40 },
-            awayStats: { ppg: 2.3, awayPpg: 2.2, formPts: 11, form: ["W", "L", "W", "W", "L"], gfAvg: 4.8, gaAvg: 2.8, csPct: 40, homeCsPct: 45, awayCsPct: 35 },
-            markets: [
-              { id: "186", desc: "Winner", outcomes: [{ id: "4", desc: "Home", odds: 1.62 }, { id: "5", desc: "Away", odds: 2.25 }] }
-            ]
-          },
-          {
-            eventId: "sr:match:darts:59703",
-            sport: "darts",
-            sportName: "Darts",
-            homeTeamName: "Luke Humphries",
-            awayTeamName: "Rowby-John Rodriguez",
-            league: "Grand Slam of Darts",
-            country: "International",
-            estimateStartTime: Date.now() + 14400000,
-            homeStats: { ppg: 2.7, homePpg: 2.75, formPts: 13, form: ["W", "W", "W", "L", "W"], gfAvg: 5.1, gaAvg: 2.0, csPct: 55, homeCsPct: 60, awayCsPct: 50 },
-            awayStats: { ppg: 1.2, awayPpg: 1.1, formPts: 5, form: ["L", "W", "L", "L", "D"], gfAvg: 2.4, gaAvg: 4.8, csPct: 18, homeCsPct: 22, awayCsPct: 15 },
-            markets: [
-              { id: "186", desc: "Winner", outcomes: [{ id: "4", desc: "Home", odds: 1.16 }, { id: "5", desc: "Away", odds: 5.40 }] }
-            ]
-          },
-          {
-            eventId: "sr:match:darts:59704",
-            sport: "darts",
-            sportName: "Darts",
-            homeTeamName: "Gerwyn Price",
-            awayTeamName: "Keane Barry",
-            league: "Grand Slam of Darts",
-            country: "International",
-            estimateStartTime: Date.now() + 18000000,
-            homeStats: { ppg: 2.5, homePpg: 2.6, formPts: 12, form: ["W", "W", "W", "W", "L"], gfAvg: 5.0, gaAvg: 2.2, csPct: 50, homeCsPct: 55, awayCsPct: 45 },
-            awayStats: { ppg: 1.3, awayPpg: 1.2, formPts: 6, form: ["L", "L", "W", "W", "L"], gfAvg: 2.6, gaAvg: 4.5, csPct: 20, homeCsPct: 25, awayCsPct: 15 },
-            markets: [
-              { id: "186", desc: "Winner", outcomes: [{ id: "4", desc: "Home", odds: 1.24 }, { id: "5", desc: "Away", odds: 4.10 }] }
-            ]
-          },
-          {
-            eventId: "sr:match:darts:339941",
-            sport: "darts",
-            sportName: "Darts",
-            homeTeamName: "Fallon Sherrock",
-            awayTeamName: "Martin Thomas",
-            league: "Modus Super Series",
-            country: "International",
-            estimateStartTime: Date.now() + 21600000,
-            homeStats: { ppg: 2.2, homePpg: 2.3, formPts: 11, form: ["W", "L", "W", "W", "D"], gfAvg: 4.6, gaAvg: 2.8, csPct: 35, homeCsPct: 40, awayCsPct: 30 },
-            awayStats: { ppg: 1.4, awayPpg: 1.3, formPts: 6, form: ["L", "W", "L", "D", "L"], gfAvg: 2.8, gaAvg: 4.2, csPct: 22, homeCsPct: 25, awayCsPct: 18 },
-            markets: [
-              { id: "186", desc: "Winner", outcomes: [{ id: "4", desc: "Home", odds: 1.48 }, { id: "5", desc: "Away", odds: 2.55 }] }
-            ]
-          }
-        ];
-        for (const fd of fallbackDarts) {
-          upsertEvent(fd, "sportybet");
-          upsertEvent(fd, "footballCom");
-        }
-      }
-
       const games = Array.from(mergedMap.values()).map((g) => {
         const sb = g.sportybet;
         const fb = g.footballCom;
         const pickBest = (k) => {
           const vSb = sb?.[k] || 0;
           const vFb = fb?.[k] || 0;
-          if (vSb >= vFb && vSb > 0) return { odd: vSb, bookie: vFb === vSb && vFb > 0 ? "SportyBet & Football.com" : "SportyBet" };
-          if (vFb > 0) return { odd: vFb, bookie: "Football.com" };
+          if (vFb >= vSb && vFb > 0) return { odd: vFb, bookie: vSb === vFb && vSb > 0 ? "Football.com & SportyBet" : "Football.com" };
+          if (vSb > 0) return { odd: vSb, bookie: "SportyBet" };
           return { odd: null, bookie: "-" };
         };
         const bH = pickBest("home");
@@ -916,8 +861,23 @@ async function runFullBookmakerScan(forceRefresh = false) {
         const bO25 = pickBest("over25");
         const bBtts = pickBest("bttsYes");
 
+        const ofMatch = (g.sport === "football")
+          ? onefootballApi.findOneFootballMatch(g.homeTeamName, g.awayTeamName, ofSchedule)
+          : null;
+        const fbGameId = fb?.gameId && fb.gameId !== "-" ? String(fb.gameId) : null;
+        const sbGameId = sb?.gameId && sb.gameId !== "-" ? String(sb.gameId) : null;
+
         return {
           ...g,
+          onFootballCom: Boolean(fbGameId),
+          footballComGameId: fbGameId,
+          sportybetGameId: sbGameId,
+          onOneFootball: Boolean(ofMatch),
+          onefootballId: ofMatch?.onefootballId || null,
+          onefootballUrl: ofMatch?.onefootballUrl || null,
+          onefootballLeague: ofMatch?.leagueName || null,
+          homeLogo: ofMatch?.homeLogo || "",
+          awayLogo: ofMatch?.awayLogo || "",
           bestOdds: {
             home: bH.odd,
             homeBookie: bH.bookie,
@@ -934,30 +894,31 @@ async function runFullBookmakerScan(forceRefresh = false) {
         };
       });
 
-      // Sort priority games first (earlier today games, professional leagues, topTeam)
+      // Prioritize >= 5h Pre-Match games found on BOTH Football.com & OneFootball (and upcoming before live for tips)
       games.sort((a, b) => {
-        const aToday = a.estimateStartTime - Date.now() < 24 * 3600 * 1000 ? 0 : 1;
-        const bToday = b.estimateStartTime - Date.now() < 24 * 3600 * 1000 ? 0 : 1;
-        if (aToday !== bToday) return aToday - bToday;
-        const aYouth = /\bu2[013]\b|reserve/i.test(`${a.homeTeamName} ${a.league}`) ? 1 : 0;
-        const bYouth = /\bu2[013]\b|reserve/i.test(`${b.homeTeamName} ${b.league}`) ? 1 : 0;
-        if (aYouth !== bYouth) return aYouth - bYouth;
+        if (a.isPreMatch5h !== b.isPreMatch5h) return a.isPreMatch5h ? -1 : 1;
+        if (a.onFootballCom !== b.onFootballCom) return a.onFootballCom ? -1 : 1;
+        if (a.onOneFootball !== b.onOneFootball) return a.onOneFootball ? -1 : 1;
+        if (a.isLive !== b.isLive) return a.isLive ? 1 : -1;
         if (a.topTeam !== b.topTeam) return a.topTeam ? -1 : 1;
         return a.estimateStartTime - b.estimateStartTime;
       });
 
-      // Hydrate team stats for first 60 priority games PLUS non-football sports (Tennis, Basketball, Darts, Hockey) immediately
-      const immediateGames = games.slice(0, 60);
+      // Hydrate team stats across >=5h Pre-Match AND live games for all 5 sports
+      const footballPre5h = games.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 60);
+      const footballLive = games.filter((g) => g.sport === "football" && g.isLive).slice(0, 20);
       const nonFootballImmediate = [];
       for (const sp of ["tennis", "basketball", "hockey", "darts"]) {
-        nonFootballImmediate.push(...games.filter((g) => g.sport === sp).slice(0, 20));
+        nonFootballImmediate.push(...games.filter((g) => g.sport === sp && g.isPreMatch5h).slice(0, 20));
+        nonFootballImmediate.push(...games.filter((g) => g.sport === sp && g.isLive).slice(0, 15));
       }
-      const hydratedBatch = [...immediateGames, ...nonFootballImmediate];
-      const deferredGames = games.slice(60);
+      const immediateGames = [...footballPre5h, ...footballLive, ...nonFootballImmediate];
+      const immediateIds = new Set(immediateGames.map((g) => g.eventId));
+      const deferredGames = games.filter((g) => !immediateIds.has(g.eventId));
 
       const immediateUids = [
         ...new Set(
-          hydratedBatch.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean)
+          immediateGames.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean)
         )
       ];
 
@@ -987,8 +948,13 @@ async function runFullBookmakerScan(forceRefresh = false) {
         })
         .filter(Boolean);
 
+      // Strict 5-Hour Pre-Kickoff + Football.com Verification Gate for ALL Mistake-Odds Tips (Zero in-play games)
+      const preMatch5hPool = evaluated
+        .filter((g) => g.isPreMatch5h && g.onFootballCom)
+        .sort((a, b) => (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0) || a.estimateStartTime - b.estimateStartTime);
+
       // 1. STRONG TEAMS/PLAYERS PLAYING HOME TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)
-      const strongHomeMismatch = evaluated
+      const strongHomeMismatch = preMatch5hPool
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
@@ -1049,7 +1015,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
       // 2. STRONG TEAMS/PLAYERS PLAYING AWAY TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)
-      const strongAwayMismatch = evaluated
+      const strongAwayMismatch = preMatch5hPool
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
@@ -1110,7 +1076,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
       // 3. WORST TEAMS/PLAYERS PLAYING HOME TODAY WITH MISTAKE LOW ODDS (WHILE OPPONENT HAS BIG ODDS)
-      const worstHomeMismatch = evaluated
+      const worstHomeMismatch = preMatch5hPool
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
@@ -1167,7 +1133,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
       // 4. WORST TEAMS/PLAYERS PLAYING AWAY TODAY WITH MISTAKE LOW ODDS (WHILE OPPONENT HAS BIG ODDS)
-      const worstAwayMismatch = evaluated
+      const worstAwayMismatch = preMatch5hPool
         .filter((g) => {
           const hs = g.homeStats;
           const as = g.awayStats;
@@ -1223,20 +1189,31 @@ async function runFullBookmakerScan(forceRefresh = false) {
         })
         .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
+      const balancedAllGames = [
+        ...evaluated.filter((x) => x.sport === "football" && x.isPreMatch5h).slice(0, 120),
+        ...evaluated.filter((x) => x.sport === "football" && !x.isPreMatch5h).slice(0, 40),
+        ...evaluated.filter((x) => x.sport === "tennis").slice(0, 80),
+        ...evaluated.filter((x) => x.sport === "basketball").slice(0, 70),
+        ...evaluated.filter((x) => x.sport === "hockey").slice(0, 70),
+        ...evaluated.filter((x) => x.sport === "darts").slice(0, 50)
+      ];
+
       const payload = {
         ok: true,
         fetchedAt: new Date().toISOString(),
         sources: [
+          { name: "OneFootball", url: "https://onefootball.com/en/matches", count: ofSchedule?.totalMatches || 0 },
           { name: "Football.com", url: "https://www.football.com", count: fbEvents.length },
           { name: "SportyBet", url: "https://www.sportybet.com", count: sbEvents.length }
         ],
         totalGamesScraped: evaluated.length,
+        preMatch5hCount: preMatch5hPool.length,
         verifiedTeamsCount: evaluated.filter((x) => x.hasVerifiedStats).length,
         strongHomeMismatch: strongHomeMismatch.slice(0, 20),
         strongAwayMismatch: strongAwayMismatch.slice(0, 20),
         worstHomeMismatch: worstHomeMismatch.slice(0, 20),
         worstAwayMismatch: worstAwayMismatch.slice(0, 20),
-        allGames: evaluated.slice(0, 160)
+        allGames: balancedAllGames
       };
 
       cachedScan = payload;

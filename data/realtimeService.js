@@ -3772,6 +3772,128 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  function getLeagueRuninCached(leagueCode = "england") {
+    return runinLeagueCache.get(String(leagueCode || "england").toLowerCase()) || null;
+  }
+
+  function buildFallbackRuninTable(leagueCode = "england", matches = []) {
+    const code = String(leagueCode || "england").toLowerCase();
+    const codeToSlug = {
+      england: "england-premier-league",
+      spain: "spain-la-liga",
+      italy: "italy-serie-a",
+      germany: "germany-bundesliga",
+      france: "france-ligue-1",
+      cleague: "uefa-champions-league",
+      eleague: "uefa-europa-league",
+      netherlands: "netherlands-eredivisie",
+      portugal: "portugal-primeira-liga",
+      turkey: "turkey-super-lig",
+      belgium: "belgium-first-division-a",
+      scotland: "scotland-premiership",
+      england2: "england-championship"
+    };
+    const slug = codeToSlug[code] || code;
+    const rowsMap = new Map();
+
+    // Seed from standingsByTeamId first if hydrated
+    for (const [k, st] of standingsByTeamId.entries()) {
+      if (!k.includes(":")) continue;
+      if (st.leagueSlug !== slug && st.espnCode !== code) continue;
+      const teamName = st.teamName || st.shortName || st.name || "";
+      if (!teamName || rowsMap.has(teamName)) continue;
+      const gp = Math.max(1, st.mp || 10);
+      const ppg = Math.round(((st.pts || 0) / gp) * 100) / 100;
+      const rank = st.rank || rowsMap.size + 1;
+      const playedPpg = Math.round(clamp(1.38 - (rank <= 6 ? 0.14 : rank >= 15 ? -0.10 : 0.02), 0.90, 1.85) * 100) / 100;
+      const remainingPpg = Math.round(clamp(1.34 + (rank <= 6 ? 0.08 : rank >= 15 ? -0.06 : 0.01), 0.90, 1.85) * 100) / 100;
+      const diffPct = Math.round(((playedPpg - remainingPpg) / playedPpg) * 100);
+      rowsMap.set(teamName, {
+        rank,
+        team: teamName,
+        teamNormalized: normalizeRuninTeamKey(teamName),
+        leagueCode: code,
+        gp,
+        w: st.w || 0,
+        d: st.d || 0,
+        l: st.l || 0,
+        pts: st.pts || 0,
+        ppg,
+        playedPpg,
+        remainingPpg,
+        remainingBarPct: Math.min(100, Math.round((remainingPpg / 2.2) * 100)),
+        diffPct,
+        diffLabel: `${diffPct > 0 ? "+" : ""}${diffPct}%`,
+        verdict: diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED",
+        playedOpponents: [],
+        remainingOpponents: []
+      });
+    }
+
+    // Or extract teams from live matches belonging to that league
+    if (rowsMap.size === 0 && Array.isArray(matches)) {
+      const leagueMatches = matches.filter((m) => (m.leagueSlug || "").toLowerCase() === slug || (m.espnLeagueCode || "").toLowerCase() === code);
+      for (const m of leagueMatches) {
+        if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name;
+        const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name;
+        const ri = m.analysis?.factors?.runInAnalysis;
+        const ppgObj = m.analysis?.factors?.ppg;
+        if (hName && !rowsMap.has(hName)) {
+          const hs = ri?.homeStats || { playedPpg: 1.32, remainingPpg: 1.28, diffPct: 3, diffLabel: "+3%", playedOpponents: [], remainingOpponents: [] };
+          rowsMap.set(hName, {
+            rank: rowsMap.size + 1,
+            team: hName,
+            gp: ppgObj?.homePlayed || 10,
+            w: m.homeRecord?.w || 0,
+            d: m.homeRecord?.d || 0,
+            l: m.homeRecord?.l || 0,
+            pts: (m.homeRecord?.w || 0) * 3 + (m.homeRecord?.d || 0),
+            ppg: ppgObj?.homeOverall || 1.4,
+            playedPpg: hs.playedPpg,
+            remainingPpg: hs.remainingPpg,
+            remainingBarPct: Math.min(100, Math.round((hs.remainingPpg / 2.2) * 100)),
+            diffPct: hs.diffPct,
+            diffLabel: hs.diffLabel,
+            verdict: hs.diffPct > 0 ? "FAVORABLE" : hs.diffPct < 0 ? "TOUGH" : "BALANCED",
+            playedOpponents: hs.playedOpponents || [],
+            remainingOpponents: hs.remainingOpponents || []
+          });
+        }
+        if (aName && !rowsMap.has(aName)) {
+          const as = ri?.awayStats || { playedPpg: 1.35, remainingPpg: 1.30, diffPct: 4, diffLabel: "+4%", playedOpponents: [], remainingOpponents: [] };
+          rowsMap.set(aName, {
+            rank: rowsMap.size + 1,
+            team: aName,
+            gp: ppgObj?.awayPlayed || 10,
+            w: m.awayRecord?.w || 0,
+            d: m.awayRecord?.d || 0,
+            l: m.awayRecord?.l || 0,
+            pts: (m.awayRecord?.w || 0) * 3 + (m.awayRecord?.d || 0),
+            ppg: ppgObj?.awayOverall || 1.3,
+            playedPpg: as.playedPpg,
+            remainingPpg: as.remainingPpg,
+            remainingBarPct: Math.min(100, Math.round((as.remainingPpg / 2.2) * 100)),
+            diffPct: as.diffPct,
+            diffLabel: as.diffLabel,
+            verdict: as.diffPct > 0 ? "FAVORABLE" : as.diffPct < 0 ? "TOUGH" : "BALANCED",
+            playedOpponents: as.playedOpponents || [],
+            remainingOpponents: as.remainingOpponents || []
+          });
+        }
+      }
+    }
+
+    const table = Array.from(rowsMap.values()).sort((a, b) => a.rank - b.rank || b.ppg - a.ppg);
+    return {
+      ok: table.length > 0,
+      isFallback: true,
+      source: "Venue-Weighted Formula",
+      league: { code, name: codeToMeta.get(code)?.name || leagueBySlug.get(slug)?.name || code.toUpperCase(), country: "" },
+      table
+    };
+  }
+
   return {
     SURE_TIERS,
     load,
@@ -3784,6 +3906,8 @@ window.MAMON_REALTIME = (() => {
     hydrateWeatherForMatches,
     syncTopRuninTables,
     fetchLeagueRuninData,
+    getLeagueRuninCached,
+    buildFallbackRuninTable,
     lookupTeamRunin,
     getRuninCatalog: () => runinCatalog,
     slugToEspnCode

@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=runin3">
 </head>
 <body>
   <div class="flex min-h-dvh flex-col">
@@ -39,16 +39,16 @@
             </a>
             <a href="/special-tips" data-route="/special-tips" class="nav-special-tips">
               <span class="special-pulse-dot" aria-hidden="true"></span>
-              5-Min Draw
+              5m Draw
             </a>
-            <a href="/dropping-odds" data-route="/dropping-odds">Dropping Odds</a>
+            <a href="/dropping-odds" data-route="/dropping-odds">Drops</a>
             <a href="/ppg" data-route="/ppg">PPG</a>
             <a href="/run-in" data-route="/run-in" class="nav-run-in">📈 Run-In</a>
-            <a href="/strong-teams" data-route="/strong-teams">Strong Teams</a>
-            <a href="/worst-teams" data-route="/worst-teams">Worst Teams</a>
+            <a href="/strong-teams" data-route="/strong-teams">Strong</a>
+            <a href="/worst-teams" data-route="/worst-teams">Worst</a>
             <a href="/odds-mismatch" data-route="/odds-mismatch" class="nav-odds-mismatch">
               <span class="mismatch-badge-icon" aria-hidden="true">⚖️</span>
-              Odds Mismatch
+              Mismatch
             </a>
           </nav>
 
@@ -211,6 +211,12 @@
           </span>
           <span class="tabbar-label">PPG</span>
         </a>
+        <a class="tabbar-item" href="/run-in" data-route="/run-in">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+          </span>
+          <span class="tabbar-label">Run-In</span>
+        </a>
         <a class="tabbar-item" href="/strong-teams" data-route="/strong-teams">
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.9 6.2L22 9.2l-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 7.1-1z"/></svg>
@@ -241,9 +247,9 @@
   <!-- Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="/data/leagues.js"></script>
-  <script src="/data/footballData.js"></script>
-  <script src="/data/realtimeService.js"></script>
-  <script src="/app.js"></script>
+  <script src="/data/leagues.js?v=runin3"></script>
+  <script src="/data/footballData.js?v=runin3"></script>
+  <script src="/data/realtimeService.js?v=runin3"></script>
+  <script src="/app.js?v=runin3"></script>
 </body>
 </html>

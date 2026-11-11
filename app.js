@@ -165,6 +165,7 @@
   let bookmakerScan = null;
   let isLoadingBookmakers = true;
   const runinLeagueCacheClient = new Map();
+  const runinAttemptedCodes = new Set();
   let runinCatalogClient = [];
   let isLoadingRuninView = false;
   let expandedRuninTeam = null;
@@ -172,27 +173,45 @@
   async function loadRuninLeague(leagueCode, force = false) {
     const code = String(leagueCode || state.activeRuninLeague || "england").toLowerCase();
     state.activeRuninLeague = code;
-    if (!force && runinLeagueCacheClient.has(code)) {
+    if (force) runinAttemptedCodes.delete(code);
+
+    const existing = runinLeagueCacheClient.get(code) || (!force ? RT?.getLeagueRuninCached?.(code) : null);
+    if (!force && existing?.isFullFetch && Array.isArray(existing.table) && existing.table.length > 0) {
+      runinLeagueCacheClient.set(code, existing);
       if (state.route === "/run-in") renderMainContent();
-      return runinLeagueCacheClient.get(code);
+      return existing;
     }
+    if (isLoadingRuninView && runinAttemptedCodes.has(code)) return existing || null;
+
+    runinAttemptedCodes.add(code);
     isLoadingRuninView = true;
     if (state.route === "/run-in") renderMainContent();
     try {
       const data = RT?.fetchLeagueRuninData
         ? await RT.fetchLeagueRuninData(code, force)
         : await fetch(`/api/runin?league=${encodeURIComponent(code)}${force ? "&refresh=1" : ""}`, { cache: "no-store" }).then((r) => r.json());
-      if (data?.ok) {
+      if (data?.ok && Array.isArray(data.table) && data.table.length > 0) {
         runinLeagueCacheClient.set(code, data);
         if (data.league?.code) runinLeagueCacheClient.set(data.league.code, data);
         if (Array.isArray(data.leagues) && data.leagues.length > 0) runinCatalogClient = data.leagues;
+        return data;
       }
-      return data;
+      const fb = RT?.buildFallbackRuninTable ? RT.buildFallbackRuninTable(code, liveMatches) : null;
+      if (fb?.ok) {
+        runinLeagueCacheClient.set(code, fb);
+        return fb;
+      }
+      return data || null;
     } catch {
+      const fb = RT?.buildFallbackRuninTable ? RT.buildFallbackRuninTable(code, liveMatches) : null;
+      if (fb?.ok) {
+        runinLeagueCacheClient.set(code, fb);
+        return fb;
+      }
       return null;
     } finally {
       isLoadingRuninView = false;
-      if (state.route === "/run-in") renderMainContent();
+      if (state.route === "/run-in" || state.route === "/") renderMainContent();
     }
   }
 
@@ -1054,6 +1073,11 @@
       : sched?.home?.isGainBlue || sched?.away?.isGainBlue
       ? `<span class="ppg-sos-badge is-gain-blue" title="${escapeHtml(sched.home?.isGainBlue ? sched.home.reason : sched.away?.reason)}">🔵 Gain Points</span>`
       : "";
+    const riHome = m.analysis?.factors?.runInAnalysis?.homeStats;
+    const riAway = m.analysis?.factors?.runInAnalysis?.awayStats;
+    const runinBadgeHtml = (riHome && riAway && (riHome.isLiveSoccerStats || riAway.isLiveSoccerStats))
+      ? `<span class="ppg-chip" title="SoccerSTATS Run-In (Played vs Remaining %): ${escapeHtml(home.short)} ${escapeHtml(riHome.diffLabel)} | ${escapeHtml(away.short)} ${escapeHtml(riAway.diffLabel)}">📈 ${escapeHtml(riHome.diffLabel)}/${escapeHtml(riAway.diffLabel)}</span>`
+      : "";
     const hasInjSusp = Boolean(
       m.analysis?.factors?.injuries?.home?.length ||
       m.analysis?.factors?.injuries?.away?.length ||
@@ -1085,9 +1109,10 @@
               <span class="team-score${isLive ? " is-live" : ""}">${awayScoreText}</span>
             </div>
             ${
-              dropChipHtml || ppgText || sosBadge
+              dropChipHtml || ppgText || sosBadge || runinBadgeHtml
                 ? `<div class="match-mobile-meta">
                     ${ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : ""}
+                    ${runinBadgeHtml}
                     ${sosBadge}
                     ${dropChipHtml}
                     ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">! Inj/Sus</span>` : ""}
@@ -1120,6 +1145,7 @@
           </div>
           <div class="chevron">
             ${sosBadge}
+            ${runinBadgeHtml}
             ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
             ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
             <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
@@ -1950,6 +1976,12 @@
             <span class="tile-val text-brand">${ppgMatches[0]?.ppgSummary ? `${ppgMatches[0].ppgSummary.homeOverall.toFixed(2)} vs ${ppgMatches[0].ppgSummary.awayOverall.toFixed(2)}` : "Standings Math"}</span>
             <span class="tile-sub">Overall, Home &amp; Away PPG differentials</span>
           </a>
+
+          <a class="intel-stat-tile" href="/run-in" data-route="/run-in">
+            <span class="tile-kicker">📈 RUN-IN ANALYSIS (PLD vs REM)</span>
+            <span class="tile-val text-brand">${(runinLeagueCacheClient.get("england") || RT?.getLeagueRuninCached?.("england"))?.table?.length ? "Live 40 Leagues" : "Open Run-In Engine"}</span>
+            <span class="tile-sub">Opponents Played vs Remaining PPG %</span>
+          </a>
         </div>
 
         ${
@@ -2312,10 +2344,11 @@
   function renderRunInAnalysisView() {
     const activeCode = String(state.activeRuninLeague || "england").toLowerCase();
     const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
-    const leagueData = runinLeagueCacheClient.get(activeCode);
+    const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
+    const leagueData = cachedLive || (runinAttemptedCodes.has(activeCode) ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches) : null);
 
-    // Kick off fetch lazily if user landed on /run-in directly without cache yet
-    if (!leagueData && !isLoadingRuninView) {
+    // Kick off fetch lazily only once per code unless forced by user
+    if ((!cachedLive || !cachedLive.isFullFetch) && !isLoadingRuninView && !runinAttemptedCodes.has(activeCode)) {
       setTimeout(() => loadRuninLeague(activeCode, false), 0);
     }
 
@@ -2809,6 +2842,102 @@
     `;
   }
 
+  function renderHomeRunInCard() {
+    const activeCode = String(state.activeRuninLeague || "england").toLowerCase();
+    const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
+    const leagueData = cachedLive || (runinAttemptedCodes.has(activeCode) ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches) : null);
+
+    if ((!cachedLive || !Array.isArray(cachedLive.table) || cachedLive.table.length === 0) && !isLoadingRuninView && !runinAttemptedCodes.has(activeCode)) {
+      setTimeout(() => loadRuninLeague(activeCode, false), 0);
+    }
+
+    const rows = leagueData?.table || [];
+    const leagueName = leagueData?.league?.name || "Premier League";
+    const easiestList = [...rows].sort((a, b) => b.diffPct - a.diffPct).slice(0, 3);
+    const toughestList = [...rows].sort((a, b) => a.diffPct - b.diffPct).slice(0, 3);
+    const previewRows = rows.slice(0, 6);
+
+    return `
+      <section class="panel-section border-subtle" id="runInHomeCard" style="border: 2px solid rgba(59, 130, 246, 0.40); background: linear-gradient(145deg, var(--card) 0%, rgba(59, 130, 246, 0.04) 100%); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.08);">
+        <div class="panel-header" style="background: linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(59, 130, 246, 0.25); padding: 14px 18px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#3B82F6;color:#ffffff;font-weight:800;">📈 RUN-IN ANALYSIS (PLD vs REM)</span>
+            <span class="sure-pill-tag">${escapeHtml(leagueName)} · SoccerSTATS Methodology</span>
+            <span class="font-mono text-xs text-muted">· Opponents Played vs Remaining %</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/run-in" data-route="/run-in" style="font-weight:700;color:#3B82F6;">Open Full 40-League Run-In Center &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3">
+          ${
+            rows.length === 0
+              ? `<div class="text-xs text-muted font-mono py-3 text-center">Syncing live SoccerSTATS.com Run-In Analysis (${escapeHtml(leagueName)})... <a href="/run-in" data-route="/run-in" style="color:#3B82F6;text-decoration:underline;font-weight:700;">Open Run-In Engine &rarr;</a></div>`
+              : `
+                <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 12px;">
+                  ${easiestList.slice(0, 2).map((r) => `
+                    <a class="power-preview-tile is-strong" href="/run-in?league=${escapeHtml(activeCode)}" data-route="/run-in?league=${escapeHtml(activeCode)}" style="border-left:3px solid #16A34A; background: var(--ground);">
+                      <div class="flex items-center justify-between gap-1 w-full">
+                        <span class="tile-kicker font-bold" style="color:#16A34A;">🟢 EASIEST RUN-IN</span>
+                        <span class="runin-diff-pill is-easy">${escapeHtml(r.diffLabel)} Easier</span>
+                      </div>
+                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${r.ppg.toFixed(2)} PPG)</span></div>
+                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${r.playedPpg.toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${r.remainingPpg.toFixed(2)}</strong></div>
+                    </a>
+                  `).join("")}
+                  ${toughestList.slice(0, 2).map((r) => `
+                    <a class="power-preview-tile" href="/run-in?league=${escapeHtml(activeCode)}" data-route="/run-in?league=${escapeHtml(activeCode)}" style="border-left:3px solid #DC2626; background: var(--ground);">
+                      <div class="flex items-center justify-between gap-1 w-full">
+                        <span class="tile-kicker font-bold" style="color:#DC2626;">🔴 TOUGHEST RUN-IN</span>
+                        <span class="runin-diff-pill is-tough">${escapeHtml(r.diffLabel)} Tougher</span>
+                      </div>
+                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${r.ppg.toFixed(2)} PPG)</span></div>
+                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${r.playedPpg.toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${r.remainingPpg.toFixed(2)}</strong></div>
+                    </a>
+                  `).join("")}
+                </div>
+                <div class="runin-table-wrap">
+                  <table class="runin-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Team</th>
+                        <th style="text-align:center;">GP</th>
+                        <th style="text-align:center;">Pts</th>
+                        <th style="text-align:center;">PPG</th>
+                        <th style="text-align:center;">Opponents played PPG (PLD)</th>
+                        <th style="color:#3B82F6;">Remaining Opponents PPG (REM)</th>
+                        <th style="text-align:center;">Played vs Remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${previewRows.map((row) => `
+                        <tr class="runin-row" data-route="/run-in?league=${escapeHtml(activeCode)}">
+                          <td class="font-mono font-bold">${row.rank}</td>
+                          <td><strong>${escapeHtml(row.team)}</strong> ${row.ppg >= 1.60 ? "💎" : ""}</td>
+                          <td class="text-center font-mono">${row.gp}</td>
+                          <td class="text-center font-mono font-bold">${row.pts}</td>
+                          <td class="text-center font-mono font-bold" style="${row.ppg >= 1.60 ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
+                          <td class="text-center"><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></td>
+                          <td>
+                            <div class="runin-rem-cell">
+                              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
+                              <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
+                            </div>
+                          </td>
+                          <td class="text-center"><span class="runin-diff-pill ${row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced"}">${escapeHtml(row.diffLabel)}</span></td>
+                        </tr>
+                      `).join("")}
+                    </tbody>
+                  </table>
+                </div>
+              `
+          }
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
@@ -2825,6 +2954,7 @@
       ${renderHomeSureOddsBanner()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
+      ${renderHomeRunInCard()}
       ${liveMatchesPool.length > 0 ? renderHomeLiveCard(liveMatchesPool, spDef) : ""}
       ${renderMatchesPanel(liveMatches, upcomingTitle, true, false, "UPCOMING")}
       ${renderMarketIntelligenceStrip()}

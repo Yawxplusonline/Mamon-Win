@@ -265,7 +265,7 @@ async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false) {
           Accept: "text/html,application/xhtml+xml",
           "Accept-Language": "en-GB,en;q=0.9"
         },
-        signal: AbortSignal.timeout(10000)
+        signal: AbortSignal.timeout(6500)
       });
 
       if (!resp.ok) {
@@ -308,7 +308,7 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
     return cachedTopPayload;
   }
 
-  const batchSize = 5;
+  const batchSize = 10;
   const results = [];
   for (let i = 0; i < CORE_TOP_CODES.length; i += batchSize) {
     const slice = CORE_TOP_CODES.slice(i, i + batchSize);

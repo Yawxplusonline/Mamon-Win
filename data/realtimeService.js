@@ -3119,7 +3119,7 @@ window.MAMON_REALTIME = (() => {
 
     // Update dynamic dates strip in DATA
     DATA.DATES = [
-      { id: "UPCOMING_ALL", label: "All Live & Upcoming", short: "Live/Next" },
+      { id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" },
       ...datesToFetch.map((dt) => {
         const d = new Date(dt.iso + "T12:00:00");
         const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });

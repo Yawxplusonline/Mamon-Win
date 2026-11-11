@@ -1,5 +1,5 @@
 // Dynamic Schedule Helper, Club Catalog & Community Content for MAMON WIN
-// Live & upcoming fixtures are hydrated directly from real-time ESPN feeds via data/realtimeService.js.
+// Live matches and upcoming fixtures are hydrated directly from real-time ESPN feeds via data/realtimeService.js.
 window.MAMON_DATA = (() => {
   function formatIsoDate(dateObj) {
     const y = dateObj.getFullYear();
@@ -28,7 +28,7 @@ window.MAMON_DATA = (() => {
   const day2Iso = formatIsoDate(addDays(now, 2));
 
   const DATES = [
-    { id: "UPCOMING_ALL", label: "All Live & Upcoming", short: "All Live/Next" },
+    { id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" },
     { id: todayIso, label: formatFriendlyDay(now, 0), short: "Today" },
     { id: tomorrowIso, label: formatFriendlyDay(addDays(now, 1), 1), short: "Tomorrow" },
     { id: day2Iso, label: formatFriendlyDay(addDays(now, 2), 2), short: formatFriendlyDay(addDays(now, 2), 2) }

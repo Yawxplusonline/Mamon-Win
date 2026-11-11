@@ -108,7 +108,7 @@
       route: "/",
       activeSport: "ALL", // ALL | football | tennis | basketball | darts | hockey
       selectedDate: "UPCOMING_ALL",
-      matchFilter: "ALL", // ALL | LIVE | SCHEDULED | DROPS | ALERTS | FOLLOWING | FT
+      matchFilter: "LIVE", // LIVE | SCHEDULED | DROPS | ALERTS | FT
       activeIntelTab: "DROPS", // DROPS | ALERTS
       activeDropFilter: "ALL", // ALL | HEAVY | MODERATE | INPLAY | PREMATCH
       activePpgCategory: "ALL", // ALL | HIGH_GAP | HOME_DOMINANT | AWAY_DOMINANT | POINTS_STAKES
@@ -120,7 +120,6 @@
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
       standingsLeague: "england-premier-league",
-      followedMatches: [],
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
       followedLeagues: ["england-premier-league", "spain-la-liga", "uefa-champions-league"],
       activeSureTier: "2",
@@ -136,6 +135,11 @@
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       const merged = { ...defaults, ...saved };
+      // Migrate legacy filters: no "ALL", no "FOLLOWING"
+      if (merged.matchFilter === "ALL" || merged.matchFilter === "FOLLOWING" || !merged.matchFilter) {
+        merged.matchFilter = "LIVE";
+      }
+      delete merged.followedMatches;
       // Ensure old past selectedDate never hides today's matches
       if (merged.selectedDate !== "UPCOMING_ALL" && merged.selectedDate < (DATA.todayIso || "")) {
         merged.selectedDate = "UPCOMING_ALL";
@@ -292,6 +296,14 @@
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("cat")) state.activeMismatchCategory = q.get("cat").toUpperCase();
       route = "/odds-mismatch";
+    }
+    if (route === "/live") {
+      state.matchFilter = "LIVE";
+      route = "/live";
+    }
+    if (route === "/upcoming" || route === "/matches") {
+      state.matchFilter = "SCHEDULED";
+      route = "/upcoming";
     }
     if (route === "/game-points") route = "/sure-odds";
     if (route === "/community" || route === "/strong-teams-today" || route === "/power-picks") route = "/strong-teams";
@@ -700,7 +712,7 @@
           <div>
             <div class="flex items-center gap-2 flex-wrap">
               <span class="sure-pill-tag">11-FACTOR LIVE ENGINE</span>
-              <span class="sure-pill-tag">${liveMatches.length} LIVE &amp; UPCOMING MATCHES</span>
+              <span class="sure-pill-tag">${liveMatches.length} ACTIVE FIXTURES</span>
             </div>
             <h2 class="sure-command-title mt-2">Sure Odds Accumulators · Stake to Win</h2>
             <p class="text-xs mt-1" style="color:#D1E0D9;">Built strictly from real-time matches using Head-to-Head, Form, Injuries, Suspensions, Last 5 Home/Away, Goals, Clean Sheets &amp; Run-in Analysis.</p>
@@ -783,7 +795,7 @@
     return `
       <div class="hero-banner">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="sure-pill-tag">REAL-TIME LIVE &amp; UPCOMING ONLY</span>
+          <span class="sure-pill-tag">REAL-TIME VERIFIED FIXTURES ONLY</span>
           <span class="sure-pill-tag">11-FACTOR ENGINE</span>
         </div>
         <h1 class="mt-2">Sure Odds Builder (2 to 1,000,000 Odds)</h1>
@@ -941,7 +953,6 @@
   function renderMatchRow(m) {
     const home = getTeam(m.home, "Home");
     const away = getTeam(m.away, "Away");
-    const isFollowed = state.followedMatches.includes(m.id);
     const isLive = m.status === "LIVE";
     const isFT = m.status === "FT";
     const hasScore = isLive || isFT;
@@ -954,8 +965,6 @@
 
     const redBadges = (count) =>
       count > 0 ? `<span class="red-cards" title="Red card">${"<span></span>".repeat(count)}</span>` : "";
-
-    const starSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
 
     const bestDrop = m.droppingOdds?.bestDrop;
     const dropChipHtml = bestDrop && bestDrop.dropPct >= 2.0
@@ -979,10 +988,6 @@
 
     return `
       <div class="match-row" data-match-id="${m.id}">
-        <button class="follow-btn${isFollowed ? " is-followed" : ""}" type="button" data-follow-match="${m.id}" aria-label="${isFollowed ? "Unfollow" : "Follow"} ${escapeHtml(home.name)} vs ${escapeHtml(away.name)}" title="Follow match">
-          ${starSvg}
-        </button>
-
         <div class="match-mobile">
           <div class="match-mobile-time">
             ${
@@ -1131,69 +1136,87 @@
     });
   }
 
-  function renderMatchesPanel(matchesList, title = "Live & Upcoming Matches", showToolbar = true, allowCompletedToggle = false) {
+  function renderMatchesPanel(matchesList, title = "Upcoming Matches", showToolbar = true, allowCompletedToggle = false) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
 
-    // Strictly filter source pool by active sport if not ALL and exclude NCAA/women
-    const rawPool = state.matchFilter === "FT" && allowCompletedToggle ? finishedTodayMatches : matchesList;
-    const sourcePool = rawPool
+    // Migrate any legacy filter values: strictly NO "ALL", NO "FOLLOWING"
+    if (state.matchFilter === "ALL" || state.matchFilter === "FOLLOWING" || !state.matchFilter) {
+      state.matchFilter = "LIVE";
+    }
+
+    // Source pool filtered strictly by active sport and excluding NCAA/women
+    const sourcePool = liveMatches
       .filter((m) => !isNcaaOrWomenMatch(m))
       .filter((m) => {
         if (activeSportKey === "all") return true;
         return (m.sport || "football").toLowerCase() === activeSportKey;
       });
 
-    const filtered = sourcePool.filter((m) => {
-      if (state.matchFilter === "LIVE") return m.status === "LIVE";
-      if (state.matchFilter === "SCHEDULED") return m.status === "SCHEDULED";
-      if (state.matchFilter === "DROPS") return m.status !== "FT" && Boolean(m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0);
-      if (state.matchFilter === "ALERTS") return m.status !== "FT" && Boolean(m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length);
-      if (state.matchFilter === "FT") return m.status === "FT";
-      if (state.matchFilter === "FOLLOWING") {
-        return (
-          state.followedMatches.includes(m.id) ||
-          state.followedClubs.includes(m.home) ||
-          state.followedClubs.includes(m.away) ||
-          state.followedLeagues.includes(m.leagueSlug)
-        );
-      }
-      return m.status !== "FT";
-    });
-
     const liveCount = sourcePool.filter((m) => m.status === "LIVE").length;
     const schedCount = sourcePool.filter((m) => m.status === "SCHEDULED").length;
-    const dropsCount = sourcePool.filter((m) => m.status !== "FT" && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
-    const alertsCount = sourcePool.filter((m) => m.status !== "FT" && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
+    const dropsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
+    const alertsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
 
-    const filterChips = [
-      { id: "ALL", label: `Live & Upcoming (${liveCount + schedCount})` },
-      { id: "LIVE", label: `Live Now (${liveCount})` },
-      { id: "DROPS", label: `Dropping Odds (${dropsCount})` },
-      { id: "ALERTS", label: `Inj/Susp (${alertsCount})` },
-      { id: "SCHEDULED", label: `Upcoming (${schedCount})` },
-      { id: "FOLLOWING", label: `Following (${state.followedMatches.length})` }
+    // Strict separation: Live games in LIVE section ONLY, Upcoming games in SCHEDULED section ONLY!
+    let filtered = [];
+    if (state.matchFilter === "LIVE") {
+      filtered = sourcePool.filter((m) => m.status === "LIVE");
+    } else if (state.matchFilter === "SCHEDULED") {
+      let upcomingPool = sourcePool.filter((m) => m.status === "SCHEDULED");
+      if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
+        upcomingPool = upcomingPool.filter((m) => m.date === state.selectedDate);
+      }
+      filtered = upcomingPool;
+    } else if (state.matchFilter === "DROPS") {
+      let dropsPool = sourcePool.filter((m) => m.status === "SCHEDULED" && Boolean(m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0));
+      if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
+        dropsPool = dropsPool.filter((m) => m.date === state.selectedDate);
+      }
+      filtered = dropsPool;
+    } else if (state.matchFilter === "ALERTS") {
+      let alertsPool = sourcePool.filter((m) => m.status === "SCHEDULED" && Boolean(m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length));
+      if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
+        alertsPool = alertsPool.filter((m) => m.date === state.selectedDate);
+      }
+      filtered = alertsPool;
+    } else if (state.matchFilter === "FT" && allowCompletedToggle) {
+      filtered = finishedTodayMatches
+        .filter((m) => !isNcaaOrWomenMatch(m))
+        .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
+    } else {
+      filtered = sourcePool.filter((m) => m.status === "SCHEDULED");
+    }
+
+    const filterModes = [
+      { id: "LIVE", label: "Live Games", count: liveCount, isLive: true },
+      { id: "SCHEDULED", label: "Upcoming Games", count: schedCount, isLive: false },
+      { id: "DROPS", label: "Dropping Odds", count: dropsCount, isLive: false },
+      { id: "ALERTS", label: "Inj / Susp", count: alertsCount, isLive: false }
     ];
     if (allowCompletedToggle && finishedTodayMatches.length > 0) {
-      filterChips.push({ id: "FT", label: `Completed Today (${finishedTodayMatches.length})` });
+      filterModes.push({ id: "FT", label: "Completed Today", count: finishedTodayMatches.length, isLive: false });
     }
+
+    const isLiveActive = state.matchFilter === "LIVE";
 
     const toolbarHtml = showToolbar
       ? `
         <div class="toolbar-card">
-          <div class="date-strip" role="tablist" aria-label="Upcoming matchdays">
-            ${(DATA.DATES || [])
-              .map(
-                (d) => `<button type="button" class="date-pill${state.selectedDate === d.id ? " is-active" : ""}" data-date="${d.id}">${escapeHtml(d.label)}</button>`
-              )
-              .join("")}
-          </div>
-          <div class="filter-row">
-            <div class="filter-chips">
-              ${filterChips
-                .map(
-                  (f) => `<button type="button" class="filter-chip${state.matchFilter === f.id ? " is-active" : ""}" data-filter="${f.id}">${f.id === "LIVE" && liveCount > 0 ? '<span class="live-dot"></span>' : ""}${escapeHtml(f.label)}</button>`
-                )
+          <div class="toolbar-primary-row">
+            <div class="toolbar-modes" role="tablist" aria-label="Match view filter">
+              ${filterModes
+                .map((f) => {
+                  const active = state.matchFilter === f.id;
+                  const liveClass = f.isLive ? (active ? " is-active live-active" : " live-tab") : (active ? " is-active" : "");
+                  return `
+                    <button type="button" class="toolbar-mode-tab${liveClass}" data-filter="${f.id}" aria-selected="${active}">
+                      ${f.isLive ? '<span class="live-dot-pulse"></span>' : ""}
+                      <span class="toolbar-mode-label">${f.isLive ? "🔴 " : ""}${escapeHtml(f.label)}</span>
+                      <span class="toolbar-count-badge">${f.count}</span>
+                    </button>
+                  `;
+                })
                 .join("")}
             </div>
             <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync real-time scores from SportyBet, Football.com & ESPN">
@@ -1201,6 +1224,27 @@
               Sync Live
             </button>
           </div>
+
+          ${isLiveActive ? `
+            <div class="toolbar-sub-banner live-sub-banner">
+              <div class="flex items-center gap-2">
+                <span class="live-dot-pulse"></span>
+                <span class="text-xs font-bold uppercase tracking-wider" style="color:#DC2626;">Live In-Play Section</span>
+                <span class="text-xs text-muted">· Showing <strong>${filtered.length}</strong> in-play ${activeSportKey !== "all" ? escapeHtml(spDef.label) : "live"} matches right now · Scores and minutes update every 10s</span>
+              </div>
+            </div>
+          ` : `
+            <div class="toolbar-sub-row">
+              <span class="toolbar-sub-label">Matchday:</span>
+              <div class="date-strip" role="tablist" aria-label="Upcoming matchdays">
+                ${(DATA.DATES || [])
+                  .map(
+                    (d) => `<button type="button" class="date-pill${state.selectedDate === d.id ? " is-active" : ""}" data-date="${d.id}">${escapeHtml(d.label)}</button>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+          `}
         </div>
       `
       : "";
@@ -1213,11 +1257,18 @@
         </div>
       `;
     } else if (filtered.length === 0) {
+      const emptyMsg = state.matchFilter === "LIVE"
+        ? `No live ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches currently in play`
+        : `No upcoming ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches scheduled for this date`;
+      const actionBtn = state.matchFilter === "LIVE"
+        ? `<button type="button" class="analyze-inline-btn mt-3" data-filter="SCHEDULED">View Upcoming Games (${schedCount}) &rarr;</button>`
+        : `<button type="button" class="analyze-inline-btn mt-3" data-date="UPCOMING_ALL">View All Upcoming Dates &rarr;</button>`;
+
       groupsHtml = `
         <div class="empty-state">
-          <h3>No ${activeSportKey !== "all" ? escapeHtml(spDef.label) : ""} matches match this filter</h3>
-          <p class="text-sm">Click below or choose another sport above to view active fixtures.</p>
-          ${activeSportKey !== "all" ? `<button type="button" class="analyze-inline-btn mt-3" data-sport-filter="ALL">View All 5 Sports</button>` : ""}
+          <h3>${emptyMsg}</h3>
+          <p class="text-sm">Fixtures sync continuously in real-time from SportyBet, Football.com &amp; ESPN.</p>
+          ${actionBtn}
         </div>
       `;
     } else if (activeSportKey !== "all") {
@@ -1319,19 +1370,29 @@
       `;
     }
 
+    const filterTitle = state.matchFilter === "LIVE"
+      ? "🔴 Live Matches"
+      : state.matchFilter === "SCHEDULED"
+      ? "📅 Upcoming Fixtures"
+      : state.matchFilter === "DROPS"
+      ? "📉 Dropping Odds"
+      : state.matchFilter === "ALERTS"
+      ? "⚠️ Injury & Suspension Alerts"
+      : "Completed Matches";
+
     const panelTitle = activeSportKey !== "all"
-      ? `${spDef.icon} ${spDef.label} Matches`
-      : title;
+      ? `${spDef.icon} ${spDef.label} · ${filterTitle}`
+      : filterTitle;
 
     return `
       ${toolbarHtml}
       <section class="panel" id="matchesPanel">
         <div class="panel-header">
-          ${liveCount > 0 ? '<span class="live-dot"></span>' : ""}
+          ${isLiveActive && filtered.length > 0 ? '<span class="live-dot-pulse"></span>' : ""}
           <h2>${escapeHtml(panelTitle)}</h2>
           <span class="count">${filtered.length} matches</span>
-          <a class="see-all" href="/matches" data-route="/matches">
-            Full schedule
+          <a class="see-all" href="/upcoming" data-route="/upcoming">
+            Full Upcoming Schedule
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
           </a>
         </div>
@@ -1723,9 +1784,20 @@
     if (state.activeSport && state.activeSport !== "ALL") {
       pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
     }
+    // Strict separation: Live section strictly returns live games
+    if (state.matchFilter === "LIVE") {
+      return pool.filter((m) => m.status === "LIVE");
+    }
+    // Strict separation: Upcoming section strictly returns upcoming games
+    if (state.matchFilter === "SCHEDULED") {
+      const upcomingPool = pool.filter((m) => m.status === "SCHEDULED");
+      if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
+        return upcomingPool.filter((m) => m.date === state.selectedDate);
+      }
+      return upcomingPool;
+    }
     if (state.selectedDate === "UPCOMING_ALL") return pool;
-    const dateFiltered = pool.filter((m) => m.date === state.selectedDate);
-    return dateFiltered.length > 0 ? dateFiltered : pool;
+    return pool.filter((m) => m.date === state.selectedDate);
   }
 
   // ============ HOME MARKET INTELLIGENCE STRIP (DROPPING ODDS, INJURIES, SUSPENSIONS, PPG) ============
@@ -2369,7 +2441,7 @@
   function renderHomeView() {
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
-    const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Live & Upcoming Matches" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
+    const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Matches & Odds" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
     return `
       ${renderHomeSureOddsBanner()}
       ${renderHomeHandicapValueCard()}
@@ -2382,6 +2454,7 @@
   }
 
   function renderMatchesView() {
+    const isLiveMode = state.matchFilter === "LIVE";
     const dayMatches = filteredMatchesForDate();
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === (state.activeSport || "ALL").toLowerCase()) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
@@ -2389,10 +2462,18 @@
 
     const bannerTitle = isSingleSport
       ? `${spDef.icon} ${spDef.label} Match Center`
-      : "🏆 Multi-Sport Match Center";
+      : isLiveMode ? "🔴 Real-Time Live Match Center" : "📅 Upcoming Fixtures Match Center";
     const bannerDesc = isSingleSport
-      ? `Live &amp; upcoming fixtures belonging exclusively to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com.`
-      : "Verified live &amp; upcoming fixtures across Football, Tennis, Basketball, Darts, and Ice Hockey.";
+      ? `${isLiveMode ? "Live in-play fixtures" : "Upcoming scheduled fixtures"} belonging exclusively to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com.`
+      : `${isLiveMode ? "Real-time in-play fixtures with live score updates" : "Verified upcoming scheduled fixtures and odds"} across Football, Tennis, Basketball, Darts, and Ice Hockey.`;
+
+    const sectionTitle = isSingleSport
+      ? `${spDef.label} Fixtures &amp; Odds`
+      : isLiveMode
+      ? "🔴 Live Matches"
+      : state.selectedDate === "UPCOMING_ALL"
+      ? "📅 Upcoming Schedule"
+      : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
 
     return `
       <div class="hero-banner" style="margin-bottom:12px; padding:16px 20px;">
@@ -2403,12 +2484,12 @@
           </div>
           <div class="flex items-center gap-2">
             <span class="status-pill font-mono text-xs" style="background:var(--ground-subtle); padding:4px 10px; border-radius:var(--radius-pill); border:1px solid var(--line-soft);">
-              ${dayMatches.length} Fixtures
+              ${dayMatches.length} Matches
             </span>
           </div>
         </div>
       </div>
-      ${renderMatchesPanel(dayMatches, isSingleSport ? `${spDef.label} Fixtures &amp; Odds` : (state.selectedDate === "UPCOMING_ALL" ? "Live &amp; Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`), true, true)}
+      ${renderMatchesPanel(liveMatches, sectionTitle, true, true)}
     `;
   }
 
@@ -3669,17 +3750,17 @@
           <div class="flex-1 min-w-0">
             <div class="text-xs font-bold uppercase tracking-wide text-brand">${escapeHtml(lg.country || "Competition")}</div>
             <h1 class="font-headline text-2xl font-bold mt-1">${escapeHtml(lg.name)}</h1>
-            <div class="text-xs text-muted mt-1">Real-time live &amp; upcoming fixtures · 11-Factor Analytics</div>
+            <div class="text-xs text-muted mt-1">Real-time match fixtures · 11-Factor Analytics</div>
           </div>
           <button type="button" class="btn-primary-pill${isFollowed ? " is-active-state" : ""}" data-follow-league="${escapeHtml(slug)}">
-            ${isFollowed ? "Following ✓" : "Follow Competition"}
+            ${isFollowed ? "Pinned ✓" : "Pin Competition"}
           </button>
         </div>
       </div>
 
       ${
         matches.length > 0
-          ? renderMatchesPanel(matches, `${lg.name} Live & Upcoming`, false, false)
+          ? renderMatchesPanel(matches, `${lg.name} Fixtures`, false, false)
           : `<section class="panel p-4">
               <div class="panel-header" style="padding:0 0 12px 0;">
                 <h2>${escapeHtml(lg.name)} Fixtures</h2>
@@ -3717,7 +3798,7 @@
         </div>
       </div>
 
-      ${matchedLive.length > 0 ? renderMatchesPanel(matchedLive, `Matching Live & Upcoming (${matchedLive.length})`, false, false) : ""}
+      ${matchedLive.length > 0 ? renderMatchesPanel(matchedLive, `Matching Fixtures (${matchedLive.length})`, false, false) : ""}
 
       <section class="panel">
         <div class="panel-header">
@@ -3779,7 +3860,7 @@
       main.innerHTML = renderDroppingOddsView();
     } else if (r === "/ppg" || r === "/ppg-intelligence" || r === "/points-per-game") {
       main.innerHTML = renderPpgIntelligenceView();
-    } else if (r === "/matches") {
+    } else if (r === "/live" || r === "/upcoming" || r === "/matches") {
       main.innerHTML = renderMatchesView();
     } else if (r === "/strong-teams" || r === "/strong-teams-today" || r === "/power-picks" || r === "/community") {
       main.innerHTML = renderStrongTeamsView();
@@ -4396,7 +4477,7 @@
       recomputeSlips();
       renderAll();
       if (showSuccessToast) {
-        showToast(`Synced ${liveMatches.length} real-time live & upcoming matches.`);
+        showToast(`Synced ${liveMatches.length} real-time matches.`);
       }
     } catch {
       isLoadingRealtime = false;
@@ -4688,23 +4769,6 @@
         navigator.clipboard?.writeText(lines.join("\n")).catch(() => {});
         showToast(`${slip.title} slip copied to clipboard!`);
       }
-      return;
-    }
-
-    // Follow match star
-    const followBtn = e.target.closest("[data-follow-match]");
-    if (followBtn) {
-      e.stopPropagation();
-      const id = followBtn.getAttribute("data-follow-match");
-      if (state.followedMatches.includes(id)) {
-        state.followedMatches = state.followedMatches.filter((x) => x !== id);
-        showToast("Removed match from Following");
-      } else {
-        state.followedMatches.push(id);
-        showToast("Match pinned to Following ★");
-      }
-      saveState();
-      renderAll();
       return;
     }
 

@@ -753,6 +753,8 @@ window.MAMON_REALTIME = (() => {
     }
 
     const status = rawState === "in" ? "LIVE" : rawState === "post" ? "FT" : "SCHEDULED";
+    const espnPeriod = ev.status?.period ?? comp.status?.period ?? null;
+    const espnClock = comp.status?.displayClock || ev.status?.displayClock || detail;
     const parsedMinute = rawState === "in"
       ? (/\b(HT|Half)\b/i.test(String(detail))
           ? 45
@@ -762,6 +764,15 @@ window.MAMON_REALTIME = (() => {
       : status === "FT"
         ? 90
         : null;
+    const halfLabel = status === "LIVE"
+      ? (/\b(HT|Half)\b|HALFTIME/i.test(`${detail} ${statusType.name || ""}`)
+          ? "Halftime (HT)"
+          : espnPeriod === 1 || (parsedMinute !== null && parsedMinute <= 45)
+            ? "1st Half"
+            : espnPeriod === 2 || (parsedMinute !== null && parsedMinute > 45)
+              ? "2nd Half"
+              : "In Play")
+      : "";
 
     const homeScore = rawState === "pre" ? null : parseInt(homeComp.score ?? "0", 10) || 0;
     const awayScore = rawState === "pre" ? null : parseInt(awayComp.score ?? "0", 10) || 0;
@@ -859,6 +870,8 @@ window.MAMON_REALTIME = (() => {
       isoDateTime: ev.date,
       status,
       minute: parsedMinute,
+      halfLabel,
+      liveClock: status === "LIVE" ? (espnClock || detail) : "",
       displayTime: status === "LIVE" ? detail : status === "FT" ? "FT" : formatLocalTime(ev.date),
       home: homeKey,
       away: awayKey,

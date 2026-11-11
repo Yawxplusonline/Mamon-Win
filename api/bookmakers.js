@@ -726,6 +726,17 @@ async function runFullBookmakerScan(forceRefresh = false) {
         const parsedMkt = parseBookieMarkets(ev.markets);
         if (!parsedMkt.home || !parsedMkt.away) return;
 
+        const evStatusStr = String(ev.matchStatus || "").trim();
+        const evIsLive = ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr);
+        const evPlayedSecs = ev.playedSeconds && String(ev.playedSeconds).toLowerCase() !== "null" ? String(ev.playedSeconds).trim() : "";
+        const evRemTime = ev.remainingTimeInPeriod && String(ev.remainingTimeInPeriod).toLowerCase() !== "null" ? String(ev.remainingTimeInPeriod).trim() : "";
+        const evPeriod = ev.period !== undefined && ev.period !== null && String(ev.period).toLowerCase() !== "null" ? String(ev.period).trim() : "";
+        const evScore = (ev.setScore && String(ev.setScore).toLowerCase() !== "null")
+          ? String(ev.setScore).trim()
+          : ((ev.score && String(ev.score).toLowerCase() !== "null") ? String(ev.score).trim() : null);
+        const evGameScore = Array.isArray(ev.gameScore) ? ev.gameScore.map((s) => String(s || "").trim()).filter(Boolean) : [];
+        const evPointScore = typeof ev.pointScore === "string" && ev.pointScore.toLowerCase() !== "null" && !ev.pointScore.startsWith("[") ? ev.pointScore.trim() : "";
+
         let item = mergedMap.get(eventId);
         if (!item) {
           const homeUid = String(ev.homeTeamId || "").split(":").pop() || "";
@@ -748,14 +759,30 @@ async function runFullBookmakerScan(forceRefresh = false) {
             estimateStartTime: startTs,
             isoDate: dt.toISOString().slice(0, 10),
             kickoffUtc: dt.toISOString().slice(11, 16),
-            isLive: ev.status === 1 || /1st|2nd|half|live/i.test(ev.matchStatus || ""),
-            matchStatus: ev.matchStatus || "Scheduled",
-            score: (ev.setScore && String(ev.setScore).toLowerCase() !== "null") ? String(ev.setScore).trim() : ((ev.score && String(ev.score).toLowerCase() !== "null") ? String(ev.score).trim() : null),
+            isLive: evIsLive,
+            matchStatus: evStatusStr || (evIsLive ? "LIVE" : "Scheduled"),
+            playedSeconds: evPlayedSecs,
+            remainingTimeInPeriod: evRemTime,
+            period: evPeriod,
+            score: evScore,
+            gameScore: evGameScore,
+            pointScore: evPointScore,
             topTeam: Boolean(ev.topTeam),
             sportybet: null,
             footballCom: null
           };
           mergedMap.set(eventId, item);
+        } else if (evIsLive) {
+          item.isLive = true;
+          if (evStatusStr && (!item.matchStatus || item.matchStatus === "Scheduled" || item.matchStatus === "LIVE")) {
+            item.matchStatus = evStatusStr;
+          }
+          if (evPlayedSecs && !item.playedSeconds) item.playedSeconds = evPlayedSecs;
+          if (evRemTime && !item.remainingTimeInPeriod) item.remainingTimeInPeriod = evRemTime;
+          if (evPeriod && !item.period) item.period = evPeriod;
+          if (evScore && (!item.score || item.score === "0:0")) item.score = evScore;
+          if (evGameScore.length > 0 && (!item.gameScore || item.gameScore.length === 0)) item.gameScore = evGameScore;
+          if (evPointScore && !item.pointScore) item.pointScore = evPointScore;
         }
 
         if (ev._tournamentIcon && !item.tournamentIcon) {

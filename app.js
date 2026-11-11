@@ -68,6 +68,92 @@
     return isLive ? "0" : "-";
   }
 
+  function resolveLiveClockAndHalf(m) {
+    if (!m || m.status !== "LIVE") {
+      return { liveClock: m?.displayTime || "", halfLabel: "", periodSubScore: "" };
+    }
+    const sport = String(m.sport || "football").toLowerCase();
+    const rawStatus = String(m.matchStatus || m.halfLabel || m.minute || m.displayTime || "").trim();
+    const playedSecs = String(m.playedSeconds || "").trim();
+    const remTime = String(m.remainingTimeInPeriod || "").trim();
+    const rawPeriod = String(m.livePeriod || m.period || "").trim();
+
+    let liveClock = "";
+    if (sport === "basketball" || sport === "hockey") {
+      liveClock = remTime || playedSecs || (m.liveClock && m.liveClock !== "LIVE" ? String(m.liveClock) : "");
+    } else if (playedSecs && playedSecs.includes(":")) {
+      const [mmStr, ssStr] = playedSecs.split(":");
+      const mins = parseInt(mmStr, 10);
+      const secs = parseInt(ssStr, 10);
+      if (sport === "football" && Number.isFinite(mins)) {
+        liveClock = secs > 0 ? `${mins + 1}'` : `${mins}'`;
+      } else {
+        liveClock = playedSecs;
+      }
+    } else if (m.liveClock && !/^(live|scheduled|null)$/i.test(String(m.liveClock))) {
+      liveClock = String(m.liveClock).trim();
+    } else if (typeof m.minute === "number" && Number.isFinite(m.minute)) {
+      liveClock = `${m.minute}'`;
+    } else if (/\d+'/.test(String(m.displayTime || ""))) {
+      liveClock = String(m.displayTime).trim();
+    }
+
+    const combined = `${rawStatus} ${m.displayTime || ""}`.trim();
+    let halfLabel = "";
+    if (/\bht\b|halftime|half\s*time/i.test(combined)) {
+      halfLabel = "Halftime (HT)";
+      if (!liveClock) liveClock = "45'";
+    } else if (/^h1$|1st\s*half|first\s*half/i.test(rawStatus)) {
+      halfLabel = "1st Half";
+    } else if (/^h2$|2nd\s*half|second\s*half/i.test(rawStatus)) {
+      halfLabel = "2nd Half";
+    } else if (/^et$|extra/i.test(rawStatus)) {
+      halfLabel = "Extra Time";
+    } else if (/^pen/i.test(rawStatus)) {
+      halfLabel = "Penalties";
+    } else if (/^q\s*([1-4])/i.test(rawStatus)) {
+      halfLabel = `Q${rawStatus.match(/^q\s*([1-4])/i)[1]}`;
+    } else if (/set\s*(\d+)/i.test(rawStatus)) {
+      halfLabel = `Set ${rawStatus.match(/set\s*(\d+)/i)[1]}`;
+    } else if (/period\s*(\d+)/i.test(rawStatus)) {
+      const p = rawStatus.match(/period\s*(\d+)/i)[1];
+      halfLabel = p === "1" ? "1st Period" : p === "2" ? "2nd Period" : p === "3" ? "3rd Period" : `Period ${p}`;
+    } else if (sport === "football") {
+      if (rawPeriod === "1") halfLabel = "1st Half";
+      else if (rawPeriod === "2") halfLabel = "2nd Half";
+      else if (typeof m.minute === "number") halfLabel = m.minute <= 45 ? "1st Half" : "2nd Half";
+      else if (liveClock && parseInt(liveClock, 10) > 0) halfLabel = parseInt(liveClock, 10) <= 45 ? "1st Half" : "2nd Half";
+      else halfLabel = "In Play";
+    } else if (sport === "tennis") {
+      halfLabel = rawPeriod ? `Set ${rawPeriod}` : "In Play";
+    } else if (sport === "basketball") {
+      halfLabel = rawPeriod ? `Q${rawPeriod}` : "In Play";
+    } else if (sport === "hockey") {
+      halfLabel = rawPeriod ? `Period ${rawPeriod}` : "In Play";
+    } else {
+      halfLabel = rawStatus && !/^(live|running|scheduled|null)$/i.test(rawStatus) ? rawStatus : "In Play";
+    }
+
+    if (!liveClock) {
+      liveClock = halfLabel === "Halftime (HT)" ? "HT" : "LIVE";
+    }
+
+    let periodSubScore = "";
+    const gScores = Array.isArray(m.gameScore) ? m.gameScore.filter(Boolean) : [];
+    if (gScores.length > 0) {
+      const fmtList = gScores.map((s) => s.replace(/:/g, "-"));
+      if (sport === "football") {
+        periodSubScore = `1H ${fmtList[0]}`;
+      } else if (sport === "tennis") {
+        periodSubScore = fmtList.join(", ") + (m.pointScore ? ` · ${m.pointScore.replace(/:/g, "-")}` : "");
+      } else {
+        periodSubScore = fmtList.join(" · ");
+      }
+    }
+
+    return { liveClock, halfLabel, periodSubScore };
+  }
+
   function isNcaaOrWomenMatch(mOrGame) {
     if (!mOrGame) return false;
     const text = [
@@ -1060,6 +1146,7 @@
     const homeScoreText = formatSingleScore(m.homeScore, isLive);
     const awayScoreText = formatSingleScore(m.awayScore, isLive);
     const matchScoreText = formatMatchScore(m);
+    const { liveClock, halfLabel, periodSubScore } = resolveLiveClockAndHalf(m);
     const homeWon = isFT && Number(m.homeScore) > Number(m.awayScore);
     const awayWon = isFT && Number(m.awayScore) > Number(m.homeScore);
     const bestLabel = m.analysis?.bestPick?.code || "1X";
@@ -1098,7 +1185,7 @@
           <div class="match-mobile-time">
             ${
               isLive
-                ? `<span class="live-label"><span class="live-dot"></span>Live</span><span class="live-minute">${escapeHtml(m.displayTime)}</span>`
+                ? `<span class="live-label"><span class="live-dot"></span>${escapeHtml(liveClock)}</span><span class="live-half-pill is-compact">${escapeHtml(halfLabel)}</span>`
                 : `<span class="ko-time">${escapeHtml(m.displayTime)}</span>`
             }
           </div>
@@ -1116,8 +1203,9 @@
               <span class="team-score${isLive ? " is-live" : ""}">${awayScoreText}</span>
             </div>
             ${
-              dropChipHtml || ppgText || sosBadge || runinBadgeHtml
+              dropChipHtml || ppgText || sosBadge || runinBadgeHtml || periodSubScore
                 ? `<div class="match-mobile-meta">
+                    ${periodSubScore ? `<span class="ppg-chip">${escapeHtml(periodSubScore)}</span>` : ""}
                     ${ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : ""}
                     ${runinBadgeHtml}
                     ${sosBadge}
@@ -1133,7 +1221,7 @@
           <div class="time">
             ${
               isLive
-                ? `<span class="live-dot"></span><span class="live-minute">${escapeHtml(m.displayTime)}</span>`
+                ? `<span class="live-dot"></span><span class="live-clock-pill">${escapeHtml(liveClock)}</span><span class="live-half-pill">${escapeHtml(halfLabel)}</span>`
                 : `<span class="status-text">${escapeHtml(m.displayTime)}</span>`
             }
           </div>
@@ -1142,8 +1230,11 @@
             ${redBadges(m.homeRed)}
             <span class="team-name${homeWon ? " team-winner" : ""}">${escapeHtml(home.name)}</span>
           </div>
-          <div class="score${isLive ? " is-live" : hasScore ? "" : " is-vs"}">
-            ${matchScoreText}
+          <div class="score-col-wrap">
+            <div class="score${isLive ? " is-live" : hasScore ? "" : " is-vs"}">
+              ${matchScoreText}
+            </div>
+            ${isLive && periodSubScore ? `<span class="score-sub-period">${escapeHtml(periodSubScore)}</span>` : ""}
           </div>
           <div class="team-away">
             ${crestImg(away.logo, away.name, away.color, 19)}
@@ -1274,21 +1365,22 @@
       toolbarHtml = showToolbar
         ? `
           <div class="toolbar-card live-toolbar-card">
-            <div class="toolbar-primary-row">
-              <div class="flex items-center gap-3">
-                <span class="live-dot-pulse"></span>
-                <div>
-                  <div class="flex items-center gap-2">
-                    <span style="font-size:15px; font-weight:800; color:#DC2626; letter-spacing:-0.01em;">🔴 In-Play Live Games</span>
-                    <span class="toolbar-count-badge" style="background:rgba(239, 68, 68, 0.12); color:#DC2626; font-size:11px; padding:2px 8px;">${filtered.length} in play</span>
-                  </div>
-                  <span class="text-xs text-muted">Showing live in-play games only · Scores &amp; clock update automatically</span>
+            <div class="toolbar-primary-row is-centered-toolbar">
+              <span class="toolbar-hdr-spacer" aria-hidden="true"></span>
+              <div class="flex flex-col items-center text-center gap-0.5">
+                <div class="flex items-center justify-center gap-2">
+                  <span class="live-dot-pulse"></span>
+                  <span style="font-size:15px; font-weight:800; color:#DC2626; letter-spacing:-0.01em;">🔴 In-Play Live Games</span>
+                  <span class="toolbar-count-badge" style="background:rgba(239, 68, 68, 0.12); color:#DC2626; font-size:11px; padding:2px 8px;">${filtered.length} in play</span>
                 </div>
+                <span class="text-xs text-muted">Showing live timing, half/period &amp; scorelines · Updates automatically</span>
               </div>
-              <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync real-time scores from SportyBet, Football.com & ESPN">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                Sync Live
-              </button>
+              <div class="toolbar-hdr-right">
+                <button type="button" class="refresh-btn" id="refreshMatchesBtn" title="Sync real-time scores from SportyBet, Football.com & ESPN">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                  Sync Live
+                </button>
+              </div>
             </div>
           </div>
         `
@@ -1416,12 +1508,17 @@
         const sortedItems = sortMatchesInOrder(items);
         subLeaguesHtml += `
           <div>
-            <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
-              <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-              <span class="league-name">${escapeHtml(lg.name)}</span>
-              <span class="match-league-country">${escapeHtml(lg.country || "")}</span>
-              <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+            <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
+              <span class="league-hdr-spacer" aria-hidden="true"></span>
+              <span class="league-hdr-center">
+                <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
+                <span class="league-name">${escapeHtml(lg.name)}</span>
+                ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
+              </span>
+              <span class="league-hdr-right">
+                <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+              </span>
             </a>
             ${sortedItems.map(renderMatchRow).join("")}
           </div>
@@ -1458,12 +1555,17 @@
             const sortedItems = sortMatchesInOrder(items);
             subLeaguesHtml += `
               <div>
-                <a class="match-league-header" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
-                  <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-                  <span class="league-name">${escapeHtml(lg.name)}</span>
-                  <span class="match-league-country">${escapeHtml(lg.country || "")}</span>
-                  <span class="text-xs font-mono text-muted ml-auto mr-2">${items.length} fixtures</span>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+                <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
+                  <span class="league-hdr-spacer" aria-hidden="true"></span>
+                  <span class="league-hdr-center">
+                    <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
+                    <span class="league-name">${escapeHtml(lg.name)}</span>
+                    ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
+                  </span>
+                  <span class="league-hdr-right">
+                    <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+                  </span>
                 </a>
                 ${sortedItems.map(renderMatchRow).join("")}
               </div>
@@ -1472,17 +1574,20 @@
 
           return `
             <div class="sport-category-card" data-sport-group="${sp.key}">
-              <div class="sport-category-header">
-                <div class="flex items-center gap-2.5">
+              <div class="sport-category-header is-centered">
+                <span class="sport-hdr-spacer" aria-hidden="true"></span>
+                <div class="sport-hdr-center">
                   <span class="sport-category-icon">${sp.icon}</span>
                   <div>
                     <h3 class="sport-category-title">${sp.label} Fixtures &amp; Odds</h3>
                     <span class="sport-category-subtitle">${spMatches.length} Matches belonging strictly to ${sp.label} · SportyBet &amp; Football.com</span>
                   </div>
                 </div>
-                <button type="button" class="sport-category-filter-btn" data-sport-filter="${sp.key}" title="View only ${sp.label} games">
-                  View ${sp.label} Only (${spMatches.length}) &rarr;
-                </button>
+                <div class="sport-hdr-right">
+                  <button type="button" class="sport-category-filter-btn" data-sport-filter="${sp.key}" title="View only ${sp.label} games">
+                    View ${sp.label} Only (${spMatches.length}) &rarr;
+                  </button>
+                </div>
               </div>
               <div class="sport-category-body">
                 ${subLeaguesHtml}
@@ -1514,11 +1619,14 @@
     return `
       ${toolbarHtml}
       <section class="panel" id="matchesPanel">
-        <div class="panel-header">
-          ${isLiveSection && filtered.length > 0 ? '<span class="live-dot-pulse"></span>' : ""}
-          <h2>${escapeHtml(panelTitle)}</h2>
-          <span class="count">${filtered.length} matches</span>
-          ${seeAllLink}
+        <div class="panel-header is-centered">
+          <span class="panel-hdr-spacer" aria-hidden="true"></span>
+          <div class="panel-hdr-center">
+            ${isLiveSection && filtered.length > 0 ? '<span class="live-dot-pulse"></span>' : ""}
+            <h2>${escapeHtml(panelTitle)}</h2>
+            <span class="count">${filtered.length} matches</span>
+          </div>
+          <div class="panel-hdr-right">${seeAllLink}</div>
         </div>
         ${groupsHtml}
       </section>
@@ -2736,17 +2844,20 @@
     const sortedLive = sortMatchesInOrder(liveList);
     return `
       <section class="panel live-home-panel" style="border:1px solid rgba(239, 68, 68, 0.3); background:linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--card) 100%);">
-        <div class="panel-header" style="border-bottom:1px solid rgba(239, 68, 68, 0.15);">
-          <div class="flex items-center gap-2">
+        <div class="panel-header is-centered" style="border-bottom:1px solid rgba(239, 68, 68, 0.15);">
+          <span class="panel-hdr-spacer" aria-hidden="true"></span>
+          <div class="panel-hdr-center">
             <span class="live-dot-pulse"></span>
-            <h2 style="color:#DC2626; font-size:15px; font-weight:800; letter-spacing:-0.01em;">
+            <h2 style="color:#DC2626; font-size:16px; font-weight:800; letter-spacing:-0.01em;">
               🔴 ${activeSportKey !== "all" ? escapeHtml(spDef.label) + " · " : ""}In-Play Live Games
             </h2>
             <span class="toolbar-count-badge" style="background:#FEE2E2; color:#DC2626; font-weight:800;">${liveList.length} LIVE NOW</span>
           </div>
-          <a class="see-all" href="/live" data-route="/live" style="color:#DC2626; font-weight:700;">
-            Open Live Section &rarr;
-          </a>
+          <div class="panel-hdr-right">
+            <a class="see-all" href="/live" data-route="/live" style="color:#DC2626; font-weight:700;">
+              Open Live Section &rarr;
+            </a>
+          </div>
         </div>
         <div>
           ${sortedLive.slice(0, 8).map(renderMatchRow).join("")}
@@ -2908,21 +3019,17 @@
         : "Live in-play matches across Football, Tennis, Basketball, Darts, and Ice Hockey · Zero upcoming games.";
 
       return `
-        <div class="hero-banner" style="margin-bottom:12px; padding:16px 20px; border-left:4px solid #DC2626;">
-          <div class="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <span class="live-dot-pulse"></span>
-                <span class="font-mono text-xs font-bold uppercase tracking-wider" style="color:#DC2626;">Live Games Section Only</span>
-              </div>
-              <h1 style="font-size:22px; font-weight:800; letter-spacing:-0.02em; margin-bottom:4px;">${bannerTitle}</h1>
-              <p style="font-size:13px; color:var(--text-secondary); margin:0;">${bannerDesc}</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="status-pill font-mono text-xs" style="background:#FEE2E2; color:#DC2626; font-weight:800; padding:4px 10px; border-radius:var(--radius-pill); border:1px solid #FCA5A5;">
+        <div class="hero-banner" style="margin-bottom:12px; padding:18px 22px; border-left:4px solid #DC2626; text-align:center;">
+          <div class="flex flex-col items-center justify-center gap-1.5">
+            <div class="flex items-center justify-center gap-2 flex-wrap">
+              <span class="live-dot-pulse"></span>
+              <span class="font-mono text-xs font-bold uppercase tracking-wider" style="color:#FCA5A5;">Live Games Section Only</span>
+              <span class="status-pill font-mono text-xs" style="background:#FEE2E2; color:#DC2626; font-weight:800; padding:3px 10px; border-radius:var(--radius-pill); border:1px solid #FCA5A5;">
                 ${liveMatchesPool.length} LIVE NOW
               </span>
             </div>
+            <h1 style="font-size:24px; font-weight:800; letter-spacing:-0.02em; margin:0; color:#FFFFFF;">${bannerTitle}</h1>
+            <p style="font-size:13.5px; color:#D1E0D9; margin:0; max-width:760px;">${bannerDesc}</p>
           </div>
         </div>
         ${renderMatchesPanel(liveMatches, isSingleSport ? `${spDef.label} Live Matches` : "🔴 Live In-Play Matches", true, false, "LIVE")}
@@ -4758,13 +4865,12 @@
   // ============ REAL-TIME HYDRATION BOOTSTRAP ============
   function mergeBookmakerGamesIntoLiveMatches() {
     if (!bookmakerScan?.allGames || !Array.isArray(bookmakerScan.allGames)) return;
-    const existingIds = new Set(liveMatches.map((m) => m.id));
+    const existingById = new Map(liveMatches.map((m) => [m.id, m]));
     const converted = [];
 
     for (const g of bookmakerScan.allGames) {
       if (isNcaaOrWomenMatch(g)) continue;
       const matchId = `bm-${g.eventId}`;
-      if (existingIds.has(matchId)) continue;
 
       const sport = (g.sport || "football").toLowerCase();
       const sportName = g.sportName || (sport === "tennis" ? "Tennis" : sport === "basketball" ? "Basketball" : sport === "hockey" ? "Ice Hockey" : sport === "darts" ? "Darts" : "Football");
@@ -4815,12 +4921,43 @@
         parsedAwayScore = 0;
       }
 
-      let liveDisplayStatus = "LIVE";
+      let rawMatchStatus = "LIVE";
       if (g.matchStatus && typeof g.matchStatus === "string" && g.matchStatus.trim() && g.matchStatus.toLowerCase() !== "null") {
-        liveDisplayStatus = g.matchStatus.trim();
+        rawMatchStatus = g.matchStatus.trim();
       }
       const isGameLive = Boolean(g.isLive);
-      const displayTime = isGameLive ? liveDisplayStatus : timeStr;
+      const clockInfo = isGameLive
+        ? resolveLiveClockAndHalf({
+            sport,
+            status: "LIVE",
+            matchStatus: rawMatchStatus,
+            playedSeconds: g.playedSeconds || "",
+            remainingTimeInPeriod: g.remainingTimeInPeriod || "",
+            period: g.period || "",
+            gameScore: g.gameScore || [],
+            pointScore: g.pointScore || "",
+            displayTime: rawMatchStatus
+          })
+        : { liveClock: timeStr, halfLabel: "", periodSubScore: "" };
+      const displayTime = isGameLive ? `${clockInfo.liveClock} · ${clockInfo.halfLabel}` : timeStr;
+
+      const existing = existingById.get(matchId);
+      if (existing) {
+        existing.status = isGameLive ? "LIVE" : "SCHEDULED";
+        existing.matchStatus = rawMatchStatus;
+        existing.playedSeconds = g.playedSeconds || existing.playedSeconds || "";
+        existing.remainingTimeInPeriod = g.remainingTimeInPeriod || existing.remainingTimeInPeriod || "";
+        existing.period = g.period || existing.period || "";
+        existing.gameScore = Array.isArray(g.gameScore) ? g.gameScore : existing.gameScore || [];
+        existing.pointScore = g.pointScore || existing.pointScore || "";
+        existing.liveClock = clockInfo.liveClock;
+        existing.halfLabel = clockInfo.halfLabel;
+        existing.minute = isGameLive ? clockInfo.liveClock : "";
+        existing.displayTime = displayTime;
+        existing.homeScore = parsedHomeScore;
+        existing.awayScore = parsedAwayScore;
+        continue;
+      }
 
       converted.push({
         id: matchId,
@@ -4836,7 +4973,15 @@
         date: dateStr,
         isoDateTime,
         status: isGameLive ? "LIVE" : "SCHEDULED",
-        minute: isGameLive ? liveDisplayStatus : "",
+        matchStatus: rawMatchStatus,
+        playedSeconds: g.playedSeconds || "",
+        remainingTimeInPeriod: g.remainingTimeInPeriod || "",
+        period: g.period || "",
+        gameScore: Array.isArray(g.gameScore) ? g.gameScore : [],
+        pointScore: g.pointScore || "",
+        liveClock: clockInfo.liveClock,
+        halfLabel: clockInfo.halfLabel,
+        minute: isGameLive ? clockInfo.liveClock : "",
         displayTime,
         home: homeKey,
         away: awayKey,

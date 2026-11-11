@@ -161,13 +161,18 @@ function extractEventsFromFactCenter(json, sportKey = "football", sportLabel = "
   if (!json || !json.data) return [];
   const tList = Array.isArray(json.data) ? json.data : json.data.tournaments || [];
   const out = [];
+  const isExcludedTournamentOrEvent = (text) => {
+    return /\bncaa\b|\bnacca\b|\bwomen('s)?\b|\(w\)\b|\bwbb\b|\bwnba\b|\bdivision i women\b|\bladies\b|\bfemenil\b|\bfeminina\b|\bfem\b/i.test(text);
+  };
   for (const t of tList) {
     const tIcon = t.tournamentIcon || "";
     const tName = t.name || "";
+    if (isExcludedTournamentOrEvent(tName)) continue;
     for (const ev of t.events || []) {
       if (ev.ai || ev.banned) continue;
       const combinedName = `${ev.homeTeamName || ""} ${ev.awayTeamName || ""} ${ev.sport?.category?.name || ""} ${ev.sport?.category?.tournament?.name || tName}`;
       if (/esoccer|e-soccer|virtual|simulated|cyber|srl/i.test(combinedName)) continue;
+      if (isExcludedTournamentOrEvent(combinedName)) continue;
       out.push({
         ...ev,
         _tournamentIcon: tIcon,
@@ -714,6 +719,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
       const upsertEvent = (ev, sourceName) => {
         const eventId = String(ev.eventId || "");
         if (!eventId) return;
+        const leagueName = ev.sport?.category?.tournament?.name || ev._tournamentName || "League";
+        const homeName = ev.homeTeamName || "Home";
+        const awayName = ev.awayTeamName || "Away";
+        if (isChaosOrReserveMatch(leagueName, homeName, awayName)) return;
         const parsedMkt = parseBookieMarkets(ev.markets);
         if (!parsedMkt.home || !parsedMkt.away) return;
 

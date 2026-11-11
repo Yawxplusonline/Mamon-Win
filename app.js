@@ -68,6 +68,41 @@
     return isLive ? "0" : "-";
   }
 
+  function isNcaaOrWomenMatch(mOrGame) {
+    if (!mOrGame) return false;
+    const text = [
+      mOrGame.leagueName,
+      mOrGame.league,
+      mOrGame.leagueSlug,
+      mOrGame.homeTeamName,
+      mOrGame.awayTeamName,
+      mOrGame.home,
+      mOrGame.away,
+      mOrGame.name,
+      mOrGame.tournamentName,
+      mOrGame._tournamentName
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    const banned = [
+      /\bncaa\b/i,
+      /\bnacca\b/i,
+      /\bwomen('s)?\b/i,
+      /\(w\)\b/i,
+      /\bwbb\b/i,
+      /\bwnba\b/i,
+      /\bdivision i women\b/i,
+      /\bcollege w(omen)?\b/i,
+      /\bladies\b/i,
+      /\bfemenil\b/i,
+      /\bfeminina\b/i,
+      /\bfem\b/i
+    ];
+    return banned.some((rx) => rx.test(text));
+  }
+
   function loadState() {
     const defaults = {
       route: "/",
@@ -177,7 +212,8 @@
 
   function recomputeSlips() {
     if (!RT) return;
-    sureSlips = RT.buildSureOddsSlips(liveMatches, state.slipSeed);
+    const cleanMatches = liveMatches.filter((m) => !isNcaaOrWomenMatch(m));
+    sureSlips = RT.buildSureOddsSlips(cleanMatches, state.slipSeed);
   }
 
   function getRouteFromHash() {
@@ -309,9 +345,10 @@
     const mobileEl = document.getElementById("subnavMobile");
     const currentSport = (state.activeSport || "ALL").toLowerCase();
 
-    // Count matches per sport (restricted strictly to the 5 allowed sports)
+    // Count matches per sport (restricted strictly to the 5 allowed sports, excluding NCAA/women)
     const sportCounts = { all: 0, tennis: 0, basketball: 0, darts: 0, hockey: 0, football: 0 };
     liveMatches.forEach((m) => {
+      if (isNcaaOrWomenMatch(m)) return;
       const sp = (m.sport || "football").toLowerCase();
       if (sportCounts[sp] !== undefined) {
         sportCounts[sp]++;
@@ -1098,12 +1135,14 @@
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
 
-    // Strictly filter source pool by active sport if not ALL
+    // Strictly filter source pool by active sport if not ALL and exclude NCAA/women
     const rawPool = state.matchFilter === "FT" && allowCompletedToggle ? finishedTodayMatches : matchesList;
-    const sourcePool = rawPool.filter((m) => {
-      if (activeSportKey === "all") return true;
-      return (m.sport || "football").toLowerCase() === activeSportKey;
-    });
+    const sourcePool = rawPool
+      .filter((m) => !isNcaaOrWomenMatch(m))
+      .filter((m) => {
+        if (activeSportKey === "all") return true;
+        return (m.sport || "football").toLowerCase() === activeSportKey;
+      });
 
     const filtered = sourcePool.filter((m) => {
       if (state.matchFilter === "LIVE") return m.status === "LIVE";
@@ -1678,7 +1717,9 @@
 
   function filteredMatchesForDate() {
     const allowed = ["football", "tennis", "basketball", "darts", "hockey"];
-    let pool = liveMatches.filter((m) => allowed.includes((m.sport || "football").toLowerCase()));
+    let pool = liveMatches
+      .filter((m) => allowed.includes((m.sport || "football").toLowerCase()))
+      .filter((m) => !isNcaaOrWomenMatch(m));
     if (state.activeSport && state.activeSport !== "ALL") {
       pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
     }
@@ -2092,8 +2133,9 @@
 
   // ============ STRONG & WORST TEAMS TODAY (SEPARATE SECTIONS) ============
   function renderTodayPowerPreviewCard() {
-    if (!RT?.buildTodayPowerRankings || liveMatches.length === 0) return "";
-    const p = RT.buildTodayPowerRankings(liveMatches);
+    const cleanMatches = liveMatches.filter((m) => !isNcaaOrWomenMatch(m));
+    if (!RT?.buildTodayPowerRankings || cleanMatches.length === 0) return "";
+    const p = RT.buildTodayPowerRankings(cleanMatches);
     const quads = [
       { key: "STRONG_HOME", title: "STRONG HOME TODAY", item: p.strongHome[0], isStrong: true, route: "/strong-teams?cat=STRONG_HOME" },
       { key: "STRONG_AWAY", title: "STRONG AWAY TODAY", item: p.strongAway[0], isStrong: true, route: "/strong-teams?cat=STRONG_AWAY" },
@@ -4148,6 +4190,7 @@
     const converted = [];
 
     for (const g of bookmakerScan.allGames) {
+      if (isNcaaOrWomenMatch(g)) continue;
       const matchId = `bm-${g.eventId}`;
       if (existingIds.has(matchId)) continue;
 
@@ -4333,7 +4376,7 @@
     if (!RT) return;
     try {
       const res = await RT.load((updatedActive) => {
-        liveMatches = updatedActive;
+        liveMatches = (updatedActive || []).filter((m) => !isNcaaOrWomenMatch(m));
         mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
         // Avoid yanking user input focus during typing on /sure-odds or search
@@ -4345,8 +4388,8 @@
           renderAll();
         }
       });
-      liveMatches = res.activeMatches || [];
-      finishedTodayMatches = res.finishedToday || [];
+      liveMatches = (res.activeMatches || []).filter((m) => !isNcaaOrWomenMatch(m));
+      finishedTodayMatches = (res.finishedToday || []).filter((m) => !isNcaaOrWomenMatch(m));
       mergeBookmakerGamesIntoLiveMatches();
       lastSyncIso = res.fetchedAt;
       isLoadingRealtime = false;

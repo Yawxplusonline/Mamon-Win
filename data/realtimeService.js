@@ -356,6 +356,10 @@ window.MAMON_REALTIME = (() => {
     const homeComp = comp.competitors.find((c) => c.homeAway === "home") || comp.competitors[0];
     const awayComp = comp.competitors.find((c) => c.homeAway === "away") || comp.competitors[1];
 
+    if (isChaosOrReserveMatch(leagueMeta.leagueName, homeComp?.team?.name, awayComp?.team?.name)) {
+      return null;
+    }
+
     const homeKey = ensureTeamObject(homeComp, leagueMeta.leagueSlug);
     const awayKey = ensureTeamObject(awayComp, leagueMeta.leagueSlug);
     if (comp.venue?.fullName && DATA.TEAMS[homeKey]) {

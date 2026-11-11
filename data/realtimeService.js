@@ -120,6 +120,282 @@ window.MAMON_REALTIME = (() => {
   const weatherCache = new Map();
   const weatherInFlight = new Map();
 
+  // ============ SOCCERSTATS.COM RUN-IN ANALYSIS STORE ============
+  const runinLeagueCache = new Map();
+  const runinTeamsMap = new Map();
+  const runinTeamsNormalizedMap = new Map();
+  let runinCatalog = [];
+  let runinTopSynced = false;
+  let runinTopPromise = null;
+
+  const TEAM_RUNIN_ALIASES = {
+    "manchester city": "man city",
+    "manchester united": "man utd",
+    "man united": "man utd",
+    "tottenham hotspur": "tottenham",
+    "spurs": "tottenham",
+    "wolverhampton wanderers": "wolves",
+    "wolverhampton": "wolves",
+    "nottm forest": "nottingham forest",
+    "nott m forest": "nottingham forest",
+    "newcastle united": "newcastle",
+    "newcastle utd": "newcastle",
+    "west ham united": "west ham",
+    "brighton hove albion": "brighton",
+    "brighton and hove albion": "brighton",
+    "leicester city": "leicester",
+    "leeds united": "leeds",
+    "leeds utd": "leeds",
+    "ipswich town": "ipswich",
+    "sheffield united": "sheffield utd",
+    "paris saint germain": "paris sg",
+    "psg": "paris sg",
+    "inter milan": "inter",
+    "internazionale": "inter",
+    "ac milan": "milan",
+    "atletico de madrid": "atletico madrid",
+    "ath bilbao": "athletic bilbao",
+    "athletic club": "athletic bilbao",
+    "bayern munchen": "bayern munich",
+    "bayer 04 leverkusen": "bayer leverkusen",
+    "borussia monchengladbach": "monchengladbach",
+    "sporting cp": "sporting"
+  };
+
+  function normalizeRuninTeamKey(name) {
+    const cleaned = String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\b(fc|cf|sc|afc|ac|as|us|cd|ud|rcd|rc|sd|sv|vfl|vfb|fsv|tsg|rb|bsc|fk|sk|if|bk|ik|aik)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return TEAM_RUNIN_ALIASES[cleaned] || cleaned;
+  }
+
+  const CONTINENTAL_CODES = new Set(["cleague", "eleague", "cfleague", "uefa.champions", "uefa.europa", "uefa.europa.conf"]);
+
+  function ingestRuninRows(rows) {
+    if (!Array.isArray(rows)) return;
+    for (const row of rows) {
+      if (!row || !row.team) continue;
+      const exactKey = row.team.toLowerCase().trim();
+      const normKey = normalizeRuninTeamKey(row.team);
+      const isContinental = CONTINENTAL_CODES.has(row.leagueCode) || CONTINENTAL_CODES.has(row.espnCode);
+
+      if (row.leagueCode && normKey) {
+        runinTeamsNormalizedMap.set(`${row.leagueCode}:${normKey}`, row);
+      }
+      if (row.espnCode && normKey) {
+        runinTeamsNormalizedMap.set(`${row.espnCode}:${normKey}`, row);
+      }
+      if (!isContinental || !runinTeamsMap.has(exactKey)) {
+        runinTeamsMap.set(exactKey, row);
+      }
+      if (normKey && (!isContinental || !runinTeamsNormalizedMap.has(normKey))) {
+        runinTeamsNormalizedMap.set(normKey, row);
+      }
+    }
+  }
+
+  async function syncTopRuninTables(force = false) {
+    if (!force && runinTopSynced && runinTeamsMap.size > 0) {
+      return { ok: true, leaguesCount: runinLeagueCache.size, leagues: runinCatalog };
+    }
+    if (runinTopPromise && !force) return runinTopPromise;
+
+    runinTopPromise = (async () => {
+      try {
+        const res = await fetch(`/api/runin?mode=top${force ? "&refresh=1" : ""}`, { cache: "no-store" });
+        if (!res.ok) return null;
+        const json = await res.json();
+        if (!json?.ok) return null;
+
+        if (Array.isArray(json.leagues)) runinCatalog = json.leagues;
+        if (json.leagueTables && typeof json.leagueTables === "object") {
+          for (const [code, tblObj] of Object.entries(json.leagueTables)) {
+            runinLeagueCache.set(code, tblObj);
+            if (Array.isArray(tblObj.table)) ingestRuninRows(tblObj.table);
+          }
+        }
+        if (json.teamsIndex && typeof json.teamsIndex === "object") {
+          for (const row of Object.values(json.teamsIndex)) {
+            if (row && row.team) ingestRuninRows([row]);
+          }
+        }
+        runinTopSynced = true;
+        return json;
+      } catch (e) {
+        return null;
+      } finally {
+        runinTopPromise = null;
+      }
+    })();
+    return runinTopPromise;
+  }
+
+  async function fetchLeagueRuninData(leagueParam = "england", force = false) {
+    const key = String(leagueParam || "england").trim().toLowerCase();
+    const cached = runinLeagueCache.get(key);
+    // Single-league page needs full opponent breakdown (all played + remaining games)
+    if (!force && cached?.isFullFetch && Array.isArray(cached.table) && cached.table.length > 0) {
+      return cached;
+    }
+    try {
+      const res = await fetch(`/api/runin?league=${encodeURIComponent(key)}${force ? "&refresh=1" : ""}`, { cache: "no-store" });
+      if (!res.ok) return cached || null;
+      const json = await res.json();
+      if (json?.ok && Array.isArray(json.table)) {
+        const record = {
+          ok: true,
+          isFullFetch: true,
+          source: json.source,
+          sourceUrl: json.sourceUrl,
+          fetchedAt: json.fetchedAt,
+          league: json.league,
+          summary: json.summary,
+          table: json.table,
+          leagues: json.leagues || runinCatalog
+        };
+        if (Array.isArray(json.leagues)) runinCatalog = json.leagues;
+        if (json.league?.code) runinLeagueCache.set(json.league.code, record);
+        if (json.league?.espnCode) runinLeagueCache.set(json.league.espnCode, record);
+        if (json.league?.mamonSlug) runinLeagueCache.set(json.league.mamonSlug, record);
+        runinLeagueCache.set(key, record);
+        ingestRuninRows(json.table);
+        return record;
+      }
+      return cached || null;
+    } catch (e) {
+      return cached || null;
+    }
+  }
+
+  function findLiveSoccerStatsTeam(teamName, leagueSlugOrCode) {
+    if (!teamName) return null;
+    const raw = String(teamName).toLowerCase().trim();
+    const norm = normalizeRuninTeamKey(teamName);
+    const espnCode = slugToEspnCode.get(leagueSlugOrCode) || leagueSlugOrCode || "";
+
+    const directCandidates = [
+      espnCode ? runinTeamsNormalizedMap.get(`${espnCode}:${norm}`) : null,
+      espnCode ? runinTeamsNormalizedMap.get(`${espnCode}:${raw}`) : null,
+      runinTeamsNormalizedMap.get(norm),
+      runinTeamsMap.get(raw)
+    ].filter(Boolean);
+
+    if (directCandidates.length > 0) return directCandidates[0];
+
+    // Fuzzy substring match restricted to matching league first, then domestic tables
+    if (norm.length >= 5) {
+      if (espnCode) {
+        const prefix = `${espnCode}:`;
+        for (const [k, row] of runinTeamsNormalizedMap.entries()) {
+          if (!k.startsWith(prefix)) continue;
+          const tk = k.slice(prefix.length);
+          if (tk.length >= 5 && (tk.includes(norm) || norm.includes(tk))) {
+            return row;
+          }
+        }
+      }
+      for (const [k, row] of runinTeamsNormalizedMap.entries()) {
+        if (k.includes(":")) continue;
+        if (k.length >= 5 && (k.includes(norm) || norm.includes(k))) {
+          return row;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Exact SoccerSTATS Run-In Formula (with live SoccerSTATS lookup first, venue-weighted fallback second)
+  function lookupTeamRunin(teamName, leagueSlugOrCode, sched, stTeam, oppFallbackPpg = 1.32, isHomeMatch = true, teamEspnId = null) {
+    const live = findLiveSoccerStatsTeam(teamName, leagueSlugOrCode);
+    if (live && Number.isFinite(live.playedPpg) && Number.isFinite(live.remainingPpg)) {
+      return {
+        isLiveSoccerStats: true,
+        source: "SoccerSTATS.com Live",
+        team: live.team,
+        gp: live.gp,
+        w: live.w,
+        d: live.d,
+        l: live.l,
+        pts: live.pts,
+        ppg: live.ppg,
+        playedPpg: live.playedPpg,
+        remainingPpg: live.remainingPpg,
+        remainingBarPct: live.remainingBarPct,
+        diffPct: live.diffPct,
+        diffLabel: live.diffLabel,
+        verdict: live.verdict,
+        playedOpponents: live.playedOpponents || [],
+        remainingOpponents: live.remainingOpponents || []
+      };
+    }
+
+    // Venue-weighted formula fallback matching SoccerSTATS Run-In methodology:
+    // PLD = avg seasonal away PPG of past opponents hosted at home & seasonal home PPG of past opponents visited away
+    // REM = avg seasonal away PPG of upcoming opponents hosted at home & seasonal home PPG of upcoming opponents visited away
+    const rawEvents = [...(sched?.past || []), ...(sched?.upcoming || []), ...(sched?.events || [])];
+    const teamId = teamEspnId || stTeam?.id;
+    const seenIds = new Set();
+    const pastOpps = [];
+    const remOpps = [];
+
+    for (const ev of rawEvents) {
+      if (ev?.id && seenIds.has(ev.id)) continue;
+      if (ev?.id) seenIds.add(ev.id);
+      const comp = ev?.competitions?.[0];
+      if (!comp || !Array.isArray(comp.competitors) || comp.competitors.length < 2) continue;
+      const me = comp.competitors.find((c) => String(c.id || c.team?.id) === String(teamId)) || comp.competitors[0];
+      const opp = comp.competitors.find((c) => c !== me);
+      if (!opp) continue;
+      const venue = me.homeAway === "home" ? "H" : "A";
+      const oppId = String(opp.id || opp.team?.id || "");
+      const oppSt = standingsByTeamId.get(`${leagueSlugOrCode}:${oppId}`) || standingsByTeamId.get(oppId);
+      const basePpg = oppSt ? oppSt.pts / Math.max(1, oppSt.mp) : oppFallbackPpg;
+      // Venue weighting: opposing teams perform stronger at home (+0.18) and softer away (-0.15)
+      const oppVenuePpg = Math.round(clamp(venue === "H" ? basePpg - 0.15 : basePpg + 0.18, 0.35, 2.75) * 100) / 100;
+      const oppName = opp.team?.shortDisplayName || opp.team?.displayName || "Opponent";
+      const item = {
+        venue,
+        opponent: oppName,
+        oppVenuePpg,
+        label: `(${venue}) ${venue === "H" ? "vs" : "at"} ${oppName}`,
+        ppgLabel: venue === "H" ? `PPG away = ${oppVenuePpg.toFixed(2)}` : `PPG at home = ${oppVenuePpg.toFixed(2)}`
+      };
+      if (comp.status?.type?.completed) {
+        pastOpps.push(item);
+      } else {
+        remOpps.push(item);
+      }
+    }
+
+    const playedPpg = pastOpps.length > 0
+      ? Math.round((pastOpps.reduce((s, o) => s + o.oppVenuePpg, 0) / pastOpps.length) * 100) / 100
+      : Math.round(clamp((stTeam ? 1.32 + ((stTeam.rank || 10) <= 6 ? -0.08 : 0.08) : 1.30), 0.85, 1.95) * 100) / 100;
+
+    const remainingPpg = remOpps.length > 0
+      ? Math.round((remOpps.reduce((s, o) => s + o.oppVenuePpg, 0) / remOpps.length) * 100) / 100
+      : Math.round(clamp(isHomeMatch ? oppFallbackPpg - 0.12 : oppFallbackPpg + 0.16, 0.75, 2.15) * 100) / 100;
+
+    const diffPct = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
+    return {
+      isLiveSoccerStats: false,
+      source: "Venue-Weighted Formula",
+      team: teamName,
+      playedPpg,
+      remainingPpg,
+      remainingBarPct: Math.min(100, Math.round((remainingPpg / 2.2) * 100)),
+      diffPct,
+      diffLabel: `${diffPct > 0 ? "+" : ""}${diffPct}%`,
+      verdict: diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED",
+      playedOpponents: pastOpps.slice(-6),
+      remainingOpponents: remOpps.slice(0, 6)
+    };
+  }
+
   async function fetchMatchWeather(match) {
     if (!match) return null;
     if (match.weather?.ok) return match.weather;
@@ -1211,9 +1487,28 @@ window.MAMON_REALTIME = (() => {
       edge: homeOverallPpg >= awayOverallPpg ? homeTeam.short : awayTeam.short
     };
 
-    // 11: Run-in Analysis for Both Teams
+    // 11: Run-in Analysis for Both Teams (SoccerSTATS PLD vs REM Methodology)
     const homeUpcoming = homeSched?.upcoming ? extractUpcomingFixtures(homeSched.upcoming, match.date, match.isoDateTime) : [];
     const awayUpcoming = awaySched?.upcoming ? extractUpcomingFixtures(awaySched.upcoming, match.date, match.isoDateTime) : [];
+
+    const homeRuninStats = lookupTeamRunin(
+      match.homeTeamName || homeTeam.name,
+      match.leagueSlug || match.espnLeagueCode,
+      homeSched,
+      stH,
+      awayOverallPpg,
+      true,
+      match.homeEspnId
+    );
+    const awayRuninStats = lookupTeamRunin(
+      match.awayTeamName || awayTeam.name,
+      match.leagueSlug || match.espnLeagueCode,
+      awaySched,
+      stA,
+      homeOverallPpg,
+      false,
+      match.awayEspnId
+    );
 
     let homeRestDays = null;
     let awayRestDays = null;
@@ -1233,13 +1528,15 @@ window.MAMON_REALTIME = (() => {
       return `#${st.rank} Mid-Table Push (${st.pts} pts)`;
     };
 
-    const runInEdge = homeRestDays && awayRestDays && homeRestDays - awayRestDays >= 2
-      ? `${homeTeam.short} Fresher (+${homeRestDays - awayRestDays}d rest)`
-      : homeRestDays && awayRestDays && awayRestDays - homeRestDays >= 2
-        ? `${awayTeam.short} Fresher (+${awayRestDays - homeRestDays}d rest)`
-        : (stH?.rank || 8) < (stA?.rank || 10)
-          ? `${homeTeam.short} Higher Stakes / Home Edge`
-          : `${awayTeam.short} Competitive Run-in`;
+    const runInEdge = homeRuninStats.diffPct - awayRuninStats.diffPct >= 8
+      ? `${homeTeam.short} Easier Run-In (${homeRuninStats.diffLabel} vs ${awayRuninStats.diffLabel})`
+      : awayRuninStats.diffPct - homeRuninStats.diffPct >= 8
+        ? `${awayTeam.short} Easier Run-In (${awayRuninStats.diffLabel} vs ${homeRuninStats.diffLabel})`
+        : homeRestDays && awayRestDays && homeRestDays - awayRestDays >= 2
+          ? `${homeTeam.short} Fresher (+${homeRestDays - awayRestDays}d rest)`
+          : homeRestDays && awayRestDays && awayRestDays - homeRestDays >= 2
+            ? `${awayTeam.short} Fresher (+${awayRestDays - homeRestDays}d rest)`
+            : `${homeTeam.short} ${homeRuninStats.diffLabel} vs ${awayTeam.short} ${awayRuninStats.diffLabel}`;
 
     // Blend Poisson Expected Goals (lambdaH, lambdaA) across all 11 factors + market odds anchor
     const homeAttack = home5Summary.isLiveFeed && home5Summary.games.length >= 2
@@ -1618,7 +1915,7 @@ window.MAMON_REALTIME = (() => {
           label: `${awayCsCount}/${awayCsSample} away games (${awayCsPct}%)`,
           isLiveFeed: away5Summary.isLiveFeed
         },
-        // 11. Run-in Analysis (Both Teams) & Points Calculations
+        // 11. Run-in Analysis (Both Teams) & Points Calculations (SoccerSTATS PLD vs REM)
         runInAnalysis: {
           homeRank: stH?.rank || null,
           awayRank: stA?.rank || null,
@@ -1630,6 +1927,8 @@ window.MAMON_REALTIME = (() => {
           awayUpcoming,
           calcHome,
           calcAway,
+          homeStats: homeRuninStats,
+          awayStats: awayRuninStats,
           edge: runInEdge
         },
         // Weather conditions at stadium city
@@ -3421,6 +3720,15 @@ window.MAMON_REALTIME = (() => {
 
     const hydrationQueue = activeMatches.slice(0, 18);
     if (typeof onProgress === "function") {
+      syncTopRuninTables().then((riRes) => {
+        if (riRes?.ok) {
+          activeMatches.forEach((m) => {
+            if (!m.enriched) m.analysis = buildMatchAnalysis(m);
+          });
+          onProgress(activeMatches, finishedToday);
+        }
+      });
+
       if (initialWeatherTargets.length > 0) {
         hydrateWeatherForMatches(initialWeatherTargets).then((wChanged) => {
           if (wChanged) {
@@ -3474,6 +3782,10 @@ window.MAMON_REALTIME = (() => {
     buildHandicapValueBets,
     buildDrawDefenseTips,
     hydrateWeatherForMatches,
+    syncTopRuninTables,
+    fetchLeagueRuninData,
+    lookupTeamRunin,
+    getRuninCatalog: () => runinCatalog,
     slugToEspnCode
   };
 })();

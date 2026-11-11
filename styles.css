@@ -334,9 +334,9 @@ ul {
 .topbar-nav {
   display: none;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   margin: 0 auto 0 10px;
-  padding: 3px 6px;
+  padding: 3px 5px;
   background: var(--ground-subtle);
   border: 1px solid var(--line-soft);
   border-radius: 9999px;
@@ -358,10 +358,10 @@ ul {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 9px;
+  gap: 3px;
+  padding: 4px 7.5px;
   border-radius: 9999px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -4590,4 +4590,176 @@ ul {
   font-size: 11px;
   color: var(--text-secondary);
   margin-bottom: 8px;
+}
+
+/* ==========================================================================
+   SoccerSTATS.com Run-In Analysis (PLD vs REM & Played vs Remaining %)
+   ========================================================================== */
+.runin-how-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+@media (max-width: 768px) {
+  .runin-how-grid { grid-template-columns: 1fr; }
+}
+.runin-how-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+.runin-highlights-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+@media (max-width: 768px) {
+  .runin-highlights-grid { grid-template-columns: 1fr; }
+}
+.runin-highlight-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.runin-table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.runin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  text-align: left;
+  min-width: 720px;
+}
+.runin-table th {
+  background: var(--ground-subtle);
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+}
+.runin-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.runin-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.runin-row:hover td {
+  background: var(--ground-subtle);
+}
+.runin-ppg-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--line-strong);
+  background: var(--ground-subtle);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 12px;
+}
+.runin-ppg-pill.is-rem {
+  color: #3B82F6;
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+}
+.runin-rem-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.runin-bar-track {
+  width: 68px;
+  height: 10px;
+  background: var(--ground-subtle);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  display: inline-block;
+}
+.runin-bar-fill {
+  height: 100%;
+  background: #3B82F6;
+}
+.runin-diff-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 12px;
+}
+.runin-diff-pill.is-easy {
+  background: rgba(22, 163, 74, 0.14);
+  color: #16A34A;
+  border: 1px solid rgba(22, 163, 74, 0.35);
+}
+.runin-diff-pill.is-tough {
+  background: rgba(220, 38, 38, 0.14);
+  color: #DC2626;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+}
+.runin-diff-pill.is-balanced {
+  background: rgba(100, 116, 139, 0.14);
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+.runin-drawer-row td {
+  background: var(--ground-subtle);
+  white-space: normal;
+  padding: 12px 14px;
+}
+.runin-opp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 768px) {
+  .runin-opp-grid { grid-template-columns: 1fr; }
+}
+.runin-opp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.runin-opp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+.runin-opp-chip .v-h { color: #3B82F6; font-weight: 700; }
+.runin-opp-chip .v-a { color: #10B981; font-weight: 700; }
+.runin-inline-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  font-size: 11px;
 }

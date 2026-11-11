@@ -119,6 +119,8 @@
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
+      activeRuninLeague: "england",
+      activeRuninFilter: "ALL", // ALL | FAVORABLE | TOUGH | STRONG_PPG_EASY
       standingsLeague: "england-premier-league",
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
       followedLeagues: ["england-premier-league", "spain-la-liga", "uefa-champions-league"],
@@ -162,6 +164,37 @@
   let isHydratingPowerWeather = false;
   let bookmakerScan = null;
   let isLoadingBookmakers = true;
+  const runinLeagueCacheClient = new Map();
+  let runinCatalogClient = [];
+  let isLoadingRuninView = false;
+  let expandedRuninTeam = null;
+
+  async function loadRuninLeague(leagueCode, force = false) {
+    const code = String(leagueCode || state.activeRuninLeague || "england").toLowerCase();
+    state.activeRuninLeague = code;
+    if (!force && runinLeagueCacheClient.has(code)) {
+      if (state.route === "/run-in") renderMainContent();
+      return runinLeagueCacheClient.get(code);
+    }
+    isLoadingRuninView = true;
+    if (state.route === "/run-in") renderMainContent();
+    try {
+      const data = RT?.fetchLeagueRuninData
+        ? await RT.fetchLeagueRuninData(code, force)
+        : await fetch(`/api/runin?league=${encodeURIComponent(code)}${force ? "&refresh=1" : ""}`, { cache: "no-store" }).then((r) => r.json());
+      if (data?.ok) {
+        runinLeagueCacheClient.set(code, data);
+        if (data.league?.code) runinLeagueCacheClient.set(data.league.code, data);
+        if (Array.isArray(data.leagues) && data.leagues.length > 0) runinCatalogClient = data.leagues;
+      }
+      return data;
+    } catch {
+      return null;
+    } finally {
+      isLoadingRuninView = false;
+      if (state.route === "/run-in") renderMainContent();
+    }
+  }
 
   function saveState() {
     try {
@@ -228,6 +261,7 @@
     if (h === "/power-picks" || h === "/strong-teams-today") return "/strong-teams";
     if (h === "/worst-teams-today") return "/worst-teams";
     if (h === "/ppg-intelligence" || h === "/points-per-game") return "/ppg";
+    if (h === "/runin" || h === "/run-in-analysis" || h.startsWith("/run-in?")) return "/run-in";
     if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
@@ -271,6 +305,13 @@
       route = "/ppg";
     }
     if (route === "/ppg-intelligence" || route === "/points-per-game") route = "/ppg";
+    if (route.startsWith("/run-in?") || route.startsWith("/runin?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("league")) state.activeRuninLeague = q.get("league").toLowerCase();
+      if (q.get("filter")) state.activeRuninFilter = q.get("filter").toUpperCase();
+      route = "/run-in";
+    }
+    if (route === "/runin" || route === "/run-in-analysis") route = "/run-in";
     if (route.startsWith("/strong-teams?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("cat")) state.activeStrongFilter = q.get("cat").toUpperCase();
@@ -313,6 +354,9 @@
       window.location.hash = "#" + route;
     }
     saveState();
+    if (route === "/run-in") {
+      loadRuninLeague(state.activeRuninLeague || "england");
+    }
     renderAll();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -602,32 +646,58 @@
           <div class="stat-bar-track mt-1"><div class="stat-bar-home" style="width:${f.cleanSheetsAway.pct}%"></div></div>
         </div>
 
-        <!-- 11. Run-in Analysis for Both Teams -->
+        <!-- 11. Run-in Analysis for Both Teams (SoccerSTATS PLD vs REM Methodology) -->
         <div class="factor-tile is-wide">
           <div class="factor-tile-head">
-            <span class="factor-name">11. Run-in Analysis (Both Teams)</span>
+            <span class="factor-name">11. Run-in Analysis (Opponents Played PLD vs Remaining REM)</span>
             <span class="factor-edge-pill">${escapeHtml(f.runInAnalysis.edge)}</span>
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} · ${escapeHtml(f.runInAnalysis.homeStake)}</div>
-              <div class="text-xs text-muted">Rest before KO: <strong class="font-mono text-text">${f.runInAnalysis.homeRestDays ? `${f.runInAnalysis.homeRestDays} days` : "Standard"}</strong></div>
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="side-lbl">${escapeHtml(home.short)} · ${escapeHtml(f.runInAnalysis.homeStake)}</div>
+                ${f.runInAnalysis.homeStats ? `<span class="runin-diff-pill ${f.runInAnalysis.homeStats.diffPct > 0 ? "is-easy" : f.runInAnalysis.homeStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="font-size:10.5px;">${escapeHtml(f.runInAnalysis.homeStats.diffLabel)} ${f.runInAnalysis.homeStats.diffPct > 0 ? "Easier" : f.runInAnalysis.homeStats.diffPct < 0 ? "Tougher" : "Balanced"}</span>` : ""}
+              </div>
+              ${f.runInAnalysis.homeStats ? `
+                <div class="runin-inline-strip">
+                  <span>PLD PPG: <strong class="font-mono text-text">${f.runInAnalysis.homeStats.playedPpg.toFixed(2)}</strong></span>
+                  <span>&bull;</span>
+                  <span>REM PPG: <strong class="font-mono" style="color:#3B82F6;">${f.runInAnalysis.homeStats.remainingPpg.toFixed(2)}</strong></span>
+                  <span class="text-muted font-mono" style="margin-left:auto;font-size:10px;">${escapeHtml(f.runInAnalysis.homeStats.source)}</span>
+                </div>
+              ` : ""}
+              <div class="text-xs text-muted mt-1">Rest before KO: <strong class="font-mono text-text">${f.runInAnalysis.homeRestDays ? `${f.runInAnalysis.homeRestDays} days` : "Standard"}</strong></div>
               ${
-                f.runInAnalysis.homeUpcoming?.length
-                  ? `<div class="text-xs mt-1">Next: ${f.runInAnalysis.homeUpcoming.slice(0, 2).map((u) => escapeHtml(u.name)).join(" · ")}</div>`
-                  : `<div class="text-xs mt-1 text-muted">Upcoming schedule syncing with live feed</div>`
+                f.runInAnalysis.homeStats?.remainingOpponents?.length
+                  ? `<div class="text-xs mt-1">Upcoming: ${f.runInAnalysis.homeStats.remainingOpponents.slice(0, 3).map((u) => escapeHtml(`${u.label} (${u.oppVenuePpg?.toFixed(2) ?? "-"})`)).join(" · ")}</div>`
+                  : f.runInAnalysis.homeUpcoming?.length
+                    ? `<div class="text-xs mt-1">Next: ${f.runInAnalysis.homeUpcoming.slice(0, 2).map((u) => escapeHtml(u.name)).join(" · ")}</div>`
+                    : `<div class="text-xs mt-1 text-muted">Upcoming schedule calculated via venue PPG</div>`
               }
-              ${f.runInAnalysis.calcHome ? `<div class="text-xs mt-1"><strong>Points:</strong> ${escapeHtml(f.runInAnalysis.calcHome.pointsNeeded)}</div><div class="text-xs mt-1"><strong>Draw:</strong> ${escapeHtml(f.runInAnalysis.calcHome.drawImportance)}</div><div class="text-xs mt-1"><strong>Loss Risk:</strong> ${escapeHtml(f.runInAnalysis.calcHome.lossEffect)}</div>` : ""}
+              ${f.runInAnalysis.calcHome ? `<div class="text-xs mt-1"><strong>Points:</strong> ${escapeHtml(f.runInAnalysis.calcHome.pointsNeeded)}</div><div class="text-xs mt-1"><strong>Draw:</strong> ${escapeHtml(f.runInAnalysis.calcHome.drawImportance)}</div>` : ""}
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} · ${escapeHtml(f.runInAnalysis.awayStake)}</div>
-              <div class="text-xs text-muted">Rest before KO: <strong class="font-mono text-text">${f.runInAnalysis.awayRestDays ? `${f.runInAnalysis.awayRestDays} days` : "Standard"}</strong></div>
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="side-lbl">${escapeHtml(away.short)} · ${escapeHtml(f.runInAnalysis.awayStake)}</div>
+                ${f.runInAnalysis.awayStats ? `<span class="runin-diff-pill ${f.runInAnalysis.awayStats.diffPct > 0 ? "is-easy" : f.runInAnalysis.awayStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="font-size:10.5px;">${escapeHtml(f.runInAnalysis.awayStats.diffLabel)} ${f.runInAnalysis.awayStats.diffPct > 0 ? "Easier" : f.runInAnalysis.awayStats.diffPct < 0 ? "Tougher" : "Balanced"}</span>` : ""}
+              </div>
+              ${f.runInAnalysis.awayStats ? `
+                <div class="runin-inline-strip">
+                  <span>PLD PPG: <strong class="font-mono text-text">${f.runInAnalysis.awayStats.playedPpg.toFixed(2)}</strong></span>
+                  <span>&bull;</span>
+                  <span>REM PPG: <strong class="font-mono" style="color:#3B82F6;">${f.runInAnalysis.awayStats.remainingPpg.toFixed(2)}</strong></span>
+                  <span class="text-muted font-mono" style="margin-left:auto;font-size:10px;">${escapeHtml(f.runInAnalysis.awayStats.source)}</span>
+                </div>
+              ` : ""}
+              <div class="text-xs text-muted mt-1">Rest before KO: <strong class="font-mono text-text">${f.runInAnalysis.awayRestDays ? `${f.runInAnalysis.awayRestDays} days` : "Standard"}</strong></div>
               ${
-                f.runInAnalysis.awayUpcoming?.length
-                  ? `<div class="text-xs mt-1">Next: ${f.runInAnalysis.awayUpcoming.slice(0, 2).map((u) => escapeHtml(u.name)).join(" · ")}</div>`
-                  : `<div class="text-xs mt-1 text-muted">Upcoming schedule syncing with live feed</div>`
+                f.runInAnalysis.awayStats?.remainingOpponents?.length
+                  ? `<div class="text-xs mt-1">Upcoming: ${f.runInAnalysis.awayStats.remainingOpponents.slice(0, 3).map((u) => escapeHtml(`${u.label} (${u.oppVenuePpg?.toFixed(2) ?? "-"})`)).join(" · ")}</div>`
+                  : f.runInAnalysis.awayUpcoming?.length
+                    ? `<div class="text-xs mt-1">Next: ${f.runInAnalysis.awayUpcoming.slice(0, 2).map((u) => escapeHtml(u.name)).join(" · ")}</div>`
+                    : `<div class="text-xs mt-1 text-muted">Upcoming schedule calculated via venue PPG</div>`
               }
-              ${f.runInAnalysis.calcAway ? `<div class="text-xs mt-1"><strong>Points:</strong> ${escapeHtml(f.runInAnalysis.calcAway.pointsNeeded)}</div><div class="text-xs mt-1"><strong>Draw:</strong> ${escapeHtml(f.runInAnalysis.calcAway.drawImportance)}</div><div class="text-xs mt-1"><strong>Loss Risk:</strong> ${escapeHtml(f.runInAnalysis.calcAway.lossEffect)}</div>` : ""}
+              ${f.runInAnalysis.calcAway ? `<div class="text-xs mt-1"><strong>Points:</strong> ${escapeHtml(f.runInAnalysis.calcAway.pointsNeeded)}</div><div class="text-xs mt-1"><strong>Draw:</strong> ${escapeHtml(f.runInAnalysis.calcAway.drawImportance)}</div>` : ""}
             </div>
           </div>
         </div>
@@ -1773,6 +1843,16 @@
             </a>
           </li>
           <li>
+            <a href="/run-in" data-route="/run-in" class="quick-radar-item">
+              <span class="radar-item-icon" style="background:rgba(16,185,129,0.12);color:#10B981;">📈</span>
+              <div class="min-w-0 flex-1">
+                <div class="font-bold text-xs text-text">Run-In Analysis (PLD vs REM)</div>
+                <div class="text-xs text-muted truncate">Opponents Played vs Remaining PPG %</div>
+              </div>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><path d="m9 18 6-6-6-6"/></svg>
+            </a>
+          </li>
+          <li>
             <a href="/odds-mismatch" data-route="/odds-mismatch" class="quick-radar-item">
               <span class="radar-item-icon" style="background:rgba(168,85,247,0.12);color:#A855F7;">⚡</span>
               <div class="min-w-0 flex-1">
@@ -2015,7 +2095,6 @@
       </section>
     `;
   }
-
   // ============ DEDICATED /ppg INTELLIGENCE & TABLE MECHANICS VIEW ============
   function renderPpgIntelligenceView() {
     const active = filteredMatchesForDate().filter((m) => m.status !== "FT");
@@ -2113,6 +2192,7 @@
                       <span class="ppg-stat-badge">Overall: <strong>${ppg.homeOverall.toFixed(2)} PPG</strong></span>
                       <span class="ppg-stat-badge">Home: <strong>${ppg.homeHomePpg !== null ? ppg.homeHomePpg.toFixed(2) : "-"} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formH}</strong></span>
+                      ${factors?.runInAnalysis?.homeStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${factors.runInAnalysis.homeStats.playedPpg.toFixed(2)} &rarr; REM ${factors.runInAnalysis.homeStats.remainingPpg.toFixed(2)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.homeStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.homeStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.homeStats.diffLabel)}</span></span>` : ""}
                     </div>
                     ${hSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${hSos.isDropRed ? "text-danger font-semibold" : hSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(hSos.reason)}</div>` : ""}
                   </div>
@@ -2130,6 +2210,7 @@
                       <span class="ppg-stat-badge">Overall: <strong>${ppg.awayOverall.toFixed(2)} PPG</strong></span>
                       <span class="ppg-stat-badge">Away: <strong>${ppg.awayAwayPpg !== null ? ppg.awayAwayPpg.toFixed(2) : "-"} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formA}</strong></span>
+                      ${factors?.runInAnalysis?.awayStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${factors.runInAnalysis.awayStats.playedPpg.toFixed(2)} &rarr; REM ${factors.runInAnalysis.awayStats.remainingPpg.toFixed(2)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.awayStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.awayStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.awayStats.diffLabel)}</span></span>` : ""}
                     </div>
                     ${aSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${aSos.isDropRed ? "text-danger font-semibold" : aSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(aSos.reason)}</div>` : ""}
                   </div>
@@ -2174,10 +2255,13 @@
 
     return `
       <div class="hero-banner">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="sure-pill-tag">PPG GAP ANALYSIS</span>
-          <span class="sure-pill-tag">STRENGTH OF SCHEDULE</span>
-          <span class="sure-pill-tag">SOFT VS HARD OPPONENTS</span>
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag">PPG GAP ANALYSIS</span>
+            <span class="sure-pill-tag">STRENGTH OF SCHEDULE</span>
+            <span class="sure-pill-tag">SOFT VS HARD OPPONENTS</span>
+          </div>
+          <a href="/run-in" data-route="/run-in" class="analyze-inline-btn" style="background:#10B981;color:#07100F;border-color:#7CE8C4;font-weight:700;">📈 Full Run-In Table (PLD vs REM) &rarr;</a>
         </div>
         <h1 class="mt-2">Points Per Game (PPG) &amp; Strength of Schedule Matrix</h1>
         <p>Mathematical scouting measuring Overall, Home, and Away PPG weighted by opponent difficulty. Exposes teams that played soft/cheap opponents and will drop points (🔴) vs teams battle-tested against giants set to gain points (🔵).</p>
@@ -2220,6 +2304,243 @@
           <span class="count">${filteredPpg.length} Fixtures</span>
         </div>
         <div>${bodyHtml}</div>
+      </section>
+    `;
+  }
+
+  // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
+  function renderRunInAnalysisView() {
+    const activeCode = String(state.activeRuninLeague || "england").toLowerCase();
+    const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
+    const leagueData = runinLeagueCacheClient.get(activeCode);
+
+    // Kick off fetch lazily if user landed on /run-in directly without cache yet
+    if (!leagueData && !isLoadingRuninView) {
+      setTimeout(() => loadRuninLeague(activeCode, false), 0);
+    }
+
+    const QUICK_LEAGUES = [
+      { code: "england", label: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+      { code: "spain", label: "La Liga", flag: "🇪🇸" },
+      { code: "italy", label: "Serie A", flag: "🇮🇹" },
+      { code: "germany", label: "Bundesliga", flag: "🇩🇪" },
+      { code: "france", label: "Ligue 1", flag: "🇫🇷" },
+      { code: "cleague", label: "Champions League", flag: "🇪🇺" },
+      { code: "eleague", label: "Europa League", flag: "🇪🇺" },
+      { code: "england2", label: "Championship", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+      { code: "netherlands", label: "Eredivisie", flag: "🇳🇱" },
+      { code: "portugal", label: "Liga Portugal", flag: "🇵🇹" },
+      { code: "turkey", label: "Süper Lig", flag: "🇹🇷" },
+      { code: "belgium", label: "Pro League", flag: "🇧🇪" },
+      { code: "scotland", label: "Premiership", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" }
+    ];
+
+    const catalog = (runinCatalogClient.length > 0 ? runinCatalogClient : RT?.getRuninCatalog?.()) || leagueData?.leagues || QUICK_LEAGUES.map((q) => ({ code: q.code, name: q.label, country: "", flag: q.flag }));
+    const rawRows = leagueData?.table || [];
+
+    const favorableRows = rawRows.filter((r) => r.diffPct > 0);
+    const toughRows = rawRows.filter((r) => r.diffPct < 0);
+    const strongPpgEasyRows = rawRows.filter((r) => r.ppg >= 1.60 && r.diffPct > 0);
+
+    let filteredRows = rawRows;
+    if (activeFilter === "FAVORABLE") {
+      filteredRows = [...favorableRows].sort((a, b) => b.diffPct - a.diffPct);
+    } else if (activeFilter === "TOUGH") {
+      filteredRows = [...toughRows].sort((a, b) => a.diffPct - b.diffPct);
+    } else if (activeFilter === "STRONG_PPG_EASY") {
+      filteredRows = [...strongPpgEasyRows].sort((a, b) => (b.ppg + b.diffPct / 100) - (a.ppg + a.diffPct / 100));
+    }
+
+    const easiestTop = [...rawRows].sort((a, b) => b.diffPct - a.diffPct)[0];
+    const toughestTop = [...rawRows].sort((a, b) => a.diffPct - b.diffPct)[0];
+    const strongPpgLock = [...strongPpgEasyRows].sort((a, b) => (b.ppg * 100 + b.diffPct) - (a.ppg * 100 + a.diffPct))[0]
+      || [...rawRows].filter((r) => r.ppg >= 1.60).sort((a, b) => b.diffPct - a.diffPct)[0];
+
+    const leagueMeta = leagueData?.league || catalog.find((l) => l.code === activeCode) || { name: "Premier League", country: "England", flag: "⚽" };
+    const summaryInfo = leagueData?.summary;
+
+    const highlightsHtml = rawRows.length === 0 ? "" : `
+      <div class="runin-highlights-grid">
+        <div class="runin-highlight-card" style="border-left:4px solid #16A34A;">
+          <div class="text-xs font-mono font-bold" style="color:#16A34A;">🟢 EASIEST REMAINING RUN-IN</div>
+          <div class="text-base font-bold mt-1">${escapeHtml(easiestTop?.team || "-")} <span class="runin-diff-pill is-easy ml-1">${escapeHtml(easiestTop?.diffLabel || "0%")}</span></div>
+          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${easiestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${easiestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${easiestTop?.ppg?.toFixed(2) ?? "-"} Team PPG)</div>
+        </div>
+        <div class="runin-highlight-card" style="border-left:4px solid #DC2626;">
+          <div class="text-xs font-mono font-bold" style="color:#DC2626;">🔴 TOUGHEST REMAINING RUN-IN</div>
+          <div class="text-base font-bold mt-1">${escapeHtml(toughestTop?.team || "-")} <span class="runin-diff-pill is-tough ml-1">${escapeHtml(toughestTop?.diffLabel || "0%")}</span></div>
+          <div class="text-xs text-muted mt-1">Played PPG: <strong class="font-mono text-text">${toughestTop?.playedPpg?.toFixed(2) ?? "-"}</strong> &rarr; Remaining PPG: <strong class="font-mono" style="color:#3B82F6;">${toughestTop?.remainingPpg?.toFixed(2) ?? "-"}</strong> (${toughestTop?.ppg?.toFixed(2) ?? "-"} Team PPG)</div>
+        </div>
+        <div class="runin-highlight-card" style="border-left:4px solid #10B981;">
+          <div class="text-xs font-mono font-bold" style="color:#10B981;">💎 STRONG PPG + BEST RUN-IN</div>
+          <div class="text-base font-bold mt-1">${escapeHtml(strongPpgLock?.team || "-")} <span class="ppg-stat-badge ml-1">PPG <strong>${strongPpgLock?.ppg?.toFixed(2) ?? "-"}</strong></span></div>
+          <div class="text-xs text-muted mt-1">Played: <strong class="font-mono text-text">${strongPpgLock?.playedPpg?.toFixed(2) ?? "-"}</strong> &bull; Rem: <strong class="font-mono" style="color:#3B82F6;">${strongPpgLock?.remainingPpg?.toFixed(2) ?? "-"}</strong> &bull; Diff: <strong>${escapeHtml(strongPpgLock?.diffLabel || "0%")}</strong></div>
+        </div>
+      </div>
+    `;
+
+    const tableRowsHtml = filteredRows.map((row) => {
+      const isExpanded = expandedRuninTeam === `${activeCode}:${row.team}`;
+      const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
+      const isStrongPpg = row.ppg >= 1.60;
+      const drawerHtml = !isExpanded ? "" : `
+        <tr class="runin-drawer-row">
+          <td colspan="11">
+            <div class="runin-opp-grid">
+              <div>
+                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played (${row.playedOpponents?.length || 0} matches · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Seasonal away PPG of past home visitors &amp; seasonal home PPG of past away hosts:</div>
+                <div class="runin-opp-list">
+                  ${(row.playedOpponents || []).length === 0
+                    ? `<span class="text-xs text-muted">No completed fixtures listed yet.</span>`
+                    : row.playedOpponents.map((op) => `
+                        <span class="runin-opp-chip">
+                          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
+                          <strong>${escapeHtml(op.opponent)}</strong>
+                          <span class="font-mono text-muted">(${op.oppVenuePpg !== null ? op.oppVenuePpg.toFixed(2) : "-"})</span>
+                        </span>
+                      `).join("")
+                  }
+                </div>
+              </div>
+              <div>
+                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Remaining Opponents (${row.remainingOpponents?.length || 0} matches · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Away PPG of upcoming home visitors &amp; home PPG of upcoming away hosts:</div>
+                <div class="runin-opp-list">
+                  ${(row.remainingOpponents || []).length === 0
+                    ? `<span class="text-xs text-muted">No remaining fixtures listed.</span>`
+                    : row.remainingOpponents.map((op) => `
+                        <span class="runin-opp-chip">
+                          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
+                          <strong>${escapeHtml(op.opponent)}</strong>
+                          <span class="font-mono text-muted">(${op.oppVenuePpg !== null ? op.oppVenuePpg.toFixed(2) : "-"})</span>
+                        </span>
+                      `).join("")
+                  }
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      `;
+
+      return `
+        <tr class="runin-row" data-toggle-runin-team="${escapeHtml(`${activeCode}:${row.team}`)}" title="Click to inspect all Opponents Played (PLD) &amp; Remaining Opponents (REM)">
+          <td class="font-mono font-bold">${row.rank}</td>
+          <td>
+            <div class="flex items-center gap-1.5">
+              <strong class="text-text">${escapeHtml(row.team)}</strong>
+              ${isStrongPpg ? `<span title="Strong PPG Team (>= 1.60)">💎</span>` : ""}
+              <span class="text-xs text-muted font-mono">${isExpanded ? "▲" : "▼"}</span>
+            </div>
+          </td>
+          <td class="text-center font-mono font-bold" style="color:#16A34A;">${row.gp}</td>
+          <td class="text-center font-mono">${row.w}</td>
+          <td class="text-center font-mono">${row.d}</td>
+          <td class="text-center font-mono">${row.l}</td>
+          <td class="text-center font-mono font-bold">${row.pts}</td>
+          <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
+          <td class="text-center"><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></td>
+          <td>
+            <div class="runin-rem-cell">
+              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
+              <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
+            </div>
+          </td>
+          <td class="text-center"><span class="runin-diff-pill ${diffCls}">${escapeHtml(row.diffLabel)}</span></td>
+        </tr>
+        ${drawerHtml}
+      `;
+    }).join("");
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">📈 SOCCERSTATS RUN-IN ENGINE</span>
+            <span class="sure-pill-tag">OPPONENTS PLAYED (PLD) VS REMAINING (REM)</span>
+            ${summaryInfo ? `<span class="sure-pill-tag">${summaryInfo.matchesPlayed} / ${summaryInfo.totalMatches} Played (${escapeHtml(summaryInfo.progressPct)})</span>` : ""}
+          </div>
+          <button type="button" class="analyze-inline-btn" data-runin-refresh="1" style="background:rgba(255,255,255,0.12);color:#fff;border-color:rgba(255,255,255,0.22);">↻ Sync Live Tables</button>
+        </div>
+
+        <h1 class="mt-2">${escapeHtml(leagueMeta.country ? `${leagueMeta.country} - ${leagueMeta.name}` : leagueMeta.name)}: Run-in Analysis</h1>
+        <p>Live SoccerSTATS.com Run-In schedule difficulty evaluator comparing the venue-weighted PPG of opponents already faced against remaining fixtures.</p>
+
+        <!-- HOW IT WORKS CARDS -->
+        <div class="runin-how-grid">
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold text-white uppercase">1. Opponents Played (PLD)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of teams already faced, accounting for home vs. away using opponents&rsquo; respective away/home PPG records.</div>
+          </div>
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold uppercase" style="color:#7CE8C4;">2. Remaining Opponents (REM)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;">Calculates the average PPG of upcoming opponents, weighted identically by venue (visitors&rsquo; away PPG vs. hosts&rsquo; home PPG).</div>
+          </div>
+          <div class="runin-how-card">
+            <div class="text-xs font-mono font-bold uppercase" style="color:#93C5FD;">3. Played vs. Remaining (%)</div>
+            <div class="text-xs mt-1" style="color:#D1E0D9;"><strong class="text-white">Negative % (-):</strong> remaining fixtures are tougher. <strong style="color:#7CE8C4;">Positive % (+):</strong> more favorable, easier run-in ahead.</div>
+          </div>
+        </div>
+
+        <!-- LEAGUE SELECTOR BAR -->
+        <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
+          <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);flex:1;">
+            ${QUICK_LEAGUES.map((ql) => `
+              <button type="button" class="filter-chip${activeCode === ql.code ? " is-active" : ""}" data-runin-league="${ql.code}">${ql.flag} ${escapeHtml(ql.label)}</button>
+            `).join("")}
+          </div>
+          <select id="runinLeagueSelect" aria-label="Select any SoccerSTATS league" style="background:rgba(7,16,15,0.85);color:#fff;border:1px solid rgba(255,255,255,0.25);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;font-weight:600;">
+            ${catalog.map((lg) => `
+              <option value="${escapeHtml(lg.code)}"${activeCode === lg.code ? " selected" : ""}>${lg.flag || "⚽"} ${lg.country ? `${escapeHtml(lg.country)} - ` : ""}${escapeHtml(lg.name)}</option>
+            `).join("")}
+          </select>
+        </div>
+
+        <!-- FILTER TABS -->
+        <div class="intel-tabs mt-2" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);">
+          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-runin-filter="ALL">All Teams (${rawRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "FAVORABLE" ? " is-active" : ""}" data-runin-filter="FAVORABLE" style="color:${activeFilter === "FAVORABLE" ? "#fff" : "#7CE8C4"};">🟢 Easier Run-In (+%) (${favorableRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "TOUGH" ? " is-active" : ""}" data-runin-filter="TOUGH" style="color:${activeFilter === "TOUGH" ? "#fff" : "#FCA5A5"};">🔴 Tougher Run-In (-%) (${toughRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "STRONG_PPG_EASY" ? " is-active" : ""}" data-runin-filter="STRONG_PPG_EASY" style="color:${activeFilter === "STRONG_PPG_EASY" ? "#fff" : "#FDE68A"};">💎 Strong PPG (&ge;1.60) + Easy Run-In (${strongPpgEasyRows.length})</button>
+        </div>
+      </div>
+
+      ${highlightsHtml}
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
+          <span class="count">${isLoadingRuninView ? "Syncing live from SoccerSTATS..." : `${filteredRows.length} Teams · Click any row for opponent PPG breakdown`}</span>
+        </div>
+        ${
+          isLoadingRuninView && rawRows.length === 0
+            ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD) vs. Remaining Opponents PPG (REM).</p></div>`
+            : filteredRows.length === 0
+              ? `<div class="empty-state"><h3>No teams match current Run-In filter</h3><p class="text-sm">Switch to All Teams above or pick another active league.</p></div>`
+              : `<div class="runin-table-wrap">
+                  <table class="runin-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Team</th>
+                        <th style="text-align:center;">GP</th>
+                        <th style="text-align:center;">W</th>
+                        <th style="text-align:center;">D</th>
+                        <th style="text-align:center;">L</th>
+                        <th style="text-align:center;">Pts</th>
+                        <th style="text-align:center;">PPG</th>
+                        <th style="text-align:center;">Opponents<br>played PPG</th>
+                        <th style="color:#3B82F6;">Opponents<br>remaining PPG</th>
+                        <th style="text-align:center;">Played vs<br>Remaining</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${tableRowsHtml}
+                    </tbody>
+                  </table>
+                </div>`
+        }
       </section>
     `;
   }
@@ -3974,6 +4295,8 @@
       main.innerHTML = renderDroppingOddsView();
     } else if (r === "/ppg" || r === "/ppg-intelligence" || r === "/points-per-game") {
       main.innerHTML = renderPpgIntelligenceView();
+    } else if (r === "/run-in" || r === "/runin" || r === "/run-in-analysis") {
+      main.innerHTML = renderRunInAnalysisView();
     } else if (r === "/live" || r === "/upcoming" || r === "/matches") {
       main.innerHTML = renderMatchesView();
     } else if (r === "/strong-teams" || r === "/strong-teams-today" || r === "/power-picks" || r === "/community") {
@@ -4702,6 +5025,37 @@
       return;
     }
 
+    // Run-In Analysis interactions (League tabs, Filters, Opponent drawer, Refresh)
+    const runinLgBtn = e.target.closest("[data-runin-league]");
+    if (runinLgBtn) {
+      const code = runinLgBtn.getAttribute("data-runin-league") || "england";
+      expandedRuninTeam = null;
+      state.activeRuninLeague = code;
+      saveState();
+      loadRuninLeague(code, false);
+      renderMainContent();
+      return;
+    }
+    const runinFilterBtn = e.target.closest("[data-runin-filter]");
+    if (runinFilterBtn) {
+      state.activeRuninFilter = runinFilterBtn.getAttribute("data-runin-filter") || "ALL";
+      saveState();
+      renderMainContent();
+      return;
+    }
+    if (e.target.closest("[data-runin-refresh]")) {
+      loadRuninLeague(state.activeRuninLeague || "england", true);
+      showToast("Syncing live Run-In Analysis tables...");
+      return;
+    }
+    const runinTeamRow = e.target.closest("[data-toggle-runin-team]");
+    if (runinTeamRow) {
+      const teamKey = runinTeamRow.getAttribute("data-toggle-runin-team");
+      expandedRuninTeam = expandedRuninTeam === teamKey ? null : teamKey;
+      renderMainContent();
+      return;
+    }
+
     // Switch Strong Teams Today Filter
     const strongFilterBtn = e.target.closest("[data-strong-filter]");
     if (strongFilterBtn) {
@@ -5042,6 +5396,13 @@
       state.oddsFormat = e.target.value;
       saveState();
       renderMainContent();
+    } else if (e.target.id === "runinLeagueSelect") {
+      const code = e.target.value || "england";
+      expandedRuninTeam = null;
+      state.activeRuninLeague = code;
+      saveState();
+      loadRuninLeague(code, false);
+      renderMainContent();
     }
   });
 
@@ -5095,13 +5456,18 @@
     let pRoute = window.location.pathname;
     if (pRoute === "/game-points") pRoute = "/sure-odds";
     if (pRoute === "/community") pRoute = "/power-picks";
+    if (pRoute === "/runin" || pRoute === "/run-in-analysis") pRoute = "/run-in";
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
     if (qs.get("tab")) state.activeIntelTab = qs.get("tab").toUpperCase();
     if (qs.get("cat")) state.activePowerCategory = qs.get("cat").toUpperCase();
+    if (qs.get("league")) state.activeRuninLeague = qs.get("league").toLowerCase();
     state.route = pRoute;
   } else {
     state.route = "/";
+  }
+  if (state.route === "/run-in") {
+    loadRuninLeague(state.activeRuninLeague || "england");
   }
   renderAll();
   syncRealtimeFeed(false);

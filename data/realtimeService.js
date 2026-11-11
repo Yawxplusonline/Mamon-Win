@@ -1110,10 +1110,10 @@ window.MAMON_REALTIME = (() => {
     const away5AtAway = awaySplit?.venueGames?.slice(0, 5) || null;
 
     // Fallback venue estimates calibrated to team record & standings until schedule hydrates
-    const hMp = stH?.mp || Math.max(1, match.homeRecord?.mp || 8);
-    const aMp = stA?.mp || Math.max(1, match.awayRecord?.mp || 8);
-    const hPpg = stH ? stH.pts / Math.max(1, stH.mp) : (match.homeRecord.w * 3 + match.homeRecord.d) / Math.max(1, match.homeRecord.mp);
-    const aPpg = stA ? stA.pts / Math.max(1, stA.mp) : (match.awayRecord.w * 3 + match.awayRecord.d) / Math.max(1, match.awayRecord.mp);
+    const hMp = stH?.mp || match.homeRecord?.mp || (match.homeRecord ? (match.homeRecord.w || 0) + (match.homeRecord.d || 0) + (match.homeRecord.l || 0) : 8) || 8;
+    const aMp = stA?.mp || match.awayRecord?.mp || (match.awayRecord ? (match.awayRecord.w || 0) + (match.awayRecord.d || 0) + (match.awayRecord.l || 0) : 8) || 8;
+    const hPpg = stH ? stH.pts / Math.max(1, stH.mp) : ((match.homeRecord?.w || 0) * 3 + (match.homeRecord?.d || 0)) / Math.max(1, hMp);
+    const aPpg = stA ? stA.pts / Math.max(1, stA.mp) : ((match.awayRecord?.w || 0) * 3 + (match.awayRecord?.d || 0)) / Math.max(1, aMp);
 
     const home5Summary = home5AtHome && home5AtHome.length > 0
       ? {
@@ -1472,16 +1472,60 @@ window.MAMON_REALTIME = (() => {
       }
     });
 
-    // Best primary recommendation
+    // Strength of Schedule & PPG Trajectory analysis
+    const ppgScheduleStrength = computePpgScheduleAnalysis(homeTeam, awayTeam, homeOverallPpg, awayOverallPpg, homeHomePpg, awayAwayPpg, stH, stA, { cleanSheetsHome: { pct: homeCsPct }, cleanSheetsAway: { pct: awayCsPct }, currentForm: { homePts: homeFormPts, awayPts: awayFormPts } });
+    const homeDrop = ppgScheduleStrength.home?.isDropRed || ppgScheduleStrength.home?.status === "DROP_RED";
+    const awayDrop = ppgScheduleStrength.away?.isDropRed || ppgScheduleStrength.away?.status === "DROP_RED";
+    const homeGain = ppgScheduleStrength.home?.isGainBlue || ppgScheduleStrength.home?.status === "GAIN_BLUE";
+    const awayGain = ppgScheduleStrength.away?.isGainBlue || ppgScheduleStrength.away?.status === "GAIN_BLUE";
+
+    const isHomeStrong = (homeOverallPpg >= 1.60 || homeGain || (homeOverallPpg - awayOverallPpg >= 0.25)) && !homeDrop;
+    const isAwayStrong = (awayOverallPpg >= 1.45 || awayGain || (awayOverallPpg - homeOverallPpg >= 0.25)) && !awayDrop;
+
+    // Best primary recommendation - strictly aligned with Strong PPG, rejecting DROP_RED
     const sortedCore = [...markets]
-      .filter((x) => ["1X", "X2", "O15", "HOME", "AWAY", "BTTS", "O25", "H_O15"].includes(x.code))
+      .filter((x) => {
+        // Disallow markets backing a team with DROP_RED
+        if (homeDrop && ["1X", "HOME", "H_O15", "H_BTTS"].includes(x.code)) return false;
+        if (awayDrop && ["X2", "AWAY", "A_O15", "A_BTTS"].includes(x.code)) return false;
+
+        // If Home is the Strong PPG side, restrict to Home-aligned or safe neutral markets
+        if (isHomeStrong && !isAwayStrong) {
+          return ["1X", "HOME", "H_O15", "O15", "U35"].includes(x.code);
+        }
+        // If Away is the Strong PPG side, restrict to Away-aligned or safe neutral markets
+        if (isAwayStrong && !isHomeStrong) {
+          return ["X2", "AWAY", "A_O15", "O15", "U35"].includes(x.code);
+        }
+        return ["1X", "X2", "O15", "U35", "BTTS"].includes(x.code);
+      })
       .sort((a, b) => {
+        const ppgMatchBoostA = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(a.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(a.code)) ? 0.08 : 0;
+        const ppgMatchBoostB = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(b.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(b.code)) ? 0.08 : 0;
         const dropBoostA = (a.dropPct || 0) >= 3 ? 0.04 : 0;
         const dropBoostB = (b.dropPct || 0) >= 3 ? 0.04 : 0;
-        return (b.prob * 0.78 + (1 / b.odds) * 0.22 + dropBoostB) - (a.prob * 0.78 + (1 / a.odds) * 0.22 + dropBoostA);
+        return (b.prob * 0.78 + (1 / b.odds) * 0.22 + ppgMatchBoostB + dropBoostB) - (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA);
       });
 
-    const bestPick = sortedCore[0] || markets[0];
+    const bestPick = sortedCore[0] || markets.find((m) => m.code === "1X" || m.code === "O15") || markets[0];
+    const strongSide = isHomeStrong ? "HOME" : isAwayStrong ? "AWAY" : (homeOverallPpg >= awayOverallPpg ? "HOME" : "AWAY");
+    const strongTeam = strongSide === "HOME" ? homeTeam : awayTeam;
+    const oppTeam = strongSide === "HOME" ? awayTeam : homeTeam;
+    const strongPpgVal = strongSide === "HOME" ? homeOverallPpg : awayOverallPpg;
+    const oppPpgVal = strongSide === "HOME" ? awayOverallPpg : homeOverallPpg;
+
+    bestPick.strongPpg = {
+      isStrong: Boolean(isHomeStrong || isAwayStrong),
+      strongSide,
+      teamName: strongTeam.name,
+      teamShort: strongTeam.short,
+      teamPpg: strongPpgVal,
+      oppPpg: oppPpgVal,
+      gap: ppgGap,
+      trajectory: strongSide === "HOME" ? ppgScheduleStrength.home.status : ppgScheduleStrength.away.status,
+      badge: "💎 STRONG PPG BACKED",
+      badgeText: `Strong PPG: ${strongTeam.short} (${strongPpgVal.toFixed(2)} PPG) vs ${oppTeam.short} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGap.toFixed(2)} Edge`
+    };
     const modelConfPct = Math.round(clamp(bestPick.prob * 100, 48, 92));
     const calcHome = computeTeamStandingsCalc(match, "home", stH, stA);
     const calcAway = computeTeamStandingsCalc(match, "away", stA, stH);
@@ -1611,7 +1655,7 @@ window.MAMON_REALTIME = (() => {
           edge: homeOverallPpg >= awayOverallPpg ? homeTeam.short : awayTeam.short,
           venueEdge: (homeHomePpg ?? homeOverallPpg) >= (awayAwayPpg ?? awayOverallPpg) ? homeTeam.short : awayTeam.short,
           isLiveVenueSplit: Boolean(home5Summary.isLiveFeed || away5Summary.isLiveFeed),
-          scheduleStrength: computePpgScheduleAnalysis(homeTeam, awayTeam, homeOverallPpg, awayOverallPpg, homeHomePpg, awayAwayPpg, stH, stA, { cleanSheetsHome: { pct: homeCsPct }, cleanSheetsAway: { pct: awayCsPct }, currentForm: { homePts: homeFormPts, awayPts: awayFormPts } })
+          scheduleStrength: ppgScheduleStrength
         },
         // 13. Dropping Odds (Real Bookmaker Open -> Latest Movement)
         droppingOdds: match.droppingOdds || { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] }
@@ -1631,29 +1675,86 @@ window.MAMON_REALTIME = (() => {
     { id: "1000000", title: "1 Million Sure Odds", badge: "Jackpot 1,000,000x", target: 1120000.0, min: 1000000.0, max: 1550000.0, minLegs: 18, maxLegs: 26, pool: "MEGA", subtitle: "20+ distinct real-time global fixtures engineered to reach 1,000,000x+ payout" }
   ];
 
+  function extractPpgStrength(m) {
+    const ppg = m.analysis?.ppg || m.ppgSummary || {};
+    const sched = ppg.scheduleStrength || {};
+    const homePpg = ppg.homeOverall || 1.30;
+    const awayPpg = ppg.awayOverall || 1.30;
+    const homeGain = sched.home?.isGainBlue || sched.home?.status === "GAIN_BLUE";
+    const awayGain = sched.away?.isGainBlue || sched.away?.status === "GAIN_BLUE";
+    const ppgGap = Math.round(Math.abs(homePpg - awayPpg) * 100) / 100;
+    const strongSide = homePpg >= awayPpg ? "HOME" : "AWAY";
+    const strongTeam = strongSide === "HOME" ? (m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "Home") : (m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "Away");
+    const oppTeam = strongSide === "HOME" ? (m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "Away") : (m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "Home");
+    const strongVal = strongSide === "HOME" ? homePpg : awayPpg;
+    const oppVal = strongSide === "HOME" ? awayPpg : homePpg;
+    const traj = strongSide === "HOME" ? (homeGain ? "GAIN_BLUE" : "NEUTRAL") : (awayGain ? "GAIN_BLUE" : "NEUTRAL");
+
+    return {
+      strongSide,
+      strongTeam,
+      opponentTeam: oppTeam,
+      strongPpg: strongVal,
+      oppPpg: oppVal,
+      gap: ppgGap,
+      trajectory: traj,
+      badge: traj === "GAIN_BLUE" ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+      text: `Strong PPG: ${strongTeam} (${strongVal.toFixed(2)}) vs (${oppVal.toFixed(2)}) • +${ppgGap.toFixed(2)} Edge`
+    };
+  }
+
   function allowedMarketsForPool(match, pool) {
     const all = match.analysis?.markets || [];
+    const ppg = match.analysis?.ppg || match.ppgSummary || {};
+    const sched = ppg.scheduleStrength || {};
+    const homePpg = ppg.homeOverall || 1.30;
+    const awayPpg = ppg.awayOverall || 1.30;
+    const homeDrop = sched.home?.isDropRed || sched.home?.status === "DROP_RED";
+    const awayDrop = sched.away?.isDropRed || sched.away?.status === "DROP_RED";
+    const homeGain = sched.home?.isGainBlue || sched.home?.status === "GAIN_BLUE";
+    const awayGain = sched.away?.isGainBlue || sched.away?.status === "GAIN_BLUE";
+
+    const isHomeStrong = (homePpg >= 1.60 || homeGain || (homePpg - awayPpg >= 0.25)) && !homeDrop;
+    const isAwayStrong = (awayPpg >= 1.45 || awayGain || (awayPpg - homePpg >= 0.25)) && !awayDrop;
+
+    // Filter candidate markets strictly to those that align with the Strong PPG side and reject DROP_RED
+    const ppgFiltered = all.filter((m) => {
+      // Disallow backing a team with DROP_RED
+      if (homeDrop && ["1X", "HOME", "H_O15", "H_BTTS"].includes(m.code)) return false;
+      if (awayDrop && ["X2", "AWAY", "A_O15", "A_BTTS"].includes(m.code)) return false;
+
+      // If Home has strong PPG advantage, never back Away
+      if (isHomeStrong && !isAwayStrong) {
+        if (["AWAY", "X2", "A_O15", "A_BTTS", "A_NIL", "HTFT_A"].includes(m.code)) return false;
+      }
+      // If Away has strong PPG advantage, never back Home
+      if (isAwayStrong && !isHomeStrong) {
+        if (["HOME", "1X", "H_O15", "H_BTTS", "H_NIL", "HTFT_H"].includes(m.code)) return false;
+      }
+      return true;
+    });
+
     if (pool === "SAFE") {
       // 100% Multi-Outcome Safeguards ONLY: Double Chance (1X, X2) & Over 1.5 Goals
-      return all.filter((m) => ["1X", "X2", "O15"].includes(m.code));
+      return ppgFiltered.filter((m) => ["1X", "X2", "O15"].includes(m.code));
     }
     if (pool === "SAFE_CORE") {
-      return all.filter((m) => ["1X", "X2", "O15", "U35", "H_O15"].includes(m.code) || (["HOME", "AWAY"].includes(m.code) && m.odds <= 1.45));
+      return ppgFiltered.filter((m) => ["1X", "X2", "O15", "U35", "H_O15", "A_O15"].includes(m.code) || (["HOME", "AWAY"].includes(m.code) && m.odds <= 1.45));
     }
     if (pool === "CORE") {
-      return all.filter((m) => ["1X", "X2", "O15", "HOME", "AWAY", "O25", "BTTS", "H_O15", "A_O15"].includes(m.code) && m.odds <= 2.35);
+      return ppgFiltered.filter((m) => ["1X", "X2", "O15", "HOME", "AWAY", "O25", "BTTS", "H_O15", "A_O15"].includes(m.code) && m.odds <= 2.35);
     }
     if (pool === "CORE_VALUE") {
-      return all.filter((m) => !["DRAW", "H_BTTS", "A_BTTS"].includes(m.code) && m.odds >= 1.32 && m.odds <= 2.80);
+      return ppgFiltered.filter((m) => !["DRAW", "H_BTTS", "A_BTTS"].includes(m.code) && m.odds >= 1.32 && m.odds <= 2.80);
     }
     if (pool === "VALUE") {
-      return all.filter((m) => m.odds >= 1.40 && m.odds <= 3.60);
+      return ppgFiltered.filter((m) => m.odds >= 1.40 && m.odds <= 3.60);
     }
     if (pool === "HIGH") {
-      return all.filter((m) => m.odds >= 1.45 && m.odds <= 4.80);
+      return ppgFiltered.filter((m) => m.odds >= 1.45 && m.odds <= 4.80);
     }
     // MEGA (1,000,000 odds): allow strong multi-factor combos & HT/FT & Win+BTTS
-    return all.filter((m) => m.odds >= 1.55);
+    return ppgFiltered.filter((m) => m.odds >= 1.55);
   }
 
   function buildSlipForTier(matchesPool, tier, variationSeed = 0) {
@@ -1661,19 +1762,40 @@ window.MAMON_REALTIME = (() => {
     const playable = matchesPool
       .filter((m) => m.status === "SCHEDULED" || (m.status === "LIVE" && (m.minute || 0) <= 68))
       .filter((m) => {
-        if (tier.id === "2" || tier.id === "5" || tier.pool === "SAFE" || tier.pool === "SAFE_CORE") {
-          const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
-          const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
-          return !isChaosOrReserveMatch(m.leagueName, hName, aName);
+        const hName = DATA.TEAMS?.[m.home]?.name || m.homeTeamName || "";
+        const aName = DATA.TEAMS?.[m.away]?.name || m.awayTeamName || "";
+        if (isChaosOrReserveMatch(m.leagueName, hName, aName)) return false;
+
+        if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        const ppg = m.analysis?.ppg || m.ppgSummary || {};
+        const sched = ppg.scheduleStrength || {};
+        const homePpg = ppg.homeOverall || 1.30;
+        const awayPpg = ppg.awayOverall || 1.30;
+        const homeGain = sched.home?.isGainBlue || sched.home?.status === "GAIN_BLUE";
+        const awayGain = sched.away?.isGainBlue || sched.away?.status === "GAIN_BLUE";
+        const ppgGap = Math.abs(homePpg - awayPpg);
+
+        // Strong PPG enforcement for daily accumulator slips
+        const hasStrongPpgEdge = (homePpg >= 1.60 || awayPpg >= 1.45 || homeGain || awayGain || ppgGap >= 0.25);
+        if (tier.id === "2" || tier.id === "5" || tier.id === "10" || tier.pool === "SAFE" || tier.pool === "SAFE_CORE") {
+          return hasStrongPpgEdge;
         }
         return true;
       })
       .map((m) => {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        const ppg = m.analysis?.ppg || m.ppgSummary || {};
+        const sched = ppg.scheduleStrength || {};
+        const homePpg = ppg.homeOverall || 1.30;
+        const awayPpg = ppg.awayOverall || 1.30;
+        const homeGain = sched.home?.isGainBlue || sched.home?.status === "GAIN_BLUE";
+        const awayGain = sched.away?.isGainBlue || sched.away?.status === "GAIN_BLUE";
+        const ppgGap = Math.abs(homePpg - awayPpg);
         const topProb = m.analysis?.bestPick?.prob || 0.6;
         // Prefer upcoming top-league fixtures + hydrated analyses + deterministic slight rotation for Regenerate button
         const jitter = variationSeed === 0 ? 0 : ((hashSeed(m.id + ":" + variationSeed) % 100) / 400);
-        const rankScore = (m.status === "SCHEDULED" ? 1.0 : 0.72) + (1 / Math.max(1, m.priority)) * 0.25 + topProb * 0.8 + (m.analysis.isLiveHydrated ? 0.12 : 0) - jitter;
+        const ppgBonus = (ppgGap * 0.45) + (homeGain || awayGain ? 0.35 : 0);
+        const rankScore = (m.status === "SCHEDULED" ? 1.0 : 0.72) + (1 / Math.max(1, m.priority)) * 0.25 + topProb * 0.8 + ppgBonus + (m.analysis.isLiveHydrated ? 0.12 : 0) - jitter;
         return { match: m, rankScore };
       })
       .sort((a, b) => b.rankScore - a.rankScore)
@@ -1726,7 +1848,8 @@ window.MAMON_REALTIME = (() => {
         legs.push({
           matchId: m.id,
           match: m,
-          market: bestCand
+          market: bestCand,
+          ppgStrength: extractPpgStrength(m)
         });
       }
     }
@@ -1738,20 +1861,25 @@ window.MAMON_REALTIME = (() => {
       // Try upgrading an existing leg's market first (if not at 1M maxLegs yet, or adding new match)
       const nextUnused = playable.find((m) => !usedIds.has(m.id));
       if (nextUnused && legs.length < tier.maxLegs + 4) {
-        const cands = (nextUnused.analysis?.markets || []).filter((c) => c.odds >= 1.35);
+        const cands = allowedMarketsForPool(nextUnused, tier.pool).filter((c) => c.odds >= 1.35);
         const gapRatio = tier.target / product;
         const pick = [...cands].sort((a, b) => Math.abs(a.odds - Math.min(6.0, gapRatio)) - Math.abs(b.odds - Math.min(6.0, gapRatio)))[0];
         if (pick) {
           usedIds.add(nextUnused.id);
           product *= pick.odds;
-          legs.push({ matchId: nextUnused.id, match: nextUnused, market: pick });
+          legs.push({
+            matchId: nextUnused.id,
+            match: nextUnused,
+            market: pick,
+            ppgStrength: extractPpgStrength(nextUnused)
+          });
           continue;
         }
       }
-      // Otherwise swap lowest-odds leg to highest available value market on that same match
+      // Otherwise swap lowest-odds leg to highest available value market on that same match (restricted to Strong PPG allowed markets)
       let upgraded = false;
       for (const leg of legs) {
-        const higher = [...(leg.match.analysis?.markets || [])]
+        const higher = [...allowedMarketsForPool(leg.match, tier.pool)]
           .filter((c) => c.odds > leg.market.odds && (product / leg.market.odds) * c.odds <= tier.max * 1.25)
           .sort((a, b) => b.odds - a.odds)[0];
         if (higher) {
@@ -1768,7 +1896,7 @@ window.MAMON_REALTIME = (() => {
     if (product > tier.max && legs.length >= 2) {
       for (const leg of [...legs].reverse()) {
         if (product <= tier.max) break;
-        const lower = [...(leg.match.analysis?.markets || [])]
+        const lower = [...allowedMarketsForPool(leg.match, tier.pool)]
           .filter((c) => c.odds < leg.market.odds && (product / leg.market.odds) * c.odds >= tier.min)
           .sort((a, b) => b.prob - a.prob)[0];
         if (lower) {
@@ -2432,10 +2560,25 @@ window.MAMON_REALTIME = (() => {
           }
         ];
 
-        // Filter for positive EV (EV >= +0.02) and realistic winning likelihood
+        // Filter for positive EV (EV >= +0.02) and realistic winning likelihood backed by STRONG PPG
         for (const mkt of marketList) {
           const minProb = mkt.type === "FAVORITE_MINUS" ? 0.45 : mkt.type === "DOUBLE_CHANCE" ? 0.58 : 0.65;
           if (mkt.prob >= minProb && mkt.ev >= 0.025) {
+            // STRONG PPG VALIDATION:
+            const targetSos = mkt.side === "HOME" ? ppgSched.home : ppgSched.away;
+            const targetPpgVal = mkt.side === "HOME" ? (hs.homePpg || hs.ppg || 1.5) : (as.awayPpg || as.ppg || 1.3);
+            const oppPpgVal = mkt.side === "HOME" ? (as.awayPpg || as.ppg || 1.3) : (hs.homePpg || hs.ppg || 1.5);
+            const ppgGapVal = Math.round(Math.abs(targetPpgVal - oppPpgVal) * 100) / 100;
+            const isDrop = targetSos?.trajectory === "DROP_RED";
+            const isGain = targetSos?.trajectory === "GAIN_BLUE";
+
+            // Reject any tip where target team has DROP_RED risk
+            if (isDrop) continue;
+
+            // Only accept if target team has Strong PPG (>= 1.50) OR positive PPG gap (>= 0.15) OR GAIN_BLUE
+            const isStrongPpg = (targetPpgVal >= 1.50 || (targetPpgVal - oppPpgVal >= 0.15) || isGain);
+            if (!isStrongPpg) continue;
+
             const fairOdds = Math.round((1 / mkt.prob) * 100) / 100;
             const evPct = Math.round(mkt.ev * 10000) / 100;
             const qualityTier = mkt.prob >= 0.75 && mkt.ev >= 0.08 ? "ELITE" : mkt.prob >= 0.70 ? "SAFE" : "VALUE";
@@ -2470,7 +2613,13 @@ window.MAMON_REALTIME = (() => {
               bookmakerSource: "SportyBet & Football.com",
               gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
               ppgSchedule: ppgSched,
-              targetPpg: mkt.side === "HOME" ? ppgSched.home : ppgSched.away,
+              targetPpg: targetSos,
+              targetPpgVal,
+              oppPpgVal,
+              ppgGap: ppgGapVal,
+              isStrongPpg: true,
+              strongPpgBadge: isGain ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+              strongPpgText: `Strong PPG: ${mkt.targetTeam} (${targetPpgVal.toFixed(2)} PPG) vs ${mkt.oppTeam} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGapVal.toFixed(2)} Edge`,
               tacticalReason: mkt.reason,
               qualityTier
             });
@@ -2492,7 +2641,14 @@ window.MAMON_REALTIME = (() => {
           ? { team: g.homeTeamName, opp: g.awayTeamName, side: "HOME", line: "+6.5 Point Spread", prob: probH_plus65, odd: oddH_plus65, ev: evH }
           : { team: g.awayTeamName, opp: g.homeTeamName, side: "AWAY", line: "+6.5 Point Spread", prob: probA_plus65, odd: oddA_plus65, ev: evA };
 
-        if (bestBasket.prob >= 0.60 && bestBasket.ev >= 0.025) {
+        const bTargetSos = bestBasket.side === "HOME" ? ppgSched.home : ppgSched.away;
+        const bTargetPpgVal = bestBasket.side === "HOME" ? hs.ppg : as.ppg;
+        const bOppPpgVal = bestBasket.side === "HOME" ? as.ppg : hs.ppg;
+        const bPpgGapVal = Math.round(Math.abs(bTargetPpgVal - bOppPpgVal) * 100) / 100;
+        const bIsDrop = bTargetSos?.trajectory === "DROP_RED";
+        const bIsGain = bTargetSos?.trajectory === "GAIN_BLUE";
+
+        if (!bIsDrop && bestBasket.prob >= 0.60 && bestBasket.ev >= 0.025) {
           const fairOdds = Math.round((1 / bestBasket.prob) * 100) / 100;
           const evPct = Math.round(bestBasket.ev * 10000) / 100;
           allTips.push({
@@ -2525,7 +2681,13 @@ window.MAMON_REALTIME = (() => {
             bookmakerSource: "SportyBet & Football.com",
             gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
             ppgSchedule: ppgSched,
-            targetPpg: bestBasket.side === "HOME" ? ppgSched.home : ppgSched.away,
+            targetPpg: bTargetSos,
+            targetPpgVal: bTargetPpgVal,
+            oppPpgVal: bOppPpgVal,
+            ppgGap: bPpgGapVal,
+            isStrongPpg: true,
+            strongPpgBadge: bIsGain ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+            strongPpgText: `Strong PPG: ${bestBasket.team} (${bTargetPpgVal.toFixed(2)} PPG) vs ${bestBasket.opp} (${bOppPpgVal.toFixed(2)} PPG) • +${bPpgGapVal.toFixed(2)} Edge`,
             tacticalReason: `${bestBasket.team} holds point differential edge (+${Math.abs(pointDiff).toFixed(1)} pts projected margin) covering the spread in ${(bestBasket.prob * 100).toFixed(1)}% of simulations.`,
             qualityTier: bestBasket.prob >= 0.72 ? "ELITE" : "VALUE"
           });
@@ -2568,7 +2730,14 @@ window.MAMON_REALTIME = (() => {
             }
           : null;
 
-        if (pickTennis && pickTennis.prob >= 0.60 && pickTennis.ev >= 0.02) {
+        const tTargetSos = pickTennis?.side === "HOME" ? ppgSched.home : ppgSched.away;
+        const tTargetPpgVal = pickTennis?.side === "HOME" ? hs.ppg : as.ppg;
+        const tOppPpgVal = pickTennis?.side === "HOME" ? as.ppg : hs.ppg;
+        const tPpgGapVal = Math.round(Math.abs(tTargetPpgVal - tOppPpgVal) * 100) / 100;
+        const tIsDrop = tTargetSos?.trajectory === "DROP_RED";
+        const tIsGain = tTargetSos?.trajectory === "GAIN_BLUE";
+
+        if (pickTennis && !tIsDrop && pickTennis.prob >= 0.60 && pickTennis.ev >= 0.02) {
           const fairOdds = Math.round((1 / pickTennis.prob) * 100) / 100;
           const evPct = Math.round(pickTennis.ev * 10000) / 100;
           allTips.push({
@@ -2601,7 +2770,13 @@ window.MAMON_REALTIME = (() => {
             bookmakerSource: "SportyBet & Football.com",
             gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
             ppgSchedule: ppgSched,
-            targetPpg: pickTennis.side === "HOME" ? ppgSched.home : ppgSched.away,
+            targetPpg: tTargetSos,
+            targetPpgVal: tTargetPpgVal,
+            oppPpgVal: tOppPpgVal,
+            ppgGap: tPpgGapVal,
+            isStrongPpg: true,
+            strongPpgBadge: tIsGain ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+            strongPpgText: `Strong PPG: ${pickTennis.team} (${tTargetPpgVal.toFixed(2)} PPG) vs ${pickTennis.opp} (${tOppPpgVal.toFixed(2)} PPG) • +${tPpgGapVal.toFixed(2)} Edge`,
             tacticalReason: pickTennis.reason,
             qualityTier: pickTennis.prob >= 0.72 ? "ELITE" : "VALUE"
           });
@@ -2644,7 +2819,14 @@ window.MAMON_REALTIME = (() => {
             }
           : null;
 
-        if (pickDarts && pickDarts.prob >= 0.60 && pickDarts.ev >= 0.02) {
+        const dTargetSos = pickDarts?.side === "HOME" ? ppgSched.home : ppgSched.away;
+        const dTargetPpgVal = pickDarts?.side === "HOME" ? hs.ppg : as.ppg;
+        const dOppPpgVal = pickDarts?.side === "HOME" ? as.ppg : hs.ppg;
+        const dPpgGapVal = Math.round(Math.abs(dTargetPpgVal - dOppPpgVal) * 100) / 100;
+        const dIsDrop = dTargetSos?.trajectory === "DROP_RED";
+        const dIsGain = dTargetSos?.trajectory === "GAIN_BLUE";
+
+        if (pickDarts && !dIsDrop && pickDarts.prob >= 0.60 && pickDarts.ev >= 0.02) {
           const fairOdds = Math.round((1 / pickDarts.prob) * 100) / 100;
           const evPct = Math.round(pickDarts.ev * 10000) / 100;
           allTips.push({
@@ -2677,7 +2859,13 @@ window.MAMON_REALTIME = (() => {
             bookmakerSource: "SportyBet & Football.com",
             gameId: g.sportybet?.gameId || g.footballCom?.gameId || g.eventId,
             ppgSchedule: ppgSched,
-            targetPpg: pickDarts.side === "HOME" ? ppgSched.home : ppgSched.away,
+            targetPpg: dTargetSos,
+            targetPpgVal: dTargetPpgVal,
+            oppPpgVal: dOppPpgVal,
+            ppgGap: dPpgGapVal,
+            isStrongPpg: true,
+            strongPpgBadge: dIsGain ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+            strongPpgText: `Strong PPG: ${pickDarts.team} (${dTargetPpgVal.toFixed(2)} PPG) vs ${pickDarts.opp} (${dOppPpgVal.toFixed(2)} PPG) • +${dPpgGapVal.toFixed(2)} Edge`,
             tacticalReason: pickDarts.reason,
             qualityTier: pickDarts.prob >= 0.72 ? "ELITE" : "VALUE"
           });
@@ -2970,6 +3158,17 @@ window.MAMON_REALTIME = (() => {
       const evPct5 = Math.round(ev5 * 10000) / 100;
       const confTier5 = pDraw5 >= 0.965 ? "IRONCLAD BANKER" : (pDraw5 >= 0.952 ? "HIGH CONFIDENCE" : "SURE DEFENSE");
 
+      const estHomeGa = fx.homeGa || Number((fx.g * 0.48).toFixed(2));
+      const estAwayGa = fx.awayGa || Number((fx.g * 0.52).toFixed(2));
+      const defPpgRating = {
+        homeGa: estHomeGa.toFixed(2),
+        awayGa: estAwayGa.toFixed(2),
+        combinedGa: fx.g.toFixed(2),
+        drawStability: (fx.dr * 100).toFixed(1) + "%",
+        badge: "🛡️ STRONG DEFENSIVE PPG",
+        text: `Strong Defensive PPG: Low concessions (${estHomeGa.toFixed(2)} vs ${estAwayGa.toFixed(2)} GA/g) · ${(fx.dr * 100).toFixed(1)}% League Draw Stability`
+      };
+
       fiveMinTips.push({
         id: `tip_5min_${idx + 1}`,
         matchId: fx.matchId || null,
@@ -3000,6 +3199,7 @@ window.MAMON_REALTIME = (() => {
         expectedValue: Math.round(ev5 * 10000) / 10000,
         expectedValuePct: `+${evPct5.toFixed(2)}%`,
         confidenceTier: confTier5,
+        defensivePpgRating: defPpgRating,
         tacticalReason: `Low-tempo tactical feeling-out opening at ${fx.venue}. ${fx.l} produces ${(fx.dr * 100).toFixed(1)}% draw rate with only ${fx.g.toFixed(2)} avg goals. In opening 5 minutes, expected goal arrival rate is suppressed to ${(lam5 * 100).toFixed(1)}%, yielding ${(pDraw5 * 100).toFixed(1)}% true probability of 0-0 at 5:00.`
       });
 
@@ -3045,6 +3245,7 @@ window.MAMON_REALTIME = (() => {
         expectedValue: Math.round(evNo3 * 10000) / 10000,
         expectedValuePct: `+${evPctNo3.toFixed(2)}%`,
         confidenceTier: confTierNo3,
+        defensivePpgRating: defPpgRating,
         tacticalReason: `Strict defensive setup in ${fx.l} (league draw rate ${(fx.dr * 100).toFixed(1)}%). Neither ${fx.h} nor ${fx.a} possesses offensive firepower to sustain 3 consecutive unanswered goals without tactical stoppage or defensive recalibration.`
       });
     });

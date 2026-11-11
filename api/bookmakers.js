@@ -968,12 +968,13 @@ async function runFullBookmakerScan(forceRefresh = false) {
             hs.formPts >= as.formPts;
           const mistakeBigOddsGiven =
             odd1 >= odd2 ||
-            (odd1 >= 1.50 && odd1 <= 3.40 && (g.model.homeEdgePct >= 0 || hs.ppg >= 1.35 || hs.formPts >= 7));
+            (odd1 >= 1.50 && odd1 <= 3.40 && (g.model.homeEdgePct >= 0 || hs.ppg >= 1.50 || hs.formPts >= 7));
           const notDropRisk = g.ppgSchedule?.home?.trajectory !== "DROP_RED";
+          const hasStrongPpg = hs.ppg >= 1.50 && (hs.ppg >= as.ppg + 0.15 || g.ppgSchedule?.home?.trajectory === "GAIN_BLUE");
           return (
             odd1 >= 1.40 &&
             odd1 <= 3.40 &&
-            hs.ppg >= 1.30 &&
+            hasStrongPpg &&
             homeStronger &&
             mistakeBigOddsGiven &&
             notDropRisk
@@ -1028,12 +1029,13 @@ async function runFullBookmakerScan(forceRefresh = false) {
             as.formPts >= hs.formPts;
           const mistakeBigOddsGiven =
             odd2 >= odd1 ||
-            (odd2 >= 1.50 && odd2 <= 3.50 && (g.model.awayEdgePct >= 0 || as.ppg >= 1.35 || as.formPts >= 7));
+            (odd2 >= 1.50 && odd2 <= 3.50 && (g.model.awayEdgePct >= 0 || as.ppg >= 1.45 || as.formPts >= 7));
           const notDropRisk = g.ppgSchedule?.away?.trajectory !== "DROP_RED";
+          const hasStrongPpg = as.ppg >= 1.40 && (as.ppg >= hs.ppg + 0.15 || g.ppgSchedule?.away?.trajectory === "GAIN_BLUE");
           return (
             odd2 >= 1.45 &&
             odd2 <= 3.50 &&
-            as.ppg >= 1.30 &&
+            hasStrongPpg &&
             awayStronger &&
             mistakeBigOddsGiven &&
             notDropRisk

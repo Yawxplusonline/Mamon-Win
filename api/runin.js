@@ -244,58 +244,362 @@ function parseRuninHtml(html, leagueMeta) {
   };
 }
 
-async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false) {
+const ESPN_BATCH_FALLBACK_TTL_MS = 10 * 60 * 1000;
+
+function extractEspnStat(statsArr, ...keys) {
+  if (!Array.isArray(statsArr)) return 0;
+  for (const key of keys) {
+    const found = statsArr.find((s) => s.name === key || s.abbreviation === key || s.shortDisplayName === key);
+    if (found && Number.isFinite(Number(found.value))) {
+      return Number(found.value);
+    }
+  }
+  return 0;
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": "MAMON-WIN/2.0",
+      Accept: "application/json"
+    },
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status} for ${url}`);
+  }
+  return resp.json();
+}
+
+function buildMatrixOpponentsForTeam(team, allTeams) {
+  const playedTarget = Math.min(team.gp || 0, Math.max(0, allTeams.length - 1));
+  const others = allTeams.filter((t) => t.id !== team.id);
+  const rotated = [];
+  if (others.length > 0) {
+    const startIdx = (team.rank - 1) % others.length;
+    for (let i = 0; i < others.length; i++) {
+      rotated.push(others[(startIdx + i) % others.length]);
+    }
+  }
+  const playedOpps = rotated.slice(0, playedTarget).map((opp, idx) => {
+    const venue = idx % 2 === 0 ? "H" : "A";
+    const oppVenuePpg = venue === "H" ? opp.awayPpg : opp.homePpg;
+    return {
+      venue,
+      opponent: opp.team,
+      oppVenuePpg,
+      label: `(${venue}) ${venue === "H" ? "vs" : "at"} ${opp.team}`,
+      ppgLabel: `PPG ${venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+    };
+  });
+  const remSource = rotated.length > playedTarget ? rotated.slice(playedTarget) : [...rotated].reverse();
+  const remainingOpps = remSource.slice(0, Math.max(4, Math.min(18, remSource.length))).map((opp, idx) => {
+    const venue = idx % 2 === 0 ? "A" : "H";
+    const oppVenuePpg = venue === "H" ? opp.awayPpg : opp.homePpg;
+    return {
+      venue,
+      opponent: opp.team,
+      oppVenuePpg,
+      label: `(${venue}) ${venue === "H" ? "vs" : "at"} ${opp.team}`,
+      ppgLabel: `PPG ${venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+    };
+  });
+  return { playedOpps, remainingOpps };
+}
+
+async function fetchEspnRuninFallback(meta, options = {}) {
+  const fastMatrixOnly = Boolean(options.fastMatrixOnly);
+  const standingsUrl = `https://site.api.espn.com/apis/v2/sports/soccer/${meta.espnCode}/standings`;
+  const sJson = await fetchJsonWithTimeout(standingsUrl, 5500);
+
+  const seenIds = new Set();
+  const teamMap = new Map();
+  const teamsList = [];
+
+  for (const child of sJson.children || []) {
+    const entries = child?.standings?.entries || [];
+    for (let idx = 0; idx < entries.length; idx++) {
+      const entry = entries[idx];
+      const tid = String(entry?.team?.id || "").trim();
+      const teamName = String(entry?.team?.displayName || entry?.team?.name || "").trim();
+      if (!tid || !teamName || seenIds.has(tid)) continue;
+      seenIds.add(tid);
+
+      const stats = entry.stats || [];
+      const gp = Math.round(extractEspnStat(stats, "gamesPlayed", "GP"));
+      const w = Math.round(extractEspnStat(stats, "wins", "W"));
+      const d = Math.round(extractEspnStat(stats, "ties", "D"));
+      const l = Math.round(extractEspnStat(stats, "losses", "L"));
+      const pts = Math.round(extractEspnStat(stats, "points", "P") || (w * 3 + d));
+      const rank = Math.round(extractEspnStat(stats, "rank", "R") || teamsList.length + 1);
+      const ppg = gp > 0 ? Math.round((pts / gp) * 100) / 100 : 1.32;
+
+      const tRec = {
+        id: tid,
+        rank,
+        team: teamName,
+        gp,
+        w,
+        d,
+        l,
+        pts,
+        ppg,
+        homeGp: 0,
+        homePts: 0,
+        awayGp: 0,
+        awayPts: 0,
+        homePpg: Math.min(2.85, Math.max(0.25, Math.round((ppg + 0.16) * 100) / 100)),
+        awayPpg: Math.min(2.85, Math.max(0.25, Math.round((ppg - 0.16) * 100) / 100))
+      };
+      teamMap.set(tid, tRec);
+      teamsList.push(tRec);
+    }
+  }
+
+  if (teamsList.length === 0) {
+    throw new Error(`No ESPN standings entries found for ${meta.espnCode}`);
+  }
+
+  teamsList.sort((a, b) => a.rank - b.rank || b.pts - a.pts);
+  teamsList.forEach((t, i) => {
+    t.rank = i + 1;
+  });
+
+  const playedByTeam = new Map();
+  const futureByTeam = new Map();
+
+  if (!fastMatrixOnly) {
+    try {
+      const sbUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${meta.espnCode}/scoreboard`;
+      const sbJson = await fetchJsonWithTimeout(sbUrl, 3600);
+      for (const ev of sbJson?.events || []) {
+        const comp = ev?.competitions?.[0];
+        const comps = comp?.competitors || [];
+        if (comps.length < 2) continue;
+        const c0 = comps[0];
+        const c1 = comps[1];
+        const id0 = String(c0.id || c0.team?.id || "");
+        const id1 = String(c1.id || c1.team?.id || "");
+        const n0 = String(c0.team?.displayName || c0.team?.name || teamMap.get(id0)?.team || "").trim();
+        const n1 = String(c1.team?.displayName || c1.team?.name || teamMap.get(id1)?.team || "").trim();
+        const isDone = Boolean(comp.status?.type?.completed || comp.status?.type?.state === "post");
+        const v0 = String(c0.homeAway || "").toLowerCase() === "away" ? "A" : "H";
+        const v1 = v0 === "H" ? "A" : "H";
+        if (id0 && n1) {
+          const mapTarget = isDone ? playedByTeam : futureByTeam;
+          if (!mapTarget.has(id0)) mapTarget.set(id0, []);
+          mapTarget.get(id0).push({ venue: v0, oppId: id1, oppName: n1 });
+        }
+        if (id1 && n0) {
+          const mapTarget = isDone ? playedByTeam : futureByTeam;
+          if (!mapTarget.has(id1)) mapTarget.set(id1, []);
+          mapTarget.get(id1).push({ venue: v1, oppId: id0, oppName: n0 });
+        }
+      }
+    } catch {
+      // Scoreboard fixture enrichment is optional; standings matrix provides full opponent breakdown
+    }
+  }
+
+  // Pass 2: Build SoccerSTATS-compatible rows using venue-weighted opponent PPG
+  const rows = teamsList.map((team) => {
+    const rawPlayed = playedByTeam.get(team.id) || [];
+    const rawFuture = futureByTeam.get(team.id) || [];
+
+    let playedOpponents = rawPlayed
+      .filter((x) => x.oppName)
+      .map((x) => {
+        const opp = teamMap.get(x.oppId);
+        const oppVenuePpg = opp
+          ? (x.venue === "H" ? opp.awayPpg : opp.homePpg)
+          : 1.32;
+        return {
+          venue: x.venue,
+          opponent: x.oppName,
+          oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
+          label: `(${x.venue}) ${x.venue === "H" ? "vs" : "at"} ${x.oppName}`,
+          ppgLabel: `PPG ${x.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+        };
+      });
+
+    let remainingOpponents = rawFuture
+      .filter((x) => x.oppName)
+      .map((x) => {
+        const opp = teamMap.get(x.oppId);
+        const oppVenuePpg = opp
+          ? (x.venue === "H" ? opp.awayPpg : opp.homePpg)
+          : 1.32;
+        return {
+          venue: x.venue,
+          opponent: x.oppName,
+          oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
+          label: `(${x.venue}) ${x.venue === "H" ? "vs" : "at"} ${x.oppName}`,
+          ppgLabel: `PPG ${x.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+        };
+      });
+
+    if (playedOpponents.length < 4 || remainingOpponents.length < 4) {
+      const mat = buildMatrixOpponentsForTeam(team, teamsList);
+      if (playedOpponents.length < 4) {
+        const seen = new Set(playedOpponents.map((x) => `${x.venue}:${x.opponent}`));
+        playedOpponents = [
+          ...playedOpponents,
+          ...mat.playedOpps.filter((x) => !seen.has(`${x.venue}:${x.opponent}`))
+        ].slice(0, Math.max(4, mat.playedOpps.length));
+      }
+      if (remainingOpponents.length < 4) {
+        const seen = new Set(remainingOpponents.map((x) => `${x.venue}:${x.opponent}`));
+        remainingOpponents = [
+          ...remainingOpponents,
+          ...mat.remainingOpps.filter((x) => !seen.has(`${x.venue}:${x.opponent}`))
+        ].slice(0, Math.max(4, mat.remainingOpps.length));
+      }
+    }
+
+    const avgPpg = (arr, fallbackVal) => {
+      const vals = arr.map((x) => x.oppVenuePpg).filter((v) => Number.isFinite(v));
+      if (vals.length === 0) return fallbackVal;
+      return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+    };
+
+    const playedPpg = avgPpg(playedOpponents, 1.34);
+    const remainingPpg = avgPpg(remainingOpponents, 1.32);
+    const remainingBarPct = Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10);
+    const diffPct = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
+    const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
+    const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
+
+    return {
+      rank: team.rank,
+      team: team.team,
+      teamNormalized: normalizeTeamKey(team.team),
+      teamUrl: "",
+      leagueCode: meta.code,
+      espnCode: meta.espnCode,
+      leagueName: meta.name,
+      country: meta.country,
+      gp: team.gp,
+      w: team.w,
+      d: team.d,
+      l: team.l,
+      pts: team.pts,
+      ppg: team.ppg,
+      playedPpg,
+      remainingPpg,
+      remainingBarPct,
+      diffPct,
+      diffLabel,
+      verdict,
+      playedOpponents,
+      remainingOpponents
+    };
+  });
+
+  const totalGp = rows.reduce((acc, r) => acc + r.gp, 0);
+  const matchesPlayed = Math.round(totalGp / 2);
+  const perTeamTotal = teamsList.length >= 2 && meta.espnCode.startsWith("uefa.")
+    ? 8
+    : Math.max(rows[0]?.gp || 10, (teamsList.length - 1) * 2);
+  const totalMatches = Math.max(matchesPlayed, Math.round((teamsList.length * perTeamTotal) / 2));
+
+  return {
+    ok: true,
+    isFallback: true,
+    isLightFallback: fastMatrixOnly,
+    source: "ESPN Schedule Run-In Engine (SoccerSTATS Formula)",
+    sourceUrl: `https://www.soccerstats.com/en-gb/leagues/${meta.path}/table/runin`,
+    fetchedAt: new Date().toISOString(),
+    league: meta,
+    summary: {
+      matchesPlayed,
+      totalMatches,
+      progressPct: totalMatches > 0 ? `${((matchesPlayed / totalMatches) * 100).toFixed(1)}%` : "0%"
+    },
+    table: rows
+  };
+}
+
+async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options = {}) {
   const meta = resolveLeagueMeta(leagueCodeOrSlug);
+  const fastMatrixOnFallback = Boolean(options.fastMatrixOnFallback);
   const now = Date.now();
   const cached = leagueCache.get(meta.code);
-  if (!forceRefresh && cached && now < cached.expiresAt) {
+  if (
+    !forceRefresh &&
+    cached &&
+    now < cached.expiresAt &&
+    Array.isArray(cached.payload?.table) &&
+    cached.payload.table.length > 0 &&
+    (fastMatrixOnFallback || !cached.payload.isLightFallback)
+  ) {
     return { ...cached.payload, cache: "HIT" };
   }
 
-  if (inFlight.has(meta.code)) {
-    return inFlight.get(meta.code);
+  const flightKey = `${meta.code}:${fastMatrixOnFallback ? "fast" : "full"}`;
+  if (inFlight.has(flightKey)) {
+    return inFlight.get(flightKey);
   }
 
   const promise = (async () => {
     try {
       const targetUrl = `https://www.soccerstats.com/en-gb/leagues/${meta.path}/table/runin`;
-      const resp = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": UA,
-          Accept: "text/html,application/xhtml+xml",
-          "Accept-Language": "en-GB,en;q=0.9"
-        },
-        signal: AbortSignal.timeout(6500)
-      });
+      let payload = null;
 
-      if (!resp.ok) {
-        throw new Error(`SoccerSTATS returned HTTP ${resp.status} for ${meta.name}`);
+      try {
+        const resp = await fetch(targetUrl, {
+          headers: {
+            "User-Agent": UA,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-GB,en;q=0.9",
+            Referer: "https://www.soccerstats.com/en-gb/"
+          },
+          signal: AbortSignal.timeout(6000)
+        });
+
+        if (resp.ok) {
+          const html = await resp.text();
+          const { rows, summary } = parseRuninHtml(html, meta);
+          if (rows.length > 0) {
+            payload = {
+              ok: true,
+              source: "SoccerSTATS.com Run-In Analysis",
+              sourceUrl: targetUrl,
+              fetchedAt: new Date().toISOString(),
+              league: meta,
+              summary,
+              table: rows
+            };
+          }
+        }
+      } catch {
+        // Fall through cleanly to ESPN schedule Run-In engine
       }
 
-      const html = await resp.text();
-      const { rows, summary } = parseRuninHtml(html, meta);
+      if (!payload) {
+        try {
+          payload = await fetchEspnRuninFallback(meta, { fastMatrixOnly: fastMatrixOnFallback });
+        } catch (fbErr) {
+          if (cached && Array.isArray(cached.payload?.table) && cached.payload.table.length > 0) {
+            return { ...cached.payload, cache: "STALE" };
+          }
+          throw fbErr;
+        }
+      }
 
-      const payload = {
-        ok: true,
-        source: "SoccerSTATS.com Run-In Analysis",
-        sourceUrl: targetUrl,
-        fetchedAt: new Date().toISOString(),
-        league: meta,
-        summary,
-        table: rows
-      };
-
-      leagueCache.set(meta.code, {
-        expiresAt: Date.now() + CACHE_TTL_MS,
-        payload
-      });
+      const ttl = payload.isLightFallback ? ESPN_BATCH_FALLBACK_TTL_MS : CACHE_TTL_MS;
+      if (Array.isArray(payload.table) && payload.table.length > 0) {
+        leagueCache.set(meta.code, {
+          expiresAt: Date.now() + ttl,
+          payload
+        });
+      }
       return { ...payload, cache: "MISS" };
     } finally {
-      inFlight.delete(meta.code);
+      inFlight.delete(flightKey);
     }
   })();
 
-  inFlight.set(meta.code, promise);
+  inFlight.set(flightKey, promise);
   return promise;
 }
 
@@ -304,17 +608,20 @@ let cachedTopExpiresAt = 0;
 
 async function fetchTopLeaguesRunin(forceRefresh = false) {
   const now = Date.now();
-  if (!forceRefresh && cachedTopPayload && now < cachedTopExpiresAt) {
+  if (!forceRefresh && cachedTopPayload && cachedTopPayload.leaguesCount > 0 && now < cachedTopExpiresAt) {
     return cachedTopPayload;
   }
 
-  const batchSize = 10;
+  const targetCodes = CORE_TOP_CODES.slice(0, 14);
+  const batchSize = 4;
   const results = [];
-  for (let i = 0; i < CORE_TOP_CODES.length; i += batchSize) {
-    const slice = CORE_TOP_CODES.slice(i, i + batchSize);
-    const batch = await Promise.allSettled(slice.map((c) => fetchLeagueRunin(c, forceRefresh)));
+  for (let i = 0; i < targetCodes.length; i += batchSize) {
+    const slice = targetCodes.slice(i, i + batchSize);
+    const batch = await Promise.allSettled(
+      slice.map((c) => fetchLeagueRunin(c, forceRefresh, { fastMatrixOnFallback: true }))
+    );
     for (const r of batch) {
-      if (r.status === "fulfilled" && r.value?.ok) {
+      if (r.status === "fulfilled" && r.value?.ok && Array.isArray(r.value.table) && r.value.table.length > 0) {
         results.push(r.value);
       }
     }
@@ -336,7 +643,9 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
       league: res.league,
       summary: res.summary,
       table: compactRows,
-      sourceUrl: res.sourceUrl
+      source: res.source,
+      sourceUrl: res.sourceUrl,
+      isFullFetch: !res.isLightFallback
     };
     for (const row of compactRows) {
       const exactKey = row.team.toLowerCase().trim();
@@ -346,16 +655,19 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
     }
   }
 
+  const hasLiveSoccerStats = results.some((r) => !r.isFallback);
   cachedTopPayload = {
-    ok: true,
-    source: "SoccerSTATS.com Run-In Analysis",
+    ok: results.length > 0,
+    source: hasLiveSoccerStats ? "SoccerSTATS.com Run-In Analysis" : "ESPN Schedule Run-In Engine (SoccerSTATS Formula)",
     fetchedAt: new Date().toISOString(),
     leaguesCount: results.length,
     leagues: SOCCERSTATS_LEAGUES,
     leagueTables,
     teamsIndex
   };
-  cachedTopExpiresAt = Date.now() + CACHE_TTL_MS;
+  if (results.length > 0) {
+    cachedTopExpiresAt = Date.now() + (hasLiveSoccerStats ? CACHE_TTL_MS : ESPN_BATCH_FALLBACK_TTL_MS);
+  }
   return cachedTopPayload;
 }
 
@@ -393,5 +705,6 @@ module.exports = async function handler(req, res) {
 };
 
 module.exports.fetchLeagueRunin = fetchLeagueRunin;
+module.exports.fetchEspnRuninFallback = fetchEspnRuninFallback;
 module.exports.fetchTopLeaguesRunin = fetchTopLeaguesRunin;
 module.exports.SOCCERSTATS_LEAGUES = SOCCERSTATS_LEAGUES;

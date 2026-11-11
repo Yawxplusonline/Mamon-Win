@@ -121,10 +121,32 @@ window.MAMON_REALTIME = (() => {
   const weatherInFlight = new Map();
 
   // ============ SOCCERSTATS.COM RUN-IN ANALYSIS STORE ============
+  const DEFAULT_RUNIN_LEAGUES = [
+    { code: "england", espnCode: "eng.1", mamonSlug: "england-premier-league", name: "Premier League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "spain", espnCode: "esp.1", mamonSlug: "spain-la-liga", name: "La Liga", country: "Spain", flag: "🇪🇸" },
+    { code: "italy", espnCode: "ita.1", mamonSlug: "italy-serie-a", name: "Serie A", country: "Italy", flag: "🇮🇹" },
+    { code: "germany", espnCode: "ger.1", mamonSlug: "germany-bundesliga", name: "Bundesliga", country: "Germany", flag: "🇩🇪" },
+    { code: "france", espnCode: "fra.1", mamonSlug: "france-ligue-1", name: "Ligue 1", country: "France", flag: "🇫🇷" },
+    { code: "cleague", espnCode: "uefa.champions", mamonSlug: "uefa-champions-league", name: "UEFA Champions League", country: "Europe", flag: "🇪🇺" },
+    { code: "eleague", espnCode: "uefa.europa", mamonSlug: "uefa-europa-league", name: "UEFA Europa League", country: "Europe", flag: "🇪🇺" },
+    { code: "cfleague", espnCode: "uefa.europa.conf", mamonSlug: "uefa-conference-league", name: "UEFA Conference League", country: "Europe", flag: "🇪🇺" },
+    { code: "england2", espnCode: "eng.2", mamonSlug: "england-championship", name: "Championship", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "netherlands", espnCode: "ned.1", mamonSlug: "netherlands-eredivisie", name: "Eredivisie", country: "Netherlands", flag: "🇳🇱" },
+    { code: "portugal", espnCode: "por.1", mamonSlug: "portugal-primeira-liga", name: "Liga Portugal", country: "Portugal", flag: "🇵🇹" },
+    { code: "turkey", espnCode: "tur.1", mamonSlug: "turkey-super-lig", name: "Süper Lig", country: "Turkey", flag: "🇹🇷" },
+    { code: "belgium", espnCode: "bel.1", mamonSlug: "belgium-first-division-a", name: "Pro League", country: "Belgium", flag: "🇧🇪" },
+    { code: "scotland", espnCode: "sco.1", mamonSlug: "scotland-premiership", name: "Scottish Premiership", country: "Scotland", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" },
+    { code: "germany2", espnCode: "ger.2", mamonSlug: "germany-2-bundesliga", name: "2. Bundesliga", country: "Germany", flag: "🇩🇪" },
+    { code: "spain2", espnCode: "esp.2", mamonSlug: "spain-segunda-division", name: "LaLiga 2", country: "Spain", flag: "🇪🇸" },
+    { code: "italy2", espnCode: "ita.2", mamonSlug: "italy-serie-b", name: "Serie B", country: "Italy", flag: "🇮🇹" },
+    { code: "france2", espnCode: "fra.2", mamonSlug: "france-ligue-2", name: "Ligue 2", country: "France", flag: "🇫🇷" },
+    { code: "brazil", espnCode: "bra.1", mamonSlug: "brazil-serie-a", name: "Brazil Serie A", country: "Brazil", flag: "🇧🇷" },
+    { code: "argentina", espnCode: "arg.1", mamonSlug: "argentina-liga-profesional", name: "Liga Profesional", country: "Argentina", flag: "🇦🇷" }
+  ];
   const runinLeagueCache = new Map();
   const runinTeamsMap = new Map();
   const runinTeamsNormalizedMap = new Map();
-  let runinCatalog = [];
+  let runinCatalog = [...DEFAULT_RUNIN_LEAGUES];
   let runinTopSynced = false;
   let runinTopPromise = null;
 
@@ -212,11 +234,14 @@ window.MAMON_REALTIME = (() => {
         const json = await res.json();
         if (!json?.ok) return null;
 
-        if (Array.isArray(json.leagues)) runinCatalog = json.leagues;
+        if (Array.isArray(json.leagues) && json.leagues.length > 0) runinCatalog = json.leagues;
         if (json.leagueTables && typeof json.leagueTables === "object") {
           for (const [code, tblObj] of Object.entries(json.leagueTables)) {
+            if (!tblObj || !Array.isArray(tblObj.table) || tblObj.table.length === 0) continue;
             runinLeagueCache.set(code, tblObj);
-            if (Array.isArray(tblObj.table)) ingestRuninRows(tblObj.table);
+            if (tblObj.league?.espnCode) runinLeagueCache.set(tblObj.league.espnCode, tblObj);
+            if (tblObj.league?.mamonSlug) runinLeagueCache.set(tblObj.league.mamonSlug, tblObj);
+            ingestRuninRows(tblObj.table);
           }
         }
         if (json.teamsIndex && typeof json.teamsIndex === "object") {
@@ -235,6 +260,87 @@ window.MAMON_REALTIME = (() => {
     return runinTopPromise;
   }
 
+  function findRuninLeagueMeta(leagueParam) {
+    const q = String(leagueParam || "england").trim().toLowerCase();
+    const pool = runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES;
+    return (
+      pool.find(
+        (l) =>
+          String(l.code || "").toLowerCase() === q ||
+          String(l.espnCode || "").toLowerCase() === q ||
+          String(l.mamonSlug || "").toLowerCase() === q ||
+          String(l.name || "").toLowerCase() === q
+      ) || { code: q, espnCode: q.includes(".") ? q : "", mamonSlug: q, name: q.toUpperCase(), country: "" }
+    );
+  }
+
+  async function fetchClientEspnRuninFallback(leagueParam) {
+    const meta = findRuninLeagueMeta(leagueParam);
+    const espnCode = meta.espnCode || slugToEspnCode.get(leagueParam) || slugToEspnCode.get(meta.mamonSlug) || "";
+    if (!espnCode) return null;
+    try {
+      const stRes = await fetchJson(`https://site.api.espn.com/apis/v2/sports/soccer/${espnCode}/standings`, 5500);
+      const children = stRes?.children || [];
+      const entries = [];
+      for (const ch of children) {
+        if (Array.isArray(ch?.standings?.entries)) entries.push(...ch.standings.entries);
+      }
+      if (entries.length === 0 && Array.isArray(stRes?.standings?.entries)) {
+        entries.push(...stRes.standings.entries);
+      }
+      if (entries.length === 0) return null;
+
+      const slug = meta.mamonSlug || espnCode;
+      const seen = new Set();
+      entries.forEach((entry, idx) => {
+        const tid = String(entry?.team?.id || "").trim();
+        const teamDisplayName = String(entry?.team?.displayName || entry?.team?.name || "").trim();
+        if (!tid || !teamDisplayName || seen.has(tid)) return;
+        seen.add(tid);
+        const stMap = new Map((entry.stats || []).map((s) => [s.abbreviation || s.name, s.value]));
+        const mp = stMap.get("GP") ?? stMap.get("gamesPlayed") ?? 0;
+        const w = stMap.get("W") ?? stMap.get("wins") ?? 0;
+        const d = stMap.get("D") ?? stMap.get("ties") ?? 0;
+        const l = stMap.get("L") ?? stMap.get("losses") ?? 0;
+        const gf = stMap.get("F") ?? stMap.get("pointsFor") ?? 0;
+        const ga = stMap.get("A") ?? stMap.get("pointsAgainst") ?? 0;
+        const gdVal = stMap.get("GD") ?? stMap.get("pointDifferential") ?? (gf - ga);
+        const pts = stMap.get("P") ?? stMap.get("points") ?? (w * 3 + d);
+        const rank = stMap.get("R") ?? stMap.get("rank") ?? seen.size;
+        const rc = stMap.get("RC") ?? stMap.get("redCards") ?? 0;
+        const ppg = mp > 0 ? Math.round((pts / mp) * 100) / 100 : 0;
+        standingsByTeamId.set(`${slug}:${tid}`, {
+          rank, mp, w, d, l, gf, ga, gd: gdVal, pts, ppg, rc,
+          teamName: teamDisplayName,
+          shortName: String(entry.team?.shortDisplayName || entry.team?.abbreviation || "").trim(),
+          espnCode,
+          leagueSlug: slug,
+          isUEFA: espnCode.startsWith("uefa.")
+        });
+      });
+
+      const fb = buildFallbackRuninTable(meta.code || leagueParam, []);
+      if (fb?.ok && fb.table.length > 0) {
+        const record = {
+          ...fb,
+          isFullFetch: true,
+          source: "ESPN Standings Run-In Engine (SoccerSTATS Formula)",
+          fetchedAt: new Date().toISOString(),
+          league: { ...meta, code: meta.code || leagueParam },
+          leagues: runinCatalog
+        };
+        if (meta.code) runinLeagueCache.set(meta.code, record);
+        if (espnCode) runinLeagueCache.set(espnCode, record);
+        if (slug) runinLeagueCache.set(slug, record);
+        ingestRuninRows(record.table);
+        return record;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   async function fetchLeagueRuninData(leagueParam = "england", force = false) {
     const key = String(leagueParam || "england").trim().toLowerCase();
     const cached = runinLeagueCache.get(key);
@@ -244,32 +350,36 @@ window.MAMON_REALTIME = (() => {
     }
     try {
       const res = await fetch(`/api/runin?league=${encodeURIComponent(key)}${force ? "&refresh=1" : ""}`, { cache: "no-store" });
-      if (!res.ok) return cached || null;
-      const json = await res.json();
-      if (json?.ok && Array.isArray(json.table)) {
-        const record = {
-          ok: true,
-          isFullFetch: true,
-          source: json.source,
-          sourceUrl: json.sourceUrl,
-          fetchedAt: json.fetchedAt,
-          league: json.league,
-          summary: json.summary,
-          table: json.table,
-          leagues: json.leagues || runinCatalog
-        };
-        if (Array.isArray(json.leagues)) runinCatalog = json.leagues;
-        if (json.league?.code) runinLeagueCache.set(json.league.code, record);
-        if (json.league?.espnCode) runinLeagueCache.set(json.league.espnCode, record);
-        if (json.league?.mamonSlug) runinLeagueCache.set(json.league.mamonSlug, record);
-        runinLeagueCache.set(key, record);
-        ingestRuninRows(json.table);
-        return record;
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.ok && Array.isArray(json.table) && json.table.length > 0) {
+          const record = {
+            ok: true,
+            isFullFetch: !json.isLightFallback,
+            isFallback: Boolean(json.isFallback),
+            source: json.source,
+            sourceUrl: json.sourceUrl,
+            fetchedAt: json.fetchedAt,
+            league: json.league,
+            summary: json.summary,
+            table: json.table,
+            leagues: (Array.isArray(json.leagues) && json.leagues.length > 0) ? json.leagues : runinCatalog
+          };
+          if (Array.isArray(json.leagues) && json.leagues.length > 0) runinCatalog = json.leagues;
+          if (json.league?.code) runinLeagueCache.set(json.league.code, record);
+          if (json.league?.espnCode) runinLeagueCache.set(json.league.espnCode, record);
+          if (json.league?.mamonSlug) runinLeagueCache.set(json.league.mamonSlug, record);
+          runinLeagueCache.set(key, record);
+          ingestRuninRows(json.table);
+          return record;
+        }
       }
-      return cached || null;
-    } catch (e) {
-      return cached || null;
+    } catch {
+      // Fall through to client ESPN standings fallback
     }
+    const clientFb = await fetchClientEspnRuninFallback(key);
+    if (clientFb?.ok) return clientFb;
+    return cached || null;
   }
 
   function findLiveSoccerStatsTeam(teamName, leagueSlugOrCode) {
@@ -2404,11 +2514,16 @@ window.MAMON_REALTIME = (() => {
             const rc = stMap.get("RC") ?? stMap.get("redCards") ?? 0;
             const ppg = mp > 0 ? Math.round((pts / mp) * 100) / 100 : 0;
 
+            const teamDisplayName = String(entry.team?.displayName || entry.team?.name || "Club").trim();
+            const teamShortName = String(entry.team?.shortDisplayName || entry.team?.abbreviation || "").trim();
+
             const existingSt = standingsByTeamId.get(tid);
             const isDomestic = !lgMeta.code.startsWith("uefa.");
             if (!existingSt || (isDomestic && existingSt.isUEFA) || (!existingSt.isUEFA && mp > existingSt.mp)) {
               standingsByTeamId.set(tid, {
                 rank, mp, w, d, l, gf, ga, gd: gdVal, pts, ppg, rc,
+                teamName: teamDisplayName,
+                shortName: teamShortName,
                 espnCode: lgMeta.code,
                 leagueSlug: lgMeta.slug,
                 isUEFA: !isDomestic
@@ -2416,6 +2531,8 @@ window.MAMON_REALTIME = (() => {
             }
             standingsByTeamId.set(`${lgMeta.slug}:${tid}`, {
               rank, mp, w, d, l, gf, ga, gd: gdVal, pts, ppg, rc,
+              teamName: teamDisplayName,
+              shortName: teamShortName,
               espnCode: lgMeta.code,
               leagueSlug: lgMeta.slug,
               isUEFA: !isDomestic
@@ -3778,61 +3895,96 @@ window.MAMON_REALTIME = (() => {
 
   function buildFallbackRuninTable(leagueCode = "england", matches = []) {
     const code = String(leagueCode || "england").toLowerCase();
-    const codeToSlug = {
-      england: "england-premier-league",
-      spain: "spain-la-liga",
-      italy: "italy-serie-a",
-      germany: "germany-bundesliga",
-      france: "france-ligue-1",
-      cleague: "uefa-champions-league",
-      eleague: "uefa-europa-league",
-      netherlands: "netherlands-eredivisie",
-      portugal: "portugal-primeira-liga",
-      turkey: "turkey-super-lig",
-      belgium: "belgium-first-division-a",
-      scotland: "scotland-premiership",
-      england2: "england-championship"
-    };
-    const slug = codeToSlug[code] || code;
+    const meta = findRuninLeagueMeta(code);
+    const slug = meta.mamonSlug || code;
+    const espnCode = meta.espnCode || slugToEspnCode.get(slug) || code;
     const rowsMap = new Map();
 
     // Seed from standingsByTeamId first if hydrated
+    const standingsPool = [];
     for (const [k, st] of standingsByTeamId.entries()) {
       if (!k.includes(":")) continue;
-      if (st.leagueSlug !== slug && st.espnCode !== code) continue;
-      const teamName = st.teamName || st.shortName || st.name || "";
+      if (st.leagueSlug !== slug && st.espnCode !== espnCode && st.espnCode !== code) continue;
+      const tid = k.split(":")[1];
+      const teamName = st.teamName || st.shortName || st.name || DATA.TEAMS?.[`espn-${tid}`]?.name || "";
       if (!teamName || rowsMap.has(teamName)) continue;
       const gp = Math.max(1, st.mp || 10);
-      const ppg = Math.round(((st.pts || 0) / gp) * 100) / 100;
-      const rank = st.rank || rowsMap.size + 1;
-      const playedPpg = Math.round(clamp(1.38 - (rank <= 6 ? 0.14 : rank >= 15 ? -0.10 : 0.02), 0.90, 1.85) * 100) / 100;
-      const remainingPpg = Math.round(clamp(1.34 + (rank <= 6 ? 0.08 : rank >= 15 ? -0.06 : 0.01), 0.90, 1.85) * 100) / 100;
-      const diffPct = Math.round(((playedPpg - remainingPpg) / playedPpg) * 100);
-      rowsMap.set(teamName, {
+      const pts = st.pts || 0;
+      const ppg = Math.round((pts / gp) * 100) / 100;
+      const rank = st.rank || standingsPool.length + 1;
+      const rec = {
         rank,
         team: teamName,
         teamNormalized: normalizeRuninTeamKey(teamName),
-        leagueCode: code,
+        leagueCode: meta.code || code,
+        espnCode,
         gp,
         w: st.w || 0,
         d: st.d || 0,
         l: st.l || 0,
-        pts: st.pts || 0,
+        pts,
         ppg,
-        playedPpg,
-        remainingPpg,
-        remainingBarPct: Math.min(100, Math.round((remainingPpg / 2.2) * 100)),
-        diffPct,
-        diffLabel: `${diffPct > 0 ? "+" : ""}${diffPct}%`,
-        verdict: diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED",
-        playedOpponents: [],
-        remainingOpponents: []
-      });
+        homePpg: clamp(Math.round((ppg + 0.16) * 100) / 100, 0.25, 2.85),
+        awayPpg: clamp(Math.round((ppg - 0.16) * 100) / 100, 0.25, 2.85)
+      };
+      standingsPool.push(rec);
+      rowsMap.set(teamName, rec);
+    }
+
+    if (standingsPool.length > 0) {
+      standingsPool.sort((a, b) => a.rank - b.rank || b.ppg - a.ppg);
+      for (const rec of standingsPool) {
+        const others = standingsPool.filter((t) => t.team !== rec.team);
+        const startIdx = (rec.rank - 1) % Math.max(1, others.length);
+        const rotated = others.map((_, i) => others[(startIdx + i) % others.length]);
+        const playedTarget = Math.min(rec.gp, Math.max(1, rotated.length - 1));
+        const playedOpponents = rotated.slice(0, playedTarget).map((opp, idx) => {
+          const venue = idx % 2 === 0 ? "H" : "A";
+          const oppVenuePpg = venue === "H" ? opp.awayPpg : opp.homePpg;
+          return {
+            venue,
+            opponent: opp.team,
+            oppVenuePpg,
+            label: `(${venue}) ${venue === "H" ? "vs" : "at"} ${opp.team}`,
+            ppgLabel: `PPG ${venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+          };
+        });
+        const remSlice = rotated.length > playedTarget ? rotated.slice(playedTarget) : [...rotated].reverse();
+        const remainingOpponents = remSlice.slice(0, Math.max(4, remSlice.length)).map((opp, idx) => {
+          const venue = idx % 2 === 0 ? "A" : "H";
+          const oppVenuePpg = venue === "H" ? opp.awayPpg : opp.homePpg;
+          return {
+            venue,
+            opponent: opp.team,
+            oppVenuePpg,
+            label: `(${venue}) ${venue === "H" ? "vs" : "at"} ${opp.team}`,
+            ppgLabel: `PPG ${venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+          };
+        });
+        const playedPpg = playedOpponents.length > 0
+          ? Math.round((playedOpponents.reduce((s, x) => s + x.oppVenuePpg, 0) / playedOpponents.length) * 100) / 100
+          : 1.34;
+        const remainingPpg = remainingOpponents.length > 0
+          ? Math.round((remainingOpponents.reduce((s, x) => s + x.oppVenuePpg, 0) / remainingOpponents.length) * 100) / 100
+          : 1.32;
+        const diffPct = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
+        rowsMap.set(rec.team, {
+          ...rec,
+          playedPpg,
+          remainingPpg,
+          remainingBarPct: Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10),
+          diffPct,
+          diffLabel: `${diffPct > 0 ? "+" : ""}${diffPct}%`,
+          verdict: diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED",
+          playedOpponents,
+          remainingOpponents
+        });
+      }
     }
 
     // Or extract teams from live matches belonging to that league
     if (rowsMap.size === 0 && Array.isArray(matches)) {
-      const leagueMatches = matches.filter((m) => (m.leagueSlug || "").toLowerCase() === slug || (m.espnLeagueCode || "").toLowerCase() === code);
+      const leagueMatches = matches.filter((m) => (m.leagueSlug || "").toLowerCase() === slug || (m.espnLeagueCode || "").toLowerCase() === espnCode || (m.espnLeagueCode || "").toLowerCase() === code);
       for (const m of leagueMatches) {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
         const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name;
@@ -3888,8 +4040,8 @@ window.MAMON_REALTIME = (() => {
     return {
       ok: table.length > 0,
       isFallback: true,
-      source: "Venue-Weighted Formula",
-      league: { code, name: codeToMeta.get(code)?.name || leagueBySlug.get(slug)?.name || code.toUpperCase(), country: "" },
+      source: "ESPN Standings Run-In Formula",
+      league: { code: meta.code || code, name: meta.name || codeToMeta.get(espnCode)?.name || leagueBySlug.get(slug)?.name || code.toUpperCase(), country: meta.country || "" },
       table
     };
   }
@@ -3909,7 +4061,7 @@ window.MAMON_REALTIME = (() => {
     getLeagueRuninCached,
     buildFallbackRuninTable,
     lookupTeamRunin,
-    getRuninCatalog: () => runinCatalog,
+    getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),
     slugToEspnCode
   };
 })();

@@ -166,8 +166,8 @@
   let isLoadingBookmakers = true;
   const runinLeagueCacheClient = new Map();
   const runinAttemptedCodes = new Set();
+  const runinLoadingCodes = new Set();
   let runinCatalogClient = [];
-  let isLoadingRuninView = false;
   let expandedRuninTeam = null;
 
   async function loadRuninLeague(leagueCode, force = false) {
@@ -181,10 +181,10 @@
       if (state.route === "/run-in") renderMainContent();
       return existing;
     }
-    if (isLoadingRuninView && runinAttemptedCodes.has(code)) return existing || null;
+    if (runinLoadingCodes.has(code)) return existing || null;
 
     runinAttemptedCodes.add(code);
-    isLoadingRuninView = true;
+    runinLoadingCodes.add(code);
     if (state.route === "/run-in") renderMainContent();
     try {
       const data = RT?.fetchLeagueRuninData
@@ -197,20 +197,20 @@
         return data;
       }
       const fb = RT?.buildFallbackRuninTable ? RT.buildFallbackRuninTable(code, liveMatches) : null;
-      if (fb?.ok) {
+      if (fb?.ok && Array.isArray(fb.table) && fb.table.length > 0) {
         runinLeagueCacheClient.set(code, fb);
         return fb;
       }
       return data || null;
     } catch {
       const fb = RT?.buildFallbackRuninTable ? RT.buildFallbackRuninTable(code, liveMatches) : null;
-      if (fb?.ok) {
+      if (fb?.ok && Array.isArray(fb.table) && fb.table.length > 0) {
         runinLeagueCacheClient.set(code, fb);
         return fb;
       }
       return null;
     } finally {
-      isLoadingRuninView = false;
+      runinLoadingCodes.delete(code);
       if (state.route === "/run-in" || state.route === "/") renderMainContent();
     }
   }
@@ -280,7 +280,14 @@
     if (h === "/power-picks" || h === "/strong-teams-today") return "/strong-teams";
     if (h === "/worst-teams-today") return "/worst-teams";
     if (h === "/ppg-intelligence" || h === "/points-per-game") return "/ppg";
-    if (h === "/runin" || h === "/run-in-analysis" || h.startsWith("/run-in?")) return "/run-in";
+    if (h === "/runin" || h === "/run-in-analysis" || h.startsWith("/run-in?") || h.startsWith("/runin?")) {
+      if (h.includes("?")) {
+        const q = new URLSearchParams(h.split("?")[1]);
+        if (q.get("league")) state.activeRuninLeague = q.get("league").toLowerCase();
+        if (q.get("filter")) state.activeRuninFilter = q.get("filter").toUpperCase();
+      }
+      return "/run-in";
+    }
     if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
@@ -2340,35 +2347,57 @@
     `;
   }
 
-  // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
-  function renderRunInAnalysisView() {
-    const activeCode = String(state.activeRuninLeague || "england").toLowerCase();
-    const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
-    const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
-    const leagueData = cachedLive || (runinAttemptedCodes.has(activeCode) ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches) : null);
+  const RUNIN_QUICK_LEAGUES = [
+    { code: "england", label: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "spain", label: "La Liga", flag: "🇪🇸" },
+    { code: "italy", label: "Serie A", flag: "🇮🇹" },
+    { code: "germany", label: "Bundesliga", flag: "🇩🇪" },
+    { code: "france", label: "Ligue 1", flag: "🇫🇷" },
+    { code: "cleague", label: "Champions League", flag: "🇪🇺" },
+    { code: "eleague", label: "Europa League", flag: "🇪🇺" },
+    { code: "england2", label: "Championship", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "netherlands", label: "Eredivisie", flag: "🇳🇱" },
+    { code: "portugal", label: "Liga Portugal", flag: "🇵🇹" },
+    { code: "turkey", label: "Süper Lig", flag: "🇹🇷" },
+    { code: "belgium", label: "Pro League", flag: "🇧🇪" },
+    { code: "scotland", label: "Premiership", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" }
+  ];
 
-    // Kick off fetch lazily only once per code unless forced by user
-    if ((!cachedLive || !cachedLive.isFullFetch) && !isLoadingRuninView && !runinAttemptedCodes.has(activeCode)) {
+  function resolveRuninStateForCode(code) {
+    const activeCode = String(code || "england").toLowerCase();
+    const isLoadingThisLeague = runinLoadingCodes.has(activeCode);
+    const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
+    const hasCachedRows = Boolean(cachedLive && Array.isArray(cachedLive.table) && cachedLive.table.length > 0);
+    const fallbackData = !hasCachedRows && runinAttemptedCodes.has(activeCode)
+      ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches)
+      : null;
+    const leagueData = hasCachedRows ? cachedLive : (fallbackData?.ok && fallbackData.table?.length > 0 ? fallbackData : null);
+
+    if ((!cachedLive || !cachedLive.isFullFetch || !hasCachedRows) && !isLoadingThisLeague && !runinAttemptedCodes.has(activeCode)) {
       setTimeout(() => loadRuninLeague(activeCode, false), 0);
     }
 
-    const QUICK_LEAGUES = [
-      { code: "england", label: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
-      { code: "spain", label: "La Liga", flag: "🇪🇸" },
-      { code: "italy", label: "Serie A", flag: "🇮🇹" },
-      { code: "germany", label: "Bundesliga", flag: "🇩🇪" },
-      { code: "france", label: "Ligue 1", flag: "🇫🇷" },
-      { code: "cleague", label: "Champions League", flag: "🇪🇺" },
-      { code: "eleague", label: "Europa League", flag: "🇪🇺" },
-      { code: "england2", label: "Championship", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
-      { code: "netherlands", label: "Eredivisie", flag: "🇳🇱" },
-      { code: "portugal", label: "Liga Portugal", flag: "🇵🇹" },
-      { code: "turkey", label: "Süper Lig", flag: "🇹🇷" },
-      { code: "belgium", label: "Pro League", flag: "🇧🇪" },
-      { code: "scotland", label: "Premiership", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" }
-    ];
+    const rtCatalog = RT?.getRuninCatalog?.();
+    const catalog =
+      (Array.isArray(runinCatalogClient) && runinCatalogClient.length > 0 ? runinCatalogClient : null) ||
+      (Array.isArray(rtCatalog) && rtCatalog.length > 0 ? rtCatalog : null) ||
+      (Array.isArray(leagueData?.leagues) && leagueData.leagues.length > 0 ? leagueData.leagues : null) ||
+      RUNIN_QUICK_LEAGUES.map((q) => ({ code: q.code, name: q.label, country: "", flag: q.flag }));
 
-    const catalog = (runinCatalogClient.length > 0 ? runinCatalogClient : RT?.getRuninCatalog?.()) || leagueData?.leagues || QUICK_LEAGUES.map((q) => ({ code: q.code, name: q.label, country: "", flag: q.flag }));
+    const quickMatch = RUNIN_QUICK_LEAGUES.find((q) => q.code === activeCode);
+    const catMatch = catalog.find((l) => String(l.code || "").toLowerCase() === activeCode);
+    const leagueMeta = leagueData?.league || catMatch || (quickMatch
+      ? { code: quickMatch.code, name: quickMatch.label, country: "", flag: quickMatch.flag }
+      : { code: activeCode, name: activeCode.toUpperCase(), country: "", flag: "⚽" });
+
+    return { activeCode, isLoadingThisLeague, leagueData, catalog, leagueMeta };
+  }
+
+  // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
+  function renderRunInAnalysisView() {
+    const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
+    const { activeCode, isLoadingThisLeague, leagueData, catalog, leagueMeta } = resolveRuninStateForCode(state.activeRuninLeague || "england");
+    const QUICK_LEAGUES = RUNIN_QUICK_LEAGUES;
     const rawRows = leagueData?.table || [];
 
     const favorableRows = rawRows.filter((r) => r.diffPct > 0);
@@ -2389,7 +2418,6 @@
     const strongPpgLock = [...strongPpgEasyRows].sort((a, b) => (b.ppg * 100 + b.diffPct) - (a.ppg * 100 + a.diffPct))[0]
       || [...rawRows].filter((r) => r.ppg >= 1.60).sort((a, b) => b.diffPct - a.diffPct)[0];
 
-    const leagueMeta = leagueData?.league || catalog.find((l) => l.code === activeCode) || { name: "Premier League", country: "England", flag: "⚽" };
     const summaryInfo = leagueData?.summary;
 
     const highlightsHtml = rawRows.length === 0 ? "" : `
@@ -2544,14 +2572,16 @@
       <section class="panel">
         <div class="panel-header">
           <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
-          <span class="count">${isLoadingRuninView ? "Syncing live from SoccerSTATS..." : `${filteredRows.length} Teams · Click any row for opponent PPG breakdown`}</span>
+          <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Teams · Click any row for opponent PPG breakdown`}</span>
         </div>
         ${
-          isLoadingRuninView && rawRows.length === 0
+          isLoadingThisLeague && rawRows.length === 0
             ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD) vs. Remaining Opponents PPG (REM).</p></div>`
-            : filteredRows.length === 0
-              ? `<div class="empty-state"><h3>No teams match current Run-In filter</h3><p class="text-sm">Switch to All Teams above or pick another active league.</p></div>`
-              : `<div class="runin-table-wrap">
+            : rawRows.length === 0
+              ? `<div class="empty-state"><h3>Could not load Run-In table for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry below to pull live Run-In fixtures and venue-weighted PPG.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
+              : filteredRows.length === 0
+                ? `<div class="empty-state"><h3>No teams match current Run-In filter</h3><p class="text-sm">Switch to All Teams above or pick another active league.</p></div>`
+                : `<div class="runin-table-wrap">
                   <table class="runin-table">
                     <thead>
                       <tr>
@@ -2843,16 +2873,9 @@
   }
 
   function renderHomeRunInCard() {
-    const activeCode = String(state.activeRuninLeague || "england").toLowerCase();
-    const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
-    const leagueData = cachedLive || (runinAttemptedCodes.has(activeCode) ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches) : null);
-
-    if ((!cachedLive || !Array.isArray(cachedLive.table) || cachedLive.table.length === 0) && !isLoadingRuninView && !runinAttemptedCodes.has(activeCode)) {
-      setTimeout(() => loadRuninLeague(activeCode, false), 0);
-    }
-
+    const { activeCode, isLoadingThisLeague, leagueData, leagueMeta } = resolveRuninStateForCode(state.activeRuninLeague || "england");
     const rows = leagueData?.table || [];
-    const leagueName = leagueData?.league?.name || "Premier League";
+    const leagueName = leagueMeta?.name || "Premier League";
     const easiestList = [...rows].sort((a, b) => b.diffPct - a.diffPct).slice(0, 3);
     const toughestList = [...rows].sort((a, b) => a.diffPct - b.diffPct).slice(0, 3);
     const previewRows = rows.slice(0, 6);
@@ -2872,7 +2895,7 @@
         <div class="p-3">
           ${
             rows.length === 0
-              ? `<div class="text-xs text-muted font-mono py-3 text-center">Syncing live SoccerSTATS.com Run-In Analysis (${escapeHtml(leagueName)})... <a href="/run-in" data-route="/run-in" style="color:#3B82F6;text-decoration:underline;font-weight:700;">Open Run-In Engine &rarr;</a></div>`
+              ? `<div class="text-xs text-muted font-mono py-3 text-center">${isLoadingThisLeague ? `Syncing live Run-In Analysis (${escapeHtml(leagueName)})...` : `Run-In table not loaded (${escapeHtml(leagueName)}).`} <button type="button" data-runin-refresh="1" class="btn-subtle text-xs ml-2" style="color:#3B82F6;font-weight:700;">Sync Now</button> <a href="/run-in" data-route="/run-in" style="color:#3B82F6;text-decoration:underline;font-weight:700;margin-left:8px;">Open Run-In Engine &rarr;</a></div>`
               : `
                 <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 12px;">
                   ${easiestList.slice(0, 2).map((r) => `
@@ -5563,6 +5586,9 @@
 
   window.addEventListener("hashchange", () => {
     state.route = getRouteFromHash();
+    if (state.route === "/run-in") {
+      loadRuninLeague(state.activeRuninLeague || "england");
+    }
     renderAll();
   });
 

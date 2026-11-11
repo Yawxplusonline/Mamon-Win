@@ -55,7 +55,6 @@
       activeWorstFilter: "ALL", // ALL | WORST_HOME | WORST_AWAY
       activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY (backwards compatible)
       activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
-      activeAccurateFilter: "ALL", // ALL | SINGLE | DOUBLE | TREBLE | DOUBLE_CHANCE | GOALS
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
@@ -164,7 +163,7 @@
     if (h === "/worst-teams-today") return "/worst-teams";
     if (h === "/ppg-intelligence" || h === "/points-per-game") return "/ppg";
     if (h === "/drops") return "/dropping-odds";
-    if (h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/accurate-odds";
+    if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
     if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips") return "/special-tips";
     return h;
@@ -172,17 +171,14 @@
 
   function navigate(route, push = true) {
     if (!route.startsWith("/")) route = "/" + route;
+    if (route.startsWith("/accurate-odds") || route.startsWith("/accurate-winning-odds") || route === "/banker-of-the-day") {
+      route = "/sure-odds";
+    }
     if (route.startsWith("/sure-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("tier")) state.activeSureTier = q.get("tier");
       route = "/sure-odds";
     }
-    if (route.startsWith("/accurate-odds?")) {
-      const q = new URLSearchParams(route.split("?")[1]);
-      if (q.get("filter")) state.activeAccurateFilter = q.get("filter").toUpperCase();
-      route = "/accurate-odds";
-    }
-    if (route === "/accurate-winning-odds" || route === "/banker-of-the-day") route = "/accurate-odds";
     if (route.startsWith("/handicap?") || route.startsWith("/value-bets?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("filter")) state.activeHandicapFilter = q.get("filter").toUpperCase();
@@ -1393,7 +1389,7 @@
             .join("")}
         </div>
         <div class="btn-group">
-          <a class="btn-full" href="/accurate-odds" data-route="/accurate-odds" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#050b14;font-weight:800;border:none;">👑 Accurate Winning Odds</a>
+          <a class="btn-full" href="/special-tips" data-route="/special-tips" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#042f2e;font-weight:800;border:none;">⏱️ 5-Min Draw &amp; Def Tips</a>
           <a class="btn-full" href="/sure-odds" data-route="/sure-odds">Open Sure Odds Analyzer</a>
           <a class="btn-outline" href="/dropping-odds" data-route="/dropping-odds">📉 Dropping Odds Scanner</a>
           <a class="btn-outline" href="/ppg" data-route="/ppg">📊 PPG Intelligence &amp; Table</a>
@@ -2076,76 +2072,6 @@
     `;
   }
 
-  function renderHomeAccurateOddsCard() {
-    const accData = RT?.buildAccurateWinningOdds ? RT.buildAccurateWinningOdds(liveMatches, sureSlips, bookmakerScan) : null;
-    if (!accData || !accData.singleLock) return "";
-    const lock = accData.singleLock;
-    const dbl = accData.bankerDouble;
-    const trb = accData.bankerTreble;
-    const totalPicks = accData.allPicks?.length || 0;
-
-    return `
-      <section class="panel-section border-subtle" id="accurateOddsHomeCard" style="border: 2px solid rgba(245, 158, 11, 0.55); background: linear-gradient(145deg, var(--card) 0%, rgba(245, 158, 11, 0.04) 100%); border-radius: var(--radius-lg); margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.08);">
-        <div class="panel-header" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(245, 158, 11, 0.25); padding: 14px 18px;">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="accurate-crown-badge">👑 Accurate Winning Odds</span>
-            <span class="safeguard-shield-badge">🛡️ Never-Fail Multi-Outcome Safeguard</span>
-            <span class="font-mono text-xs text-muted">· Synthesized from All Sure Odds &amp; Scanners</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <a class="btn-subtle text-xs" href="/accurate-odds" data-route="/accurate-odds" style="font-weight:700;color:var(--brand);">Open Accurate Odds Engine &rarr;</a>
-          </div>
-        </div>
-        <div class="p-3">
-          <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px;">
-            <!-- #1 Banker Lock Tile -->
-            <a class="power-preview-tile is-strong" href="/accurate-odds?filter=SINGLE" data-route="/accurate-odds?filter=SINGLE" style="border-left: 3px solid #F59E0B; background: var(--ground);">
-              <div class="flex items-center justify-between gap-1 w-full">
-                <span class="tile-kicker font-bold" style="color:#F59E0B;">#1 BANKER LOCK OF THE DAY</span>
-                <span class="power-score-pill is-strong font-mono">${lock.safetyScore}% SAFE</span>
-              </div>
-              <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(lock.fixture)}</div>
-              <div class="text-xs font-mono font-bold mt-0.5" style="color:var(--brand);">${escapeHtml(lock.lockMarket)} @ ${Number(lock.lockOdd).toFixed(2)}</div>
-              <div class="text-xs text-muted truncate mt-1">SB #${escapeHtml(String(lock.sportybet?.gameId || "-"))} · FB #${escapeHtml(String(lock.footballCom?.gameId || "-"))} · ${lock.consensusCount} Cross-Checks</div>
-            </a>
-
-            <!-- 2X Banker Double Tile -->
-            ${dbl ? `
-            <a class="power-preview-tile" href="/accurate-odds?filter=DOUBLE" data-route="/accurate-odds?filter=DOUBLE" style="border-left: 3px solid var(--brand); background: var(--ground);">
-              <div class="flex items-center justify-between gap-1 w-full">
-                <span class="tile-kicker font-bold text-brand">2X BANKER DOUBLE</span>
-                <span class="power-score-pill font-mono bg-brand-soft text-brand">${dbl.totalOdds.toFixed(2)}x ODDS</span>
-              </div>
-              <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(dbl.legs[0]?.targetTeam || dbl.legs[0]?.fixture || "Leg 1")} + ${escapeHtml(dbl.legs[1]?.targetTeam || dbl.legs[1]?.fixture || "Leg 2")}</div>
-              <div class="text-xs text-muted truncate mt-0.5">2 Legs · ${dbl.combinedSafety}% Avg Safety Score</div>
-              <div class="text-xs font-mono text-muted truncate mt-1">Double Chance &amp; Goals Protected</div>
-            </a>` : ""}
-
-            <!-- 5X Banker Treble Tile -->
-            ${trb ? `
-            <a class="power-preview-tile" href="/accurate-odds?filter=TREBLE" data-route="/accurate-odds?filter=TREBLE" style="border-left: 3px solid #8B5CF6; background: var(--ground);">
-              <div class="flex items-center justify-between gap-1 w-full">
-                <span class="tile-kicker font-bold" style="color:#8B5CF6;">5X BANKER TREBLE</span>
-                <span class="power-score-pill font-mono" style="background:rgba(139,92,246,0.15);color:#A78BFA;">${trb.totalOdds.toFixed(2)}x ODDS</span>
-              </div>
-              <div class="font-bold text-sm truncate mt-1 w-full">3-Leg Multi-Outcome Fortress</div>
-              <div class="text-xs text-muted truncate mt-0.5">3 Matches · ${trb.combinedSafety}% Avg Safety</div>
-              <div class="text-xs font-mono text-muted truncate mt-1">SportyBet &amp; Football.com Game IDs</div>
-            </a>` : ""}
-
-            <!-- Full Audited Roster Tile -->
-            <a class="power-preview-tile" href="/accurate-odds" data-route="/accurate-odds" style="border-left: 3px solid var(--line-active); background: var(--ground); display:flex; flex-direction:column; justify-content:center; align-items:flex-start;">
-              <span class="tile-kicker font-bold text-text-secondary">ALL AUDITED FIXTURES</span>
-              <div class="font-bold text-base mt-1" style="color:var(--brand);">${totalPicks} Verified Safe Games</div>
-              <div class="text-xs text-muted mt-0.5">7-Stage Ironclad Safety Audit Passed</div>
-              <div class="text-xs font-semibold mt-2 text-brand">View All Accurate Odds &rarr;</div>
-            </a>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
   function renderHomeHandicapValueCard() {
     const handData = RT?.buildHandicapValueBets ? RT.buildHandicapValueBets(filteredMatchesForDate(), bookmakerScan) : null;
     if (!handData || !handData.allTips || handData.allTips.length === 0) return "";
@@ -2249,7 +2175,6 @@
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const heading = state.selectedDate === "UPCOMING_ALL" ? "Real-Time Live & Upcoming Matches" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`;
     return `
-      ${renderHomeAccurateOddsCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
       ${renderHomeSureOddsBanner()}
@@ -3002,377 +2927,6 @@
     `;
   }
 
-  function renderSingleLockFeaturedCard(lock) {
-    if (!lock) return "";
-    const sb = lock.sportybet;
-    const fb = lock.footballCom;
-    const sbCode = sb?.gameId || "-";
-    const fbCode = fb?.gameId || "-";
-
-    return `
-      <section class="accurate-single-lock-card" id="singleLockFeatured">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="accurate-crown-badge">👑 #1 BANKER LOCK OF THE DAY</span>
-            <span class="safeguard-shield-badge">🛡️ ${escapeHtml(lock.safeguardShield)}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="power-score-pill is-strong font-mono font-bold" style="font-size:12px;padding:4px 10px;">${lock.safetyScore}% IRONCLAD SAFETY</span>
-          </div>
-        </div>
-
-        <div class="flex items-start justify-between gap-4 flex-wrap mt-3">
-          <div class="flex-1 min-w-[260px]">
-            <div class="text-xs font-mono font-bold uppercase tracking-wider text-muted flex items-center gap-2">
-              <span>${escapeHtml(lock.league)}</span>
-              <span>·</span>
-              <span>${escapeHtml(lock.country)}</span>
-              <span>·</span>
-              <span>${escapeHtml(lock.kickoffUtc || lock.isoDate || "Today")}</span>
-            </div>
-            <h2 class="font-headline text-2xl font-black mt-1" style="color:var(--text); letter-spacing:-0.02em;">
-              ${escapeHtml(lock.fixture)}
-            </h2>
-            <div class="text-xs text-muted mt-1">Venue: <strong>${escapeHtml(lock.venue || "Stadium")}</strong> · Corroborated by <strong>${lock.consensusCount} Platform Engines</strong></div>
-          </div>
-
-          <div class="text-right flex flex-col items-end">
-            <div class="text-xs font-mono uppercase tracking-wider font-bold" style="color:#F59E0B;">Fortress Market Selection</div>
-            <div class="font-black font-mono text-xl md:text-2xl mt-0.5" style="color:var(--brand); background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.3); padding:4px 12px; border-radius:var(--radius-md);">
-              ${escapeHtml(lock.lockMarket)} @ ${Number(lock.lockOdd).toFixed(2)}
-            </div>
-          </div>
-        </div>
-
-        <!-- SportyBet & Football.com Game IDs & Booking Codes -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3" style="border-top:1px dashed var(--line-soft);">
-          <div class="flex items-center justify-between p-2 rounded-md bg-ground border border-line-soft">
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded bg-brand-soft text-brand">SportyBet</span>
-              <span class="font-mono text-xs">Game ID: <strong>#${escapeHtml(String(sbCode))}</strong></span>
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="font-mono text-xs font-bold text-brand">@ ${Number(sb?.odd || lock.lockOdd).toFixed(2)}</span>
-              ${sbCode !== "-" ? `<button type="button" class="btn-subtle text-xs" style="padding:2px 6px;" onclick="navigator.clipboard?.writeText('${sbCode}');this.innerText='Copied!';setTimeout(()=>this.innerText='Copy',1500)">Copy</button>` : ""}
-            </div>
-          </div>
-
-          <div class="flex items-center justify-between p-2 rounded-md bg-ground border border-line-soft">
-            <div class="flex items-center gap-2">
-              <span class="font-mono text-xs font-bold px-1.5 py-0.5 rounded" style="background:rgba(245,158,11,0.15);color:#D97706;">Football.com</span>
-              <span class="font-mono text-xs">Game ID: <strong>#${escapeHtml(String(fbCode))}</strong></span>
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="font-mono text-xs font-bold text-brand">@ ${Number(fb?.odd || lock.lockOdd).toFixed(2)}</span>
-              ${fbCode !== "-" ? `<button type="button" class="btn-subtle text-xs" style="padding:2px 6px;" onclick="navigator.clipboard?.writeText('${fbCode}');this.innerText='Copied!';setTimeout(()=>this.innerText='Copy',1500)">Copy</button>` : ""}
-            </div>
-          </div>
-        </div>
-
-        <!-- 4-Pillar Ironclad Proof -->
-        <div class="accurate-pillar-grid">
-          ${(lock.pillars || []).map(p => `
-            <div class="accurate-pillar">
-              <div class="pillar-title">${escapeHtml(p.title)}</div>
-              <div class="text-xs text-text-secondary leading-snug">${escapeHtml(p.text)}</div>
-            </div>
-          `).join("")}
-        </div>
-
-        <!-- Cross Section Verification Badges -->
-        <div class="flex items-center gap-2 flex-wrap mt-3 pt-3" style="border-top:1px solid var(--line-soft);">
-          <span class="text-xs text-muted font-mono">Consensus Proof:</span>
-          ${(lock.crossSectionTags || []).map(t => `
-            <span class="cross-section-tag">
-              <span class="tag-icon">${t.icon || "✓"}</span>
-              <span>${escapeHtml(t.name)}</span>
-              <span class="text-muted font-mono">(${escapeHtml(t.badge)})</span>
-            </span>
-          `).join("")}
-        </div>
-      </section>
-    `;
-  }
-
-  function renderAccurateSlipsContainer(dbl, trb) {
-    if (!dbl && !trb) return "";
-    return `
-      <div class="accurate-slip-container">
-        <!-- Banker Double Card -->
-        ${dbl ? `
-        <div class="accurate-slip-card border">
-          <div class="accurate-slip-header">
-            <div>
-              <span class="power-score-pill is-strong font-mono">${dbl.badge}</span>
-              <h3 class="font-headline font-bold text-base mt-1" style="color:var(--text);">${escapeHtml(dbl.title)}</h3>
-              <div class="text-xs text-muted mt-0.5">${escapeHtml(dbl.safeguardSummary)}</div>
-            </div>
-            <div class="text-right">
-              <div class="text-xs text-muted font-mono uppercase">Total Odds</div>
-              <div class="font-mono font-black text-2xl text-brand">${dbl.totalOdds.toFixed(2)}x</div>
-              <div class="text-xs font-mono font-bold text-muted">${dbl.combinedSafety}% Safety</div>
-            </div>
-          </div>
-
-          <div class="accurate-legs-list">
-            ${dbl.legs.map((l, i) => `
-              <div class="accurate-leg-row">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono text-xs font-bold text-brand">#${i+1}</span>
-                    <span class="font-bold text-xs truncate">${escapeHtml(l.fixture)}</span>
-                  </div>
-                  <div class="text-xs text-muted truncate mt-0.5">
-                    ${escapeHtml(l.league)} · SB #${escapeHtml(String(l.sportybet?.gameId || "-"))} · FB #${escapeHtml(String(l.footballCom?.gameId || "-"))}
-                  </div>
-                </div>
-                <div class="text-right shrink-0">
-                  <div class="font-mono font-bold text-xs text-brand">${escapeHtml(l.lockCode || l.lockMarket)}</div>
-                  <div class="font-mono text-xs font-bold text-text-secondary">@ ${Number(l.lockOdd).toFixed(2)}</div>
-                </div>
-              </div>
-            `).join("")}
-          </div>
-
-          <div class="flex items-center justify-between gap-2 pt-2 border-t border-line-soft">
-            <span class="text-xs font-mono text-muted">2-Game Accumulator Lock</span>
-            <button type="button" class="btn-subtle text-xs" onclick="
-              const text = 'ACCURATE 2X BANKER DOUBLE (${dbl.totalOdds.toFixed(2)}x)\\n' +
-                '${dbl.legs.map(l => l.fixture + ' -> ' + l.lockMarket + ' @ ' + l.lockOdd.toFixed(2) + ' (SB: #' + (l.sportybet?.gameId||'-') + ' | FB: #' + (l.footballCom?.gameId||'-') + ')').join('\\n')}';
-              navigator.clipboard?.writeText(text);
-              this.innerText='Copied Slip!';
-              setTimeout(()=>this.innerText='Copy 2X Slip', 1600);
-            ">Copy 2X Slip</button>
-          </div>
-        </div>
-        ` : ""}
-
-        <!-- Banker Treble Card -->
-        ${trb ? `
-        <div class="accurate-slip-card border">
-          <div class="accurate-slip-header">
-            <div>
-              <span class="power-score-pill font-mono" style="background:rgba(139,92,246,0.15);color:#A78BFA;">${trb.badge}</span>
-              <h3 class="font-headline font-bold text-base mt-1" style="color:var(--text);">${escapeHtml(trb.title)}</h3>
-              <div class="text-xs text-muted mt-0.5">${escapeHtml(trb.safeguardSummary)}</div>
-            </div>
-            <div class="text-right">
-              <div class="text-xs text-muted font-mono uppercase">Total Odds</div>
-              <div class="font-mono font-black text-2xl" style="color:#A78BFA;">${trb.totalOdds.toFixed(2)}x</div>
-              <div class="text-xs font-mono font-bold text-muted">${trb.combinedSafety}% Safety</div>
-            </div>
-          </div>
-
-          <div class="accurate-legs-list">
-            ${trb.legs.map((l, i) => `
-              <div class="accurate-leg-row">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono text-xs font-bold" style="color:#A78BFA;">#${i+1}</span>
-                    <span class="font-bold text-xs truncate">${escapeHtml(l.fixture)}</span>
-                  </div>
-                  <div class="text-xs text-muted truncate mt-0.5">
-                    ${escapeHtml(l.league)} · SB #${escapeHtml(String(l.sportybet?.gameId || "-"))} · FB #${escapeHtml(String(l.footballCom?.gameId || "-"))}
-                  </div>
-                </div>
-                <div class="text-right shrink-0">
-                  <div class="font-mono font-bold text-xs" style="color:#A78BFA;">${escapeHtml(l.lockCode || l.lockMarket)}</div>
-                  <div class="font-mono text-xs font-bold text-text-secondary">@ ${Number(l.lockOdd).toFixed(2)}</div>
-                </div>
-              </div>
-            `).join("")}
-          </div>
-
-          <div class="flex items-center justify-between gap-2 pt-2 border-t border-line-soft">
-            <span class="text-xs font-mono text-muted">3-Leg Multi-Outcome Accumulator</span>
-            <button type="button" class="btn-subtle text-xs" onclick="
-              const text = 'ACCURATE 5X BANKER TREBLE (${trb.totalOdds.toFixed(2)}x)\\n' +
-                '${trb.legs.map(l => l.fixture + ' -> ' + l.lockMarket + ' @ ' + l.lockOdd.toFixed(2) + ' (SB: #' + (l.sportybet?.gameId||'-') + ' | FB: #' + (l.footballCom?.gameId||'-') + ')').join('\\n')}';
-              navigator.clipboard?.writeText(text);
-              this.innerText='Copied Slip!';
-              setTimeout(()=>this.innerText='Copy 5X Slip', 1600);
-            ">Copy 5X Slip</button>
-          </div>
-        </div>
-        ` : ""}
-      </div>
-    `;
-  }
-
-  function renderAccuratePickCard(item, idx) {
-    const sb = item.sportybet;
-    const fb = item.footballCom;
-    const sbCode = sb?.gameId || "-";
-    const fbCode = fb?.gameId || "-";
-
-    return `
-      <article class="power-team-card" data-match-id="${item.id}" style="margin-bottom:12px;">
-        <div class="flex items-center justify-between gap-2 flex-wrap">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill bg-brand-soft text-brand">#${idx + 1} SAFE LOCK</span>
-            <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(item.league)} (${escapeHtml(item.country)})</span>
-            <span class="text-xs font-mono text-muted">· ${escapeHtml(item.kickoffUtc || item.isoDate || "Today")}</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <span class="safeguard-shield-badge">🛡️ ${escapeHtml(item.safeguardShield)}</span>
-            <span class="power-score-pill is-strong font-mono">${item.safetyScore}%</span>
-          </div>
-        </div>
-
-        <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
-          <div class="min-w-0 flex-1">
-            <h3 class="font-headline font-bold text-lg truncate">${escapeHtml(item.fixture)}</h3>
-            <div class="text-xs text-muted mt-0.5">Venue: ${escapeHtml(item.venue || "Stadium")} · Corroborated by ${item.consensusCount} Analytic Sections</div>
-          </div>
-          <div class="text-right">
-            <div class="text-xs font-mono uppercase text-muted font-bold">Safeguard Pick</div>
-            <div class="font-mono font-bold text-base text-brand">${escapeHtml(item.lockMarket)} @ ${Number(item.lockOdd).toFixed(2)}</div>
-          </div>
-        </div>
-
-        <!-- SportyBet & Football.com Codes -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-2 border-t border-line-soft">
-          <div class="flex items-center justify-between text-xs font-mono p-1.5 rounded bg-ground border border-line-soft">
-            <span class="text-muted">SportyBet Game ID: <strong class="text-text">#${escapeHtml(String(sbCode))}</strong></span>
-            <span class="text-brand font-bold">@ ${Number(sb?.odd || item.lockOdd).toFixed(2)}</span>
-          </div>
-          <div class="flex items-center justify-between text-xs font-mono p-1.5 rounded bg-ground border border-line-soft">
-            <span class="text-muted">Football.com Game ID: <strong class="text-text">#${escapeHtml(String(fbCode))}</strong></span>
-            <span class="text-brand font-bold">@ ${Number(fb?.odd || item.lockOdd).toFixed(2)}</span>
-          </div>
-        </div>
-
-        <!-- Cross Section Tags -->
-        <div class="flex items-center gap-1.5 flex-wrap mt-2">
-          ${(item.crossSectionTags || []).map(t => `
-            <span class="cross-section-tag" style="font-size:10.5px;">
-              <span class="tag-icon">${t.icon || "✓"}</span>
-              <span>${escapeHtml(t.name)}</span>
-            </span>
-          `).join("")}
-        </div>
-
-        <!-- Expandable 4-Pillar Breakdown -->
-        <details class="mt-2 pt-2 border-t border-line-soft">
-          <summary class="text-xs text-brand font-semibold cursor-pointer select-none">
-            View 4-Pillar Ironclad Breakdown &rarr;
-          </summary>
-          <div class="accurate-pillar-grid mt-2">
-            ${(item.pillars || []).map(p => `
-              <div class="accurate-pillar">
-                <div class="pillar-title">${escapeHtml(p.title)}</div>
-                <div class="text-xs text-text-secondary leading-snug">${escapeHtml(p.text)}</div>
-              </div>
-            `).join("")}
-          </div>
-        </details>
-      </article>
-    `;
-  }
-
-  function renderAccurateWinningOddsView() {
-    const pool = filteredMatchesForDate();
-    const accData = RT?.buildAccurateWinningOdds ? RT.buildAccurateWinningOdds(pool.length > 0 ? pool : liveMatches, sureSlips, bookmakerScan) : null;
-    const allPicks = accData?.allPicks || [];
-    const activeFilter = state.activeAccurateFilter || "ALL";
-
-    let filteredPicks = allPicks;
-    if (activeFilter === "SINGLE") {
-      filteredPicks = accData?.singleLock ? [accData.singleLock] : [];
-    } else if (activeFilter === "DOUBLE") {
-      filteredPicks = accData?.bankerDouble?.legs || [];
-    } else if (activeFilter === "TREBLE") {
-      filteredPicks = accData?.bankerTreble?.legs || [];
-    } else if (activeFilter === "DOUBLE_CHANCE") {
-      filteredPicks = allPicks.filter(p => p.safeguardType === "DOUBLE_CHANCE");
-    } else if (activeFilter === "GOALS") {
-      filteredPicks = allPicks.filter(p => p.safeguardType === "OVER_GOALS");
-    }
-
-    return `
-      <div class="hero-banner" style="background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(10, 123, 92, 0.1) 100%); border-bottom: 2px solid rgba(245, 158, 11, 0.4);">
-        <div class="flex items-center gap-2 flex-wrap mb-1">
-          <span class="accurate-crown-badge">👑 ACCURATE WINNING ODDS FOR THE DAY</span>
-          <span class="safeguard-shield-badge">🛡️ 66.7% Multi-Outcome Safeguard Active</span>
-          <span class="font-mono text-xs text-muted">· Live Audited</span>
-        </div>
-        <h1 class="font-headline font-black text-2xl md:text-3xl" style="color:var(--text); letter-spacing:-0.02em;">
-          Ironclad Winning Odds of the Day
-        </h1>
-        <p class="text-sm text-text-secondary mt-1 max-w-3xl">
-          Picked out of all the sure odds across all sections — every single fixture is filtered through a 7-stage ironclad safety audit, fortified with multi-outcome safeguards (1X, X2, Over 1.5 Goals), and backed by live SportyBet and Football.com game IDs so nothing changes them from winning.
-        </p>
-
-        <!-- Live Sync Strip -->
-        <div class="flex items-center justify-between gap-3 flex-wrap mt-4 pt-3 border-t border-line-soft">
-          <div class="flex items-center gap-4 text-xs font-mono text-muted flex-wrap">
-            <span>Audited Matches: <strong class="text-text">${accData?.totalAudited || 0}</strong></span>
-            <span>Passed 7-Stage Audit: <strong class="text-brand">${allPicks.length}</strong></span>
-            <span>Consensus Rate: <strong style="color:#F59E0B;">100% Corroborated</strong></span>
-            <span>SportyBet &amp; Football.com: <strong class="text-live">Live Connected</strong></span>
-          </div>
-          <button type="button" class="btn-primary-pill text-xs" data-rescan-accurate="1" style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#050b14;font-weight:800;border:none;">
-            ${isLoadingBookmakers ? "Auditing Odds Feed..." : "Re-Audit All Odds"}
-          </button>
-        </div>
-
-        <!-- Filter Tabs -->
-        <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);">
-          <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-accurate-filter="ALL">All Accurate Fixtures (${allPicks.length})</button>
-          <button type="button" class="filter-chip${activeFilter === "SINGLE" ? " is-active" : ""}" data-accurate-filter="SINGLE">#1 Single Lock of the Day</button>
-          <button type="button" class="filter-chip${activeFilter === "DOUBLE" ? " is-active" : ""}" data-accurate-filter="DOUBLE">2X Banker Double (${accData?.bankerDouble ? `${accData.bankerDouble.totalOdds.toFixed(2)}x` : "0"})</button>
-          <button type="button" class="filter-chip${activeFilter === "TREBLE" ? " is-active" : ""}" data-accurate-filter="TREBLE">5X Banker Treble (${accData?.bankerTreble ? `${accData.bankerTreble.totalOdds.toFixed(2)}x` : "0"})</button>
-          <button type="button" class="filter-chip${activeFilter === "DOUBLE_CHANCE" ? " is-active" : ""}" data-accurate-filter="DOUBLE_CHANCE">1X &amp; X2 Double Chance</button>
-          <button type="button" class="filter-chip${activeFilter === "GOALS" ? " is-active" : ""}" data-accurate-filter="GOALS">Over 1.5 Goals Locks</button>
-        </div>
-      </div>
-
-      <!-- #1 Single Lock of the Day Showcase (when ALL or SINGLE) -->
-      ${(activeFilter === "ALL" || activeFilter === "SINGLE") && accData?.singleLock ? renderSingleLockFeaturedCard(accData.singleLock) : ""}
-
-      <!-- 2X Double and 5X Treble Slips Showcase (when ALL or DOUBLE or TREBLE) -->
-      ${(activeFilter === "ALL" || activeFilter === "DOUBLE" || activeFilter === "TREBLE") ? renderAccurateSlipsContainer(
-        (activeFilter === "ALL" || activeFilter === "DOUBLE") ? accData?.bankerDouble : null,
-        (activeFilter === "ALL" || activeFilter === "TREBLE") ? accData?.bankerTreble : null
-      ) : ""}
-
-      <!-- All Audited Fixtures Roster -->
-      <section class="panel">
-        <div class="panel-header">
-          <div>
-            <h2>Audited Accurate Winning Fixtures</h2>
-            <div class="text-xs text-muted mt-0.5">Showing ${filteredPicks.length} verified lock${filteredPicks.length === 1 ? "" : "s"} with multi-outcome protection &amp; live bookmaker Game IDs</div>
-          </div>
-          <span class="count">${filteredPicks.length} Games</span>
-        </div>
-        <div class="p-3">
-          ${filteredPicks.length > 0 ? filteredPicks.map((p, idx) => renderAccuratePickCard(p, idx)).join("") : `
-            <div class="p-4 text-center text-muted">
-              No fixtures currently match the active filter (${escapeHtml(activeFilter)}). Click "All Accurate Fixtures" above.
-            </div>
-          `}
-        </div>
-      </section>
-
-      <!-- The Mathematical Safeguard Law Manifesto -->
-      <section class="panel p-4" style="background: linear-gradient(145deg, var(--ground) 0%, rgba(245, 158, 11, 0.04) 100%); border-left: 4px solid #F59E0B; margin-top: 20px;">
-        <h3 class="font-headline font-bold text-base" style="color:#F59E0B;">🛡️ The Mathematical Safeguard Law: Why These Odds Cannot Fail</h3>
-        <p class="text-xs text-text-secondary mt-1.5 leading-relaxed">
-          Standard straight-win bets carry an inherent mathematical flaw: even a dominant 80% win-probability favorite has a 20% draw/upset vulnerability due to low-scoring soccer variance (0-0 park-the-bus, early red cards, penalty decisions).
-        </p>
-        <p class="text-xs text-text-secondary mt-1 leading-relaxed">
-          The <strong>Accurate Winning Odds Engine</strong> solves this by enforcing <strong>Multi-Outcome Safeguards</strong>:
-        </p>
-        <ul class="text-xs text-text-secondary mt-1.5 space-y-1 list-disc list-inside">
-          <li><strong>1X Double Chance:</strong> Mathematically covers <strong>66.7% of all match outcomes</strong>. Even if a match ends 0-0 or 1-1, your bet is 100% WON.</li>
-          <li><strong>X2 Double Chance:</strong> Guarantees a win if the away powerhouse either wins outright OR draws away from home.</li>
-          <li><strong>Over 1.5 Goals:</strong> 100% team-neutral. It requires only 2 combined goals in 90+ minutes regardless of who wins, who scores, or who gets red-carded.</li>
-          <li><strong>Cross-Section Verification:</strong> Candidates must be corroborated across the <strong>14-Factor Tactical Engine</strong>, the <strong>Sure Odds Slips (2–1M)</strong>, and live scraped feeds from <strong>SportyBet and Football.com</strong>.</li>
-        </ul>
-      </section>
-    `;
-  }
-
   // ============ DEDICATED /handicap VIEW (WINNING HANDICAP TIPS & +EV VALUE BETS) ============
   function renderHandicapValueBetsView() {
     if (!RT?.buildHandicapValueBets) {
@@ -4011,8 +3565,6 @@
 
     if (r === "/" || r === "") {
       main.innerHTML = renderHomeView();
-    } else if (r === "/accurate-odds" || r === "/accurate-winning-odds" || r === "/banker-of-the-day") {
-      main.innerHTML = renderAccurateWinningOddsView();
     } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
       main.innerHTML = renderHandicapValueBetsView();
     } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
@@ -4737,15 +4289,6 @@
       return;
     }
 
-    // Switch Accurate Winning Odds filter
-    const accurateFilterBtn = e.target.closest("[data-accurate-filter]");
-    if (accurateFilterBtn) {
-      state.activeAccurateFilter = accurateFilterBtn.getAttribute("data-accurate-filter");
-      saveState();
-      renderMainContent();
-      return;
-    }
-
     // Switch Handicap Value Bets filter
     const handicapFilterBtn = e.target.closest("[data-handicap-filter]");
     if (handicapFilterBtn) {
@@ -4770,12 +4313,6 @@
       state.activeSpecialTipFilter = specialFilterBtn.getAttribute("data-special-filter");
       saveState();
       renderMainContent();
-      return;
-    }
-
-    // Rescan / Refresh Accurate Winning Odds
-    if (e.target.closest("[data-rescan-accurate]")) {
-      syncBookmakerMismatchFeed(true, true);
       return;
     }
 

@@ -2,6 +2,7 @@
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const CACHE_TTL_MS = 90 * 1000;
+const FOOTBALL_PLAYED_ELAPSED_MS = 115 * 60000; // 1h 55m after kickoff => match played by schedule time
 let cachedSchedule = null;
 let cachedExpiresAt = 0;
 let inFlightFetch = null;
@@ -144,12 +145,15 @@ function parseOneFootballPage(html, fallbackDateIso) {
           const aScore = aScoreRaw !== "" && aScoreRaw !== null && aScoreRaw !== undefined ? parseInt(aScoreRaw, 10) : null;
 
           let status = "SCHEDULED";
+          let playedByTime = false;
           if (/full|ft|finished|post|ended/i.test(matchStateRaw) || periodNum >= 10) {
             status = "FT";
           } else if (/live|inplay|halftime|half_time|1st|2nd/i.test(matchStateRaw) || (periodNum > 1 && periodNum < 10)) {
             status = "LIVE";
-          } else if (koMs <= now - 150 * 60000 && periodNum !== 1) {
+          } else if (koMs <= now - FOOTBALL_PLAYED_ELAPSED_MS) {
+            // Once kickoff + full match window (115 min) has elapsed without being live, classify as completed
             status = "FT";
+            playedByTime = true;
           }
 
           const hoursToKickoff = Math.round(((koMs - now) / 3600000) * 10) / 10;
@@ -174,8 +178,9 @@ function parseOneFootballPage(html, fallbackDateIso) {
             hoursToKickoff,
             isLive: status === "LIVE",
             isPreMatch5h: status === "SCHEDULED" && koMs - now >= 5 * 3600000,
+            playedByTime,
             status,
-            matchState: matchStateRaw || (status === "LIVE" ? "Live" : status === "FT" ? "FullTime" : "PreMatch"),
+            matchState: playedByTime ? "Full Time (Elapsed)" : (matchStateRaw || (status === "LIVE" ? "Live" : status === "FT" ? "FullTime" : "PreMatch")),
             period: periodNum || 1,
             minute: status === "LIVE" ? rawMinute : 0,
             displayTime: status === "LIVE" ? (rawMinute > 0 ? `${rawMinute}'` : node.timePeriod || "LIVE") : new Date(koMs).toISOString().slice(11, 16),
@@ -195,10 +200,33 @@ function parseOneFootballPage(html, fallbackDateIso) {
   return extracted;
 }
 
+function refreshStatusesByTime(payload, nowMs = Date.now()) {
+  if (!payload || !Array.isArray(payload.matches)) return payload;
+  for (const m of payload.matches) {
+    if (m.status === "SCHEDULED" && Number.isFinite(m.kickoffMs)) {
+      if (m.kickoffMs <= nowMs - FOOTBALL_PLAYED_ELAPSED_MS) {
+        m.status = "FT";
+        m.isLive = false;
+        m.isPreMatch5h = false;
+        m.playedByTime = true;
+        m.matchState = "Full Time (Elapsed)";
+      } else {
+        m.hoursToKickoff = Math.round(((m.kickoffMs - nowMs) / 3600000) * 10) / 10;
+        m.isPreMatch5h = m.kickoffMs - nowMs >= 5 * 3600000;
+      }
+    }
+  }
+  payload.liveCount = payload.matches.filter((m) => m.status === "LIVE").length;
+  payload.scheduledCount = payload.matches.filter((m) => m.status === "SCHEDULED").length;
+  payload.ftCount = payload.matches.filter((m) => m.status === "FT").length;
+  payload.preMatch5hCount = payload.matches.filter((m) => m.isPreMatch5h).length;
+  return payload;
+}
+
 async function fetchOneFootballSchedule(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && cachedSchedule && now < cachedExpiresAt) {
-    return cachedSchedule;
+    return refreshStatusesByTime(cachedSchedule, now);
   }
   if (inFlightFetch) return inFlightFetch;
 
@@ -242,16 +270,17 @@ async function fetchOneFootballSchedule(forceRefresh = false) {
       }
 
       const matches = Array.from(dedupMap.values()).sort((a, b) => a.kickoffMs - b.kickoffMs);
-      const payload = {
+      const payload = refreshStatusesByTime({
         ok: true,
         source: "https://onefootball.com/en/matches",
         fetchedAt: new Date().toISOString(),
         totalMatches: matches.length,
-        liveCount: matches.filter((m) => m.status === "LIVE").length,
-        scheduledCount: matches.filter((m) => m.status === "SCHEDULED").length,
-        preMatch5hCount: matches.filter((m) => m.isPreMatch5h).length,
+        liveCount: 0,
+        scheduledCount: 0,
+        ftCount: 0,
+        preMatch5hCount: 0,
         matches
-      };
+      }, Date.now());
 
       if (matches.length > 0 || !cachedSchedule) {
         cachedSchedule = payload;

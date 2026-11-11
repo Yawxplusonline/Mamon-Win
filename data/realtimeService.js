@@ -645,8 +645,10 @@ window.MAMON_REALTIME = (() => {
       const p = Date.parse(item.kickoffIso);
       if (Number.isFinite(p)) return p;
     }
-    if (item.isoDate && item.kickoffUtc && /^\d{2}:\d{2}/.test(item.kickoffUtc)) {
-      const p = Date.parse(`${item.isoDate}T${item.kickoffUtc}:00Z`);
+    const dStr = item.isoDate || item.date;
+    const tStr = item.kickoffUtc || item.kickoffTime || item.kickoff || item.displayTime;
+    if (dStr && tStr && /^\d{2}:\d{2}/.test(String(tStr))) {
+      const p = Date.parse(`${dStr}T${String(tStr).slice(0, 5)}:00Z`);
       if (Number.isFinite(p)) return p;
     }
     return NaN;
@@ -675,6 +677,112 @@ window.MAMON_REALTIME = (() => {
     const hrs = Math.floor(totalMins / 60);
     const mins = totalMins % 60;
     return hrs > 0 ? `${hrs}h ${String(mins).padStart(2, "0")}m before KO` : `${mins}m before KO`;
+  }
+
+  function getSportDurationMs(sport) {
+    const k = String(sport || "football").toLowerCase();
+    const minsMap = { football: 115, soccer: 115, tennis: 150, basketball: 145, hockey: 150, "ice hockey": 150, darts: 90 };
+    return (minsMap[k] || 115) * 60000;
+  }
+
+  function hasMatchPlayedByTime(item, nowMs = Date.now()) {
+    if (!item) return false;
+    if (item.status === "FT" || item.isCompleted === true) return true;
+    if (item.isLive === true || item.status === "LIVE") return false;
+    const ko = resolveKickoffMs(item);
+    if (!Number.isFinite(ko)) return false;
+    return nowMs >= ko + getSportDurationMs(item.sport);
+  }
+
+  function formatKickoffTimeLabel(item, nowMs = Date.now()) {
+    const ko = resolveKickoffMs(item);
+    const todayIso = isoDate(new Date(nowMs));
+    const tomorrowIso = isoDate(new Date(nowMs + 86400000));
+    if (!Number.isFinite(ko)) {
+      const rawTime = String(item?.kickoffUtc || item?.displayTime || "TBD").trim();
+      const rawDate = String(item?.date || item?.isoDate || todayIso);
+      const dayLabel = rawDate === todayIso ? "Today" : rawDate === tomorrowIso ? "Tomorrow" : rawDate;
+      return { dateIso: rawDate, dayLabel, shortDay: dayLabel, timeStr: rawTime, isToday: rawDate === todayIso, fullLabel: `${dayLabel} · ${rawTime}`, compactLabel: `${dayLabel} · ${rawTime}` };
+    }
+    const d = new Date(ko);
+    const dateIsoStr = isoDate(d);
+    const timeStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const isToday = dateIsoStr === todayIso;
+    const isTomorrow = dateIsoStr === tomorrowIso;
+    const shortWeekday = d.toLocaleDateString("en-US", { weekday: "short" });
+    const monthDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const dayLabel = isToday ? "Today" : isTomorrow ? "Tomorrow" : `${shortWeekday}, ${monthDay}`;
+    const shortDay = isToday ? "Today" : isTomorrow ? "Tomorrow" : `${shortWeekday} ${d.getDate()}`;
+    return {
+      dateIso: dateIsoStr,
+      dayLabel,
+      shortDay,
+      timeStr,
+      isToday,
+      fullLabel: `${dayLabel} · ${timeStr}`,
+      compactLabel: `${shortDay} · ${timeStr}`
+    };
+  }
+
+  function reconcilePlayedMatchesByTime(matchesArr = [], finishedArr = [], nowMs = Date.now()) {
+    const todayLocal = isoDate(new Date(nowMs));
+    const todayUtc = new Date(nowMs).toISOString().slice(0, 10);
+    const finishedMap = new Map();
+    const seenTeams = new Set();
+
+    const registerFinished = (m) => {
+      if (!m) return;
+      const copy = { ...m, status: "FT", isLive: false };
+      if (!copy.displayTime || !/^\d{2}:\d{2}/.test(String(copy.displayTime))) {
+        copy.displayTime = formatKickoffTimeLabel(copy, nowMs).timeStr;
+      }
+      if (!copy.date) copy.date = formatKickoffTimeLabel(copy, nowMs).dateIso;
+      const hNm = normTeamMatchKey(copy.homeTeamName || DATA.TEAMS?.[copy.home]?.name || "");
+      const aNm = normTeamMatchKey(copy.awayTeamName || DATA.TEAMS?.[copy.away]?.name || "");
+      const teamSig = `${copy.sport || "football"}:${hNm}:${aNm}`;
+      if (hNm && aNm && seenTeams.has(teamSig)) return;
+      const key = String(copy.id || copy.espnId || teamSig);
+      if (!finishedMap.has(key)) {
+        finishedMap.set(key, copy);
+        if (hNm && aNm) seenTeams.add(teamSig);
+      }
+    };
+
+    for (const fm of finishedArr || []) {
+      const fDate = fm?.date || (Number.isFinite(resolveKickoffMs(fm)) ? isoDate(new Date(resolveKickoffMs(fm))) : todayLocal);
+      if (fDate === todayLocal || fDate === todayUtc) registerFinished(fm);
+    }
+
+    const activeRemaining = [];
+    for (const m of matchesArr || []) {
+      if (hasMatchPlayedByTime(m, nowMs)) {
+        const koInfo = formatKickoffTimeLabel(m, nowMs);
+        const matchDate = m.date || koInfo.dateIso;
+        const koUtcDate = Number.isFinite(resolveKickoffMs(m)) ? new Date(resolveKickoffMs(m)).toISOString().slice(0, 10) : matchDate;
+        const doneMatch = {
+          ...m,
+          status: "FT",
+          isLive: false,
+          isPreMatch5h: false,
+          playedByTime: m.status !== "FT",
+          matchStatus: m.status === "FT" ? (m.matchStatus || "FT") : "FT (Completed)",
+          displayTime: koInfo.timeStr,
+          date: matchDate
+        };
+        if (matchDate === todayLocal || matchDate === todayUtc || koUtcDate === todayUtc || koUtcDate === todayLocal) {
+          registerFinished(doneMatch);
+        }
+      } else {
+        activeRemaining.push(m);
+      }
+    }
+
+    const finishedList = Array.from(finishedMap.values()).sort((a, b) => {
+      const tb = resolveKickoffMs(b) || 0;
+      const ta = resolveKickoffMs(a) || 0;
+      return tb - ta;
+    });
+    return { activeRemaining, finishedList };
   }
 
   const RT_TEAM_ALIASES = {
@@ -4043,14 +4151,19 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
-    const activeMatches = Array.from(activeMap.values()).sort((a, b) => {
+    const reconciled = reconcilePlayedMatchesByTime(
+      Array.from(activeMap.values()),
+      Array.from(finishedTodayMap.values()),
+      Date.now()
+    );
+    const activeMatches = reconciled.activeRemaining.sort((a, b) => {
       if (a.status === "LIVE" && b.status !== "LIVE") return -1;
       if (a.status !== "LIVE" && b.status === "LIVE") return 1;
       if (a.priority !== b.priority) return a.priority - b.priority;
       return new Date(a.isoDateTime) - new Date(b.isoDateTime);
     });
 
-    const finishedToday = Array.from(finishedTodayMap.values());
+    const finishedToday = reconciled.finishedList;
 
     // Fetch live news from premier + uefa for News panel
     const liveArticles = [];
@@ -4452,6 +4565,9 @@ window.MAMON_REALTIME = (() => {
     isTipEligiblePreMatch5h,
     getHoursToKickoff,
     formatPreMatchBadge,
+    formatKickoffTimeLabel,
+    hasMatchPlayedByTime,
+    reconcilePlayedMatchesByTime,
     resolveKickoffMs,
     matchTeamsSimilar,
     getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),

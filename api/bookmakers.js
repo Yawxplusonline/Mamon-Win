@@ -754,8 +754,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
         if (!parsedMkt.home || !parsedMkt.away) return;
 
         const evStatusStr = String(ev.matchStatus || "").trim();
+        const isExplicitCompleted = /\b(ft|full\s*time|ended|finished|completed?|closed|aet|ap|after\s*penalties|retired|walkover)\b/i.test(evStatusStr);
         const isNotStarted = /^(not\s*start|scheduled|prematch)/i.test(evStatusStr);
-        const evIsLive = !isNotStarted && (ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr));
+        const evIsLive = !isExplicitCompleted && !isNotStarted && (ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr));
         const evPlayedSecs = ev.playedSeconds && String(ev.playedSeconds).toLowerCase() !== "null" ? String(ev.playedSeconds).trim() : "";
         const evRemTime = ev.remainingTimeInPeriod && String(ev.remainingTimeInPeriod).toLowerCase() !== "null" ? String(ev.remainingTimeInPeriod).trim() : "";
         const evPeriod = ev.period !== undefined && ev.period !== null && String(ev.period).toLowerCase() !== "null" ? String(ev.period).trim() : "";
@@ -765,12 +766,16 @@ async function runFullBookmakerScan(forceRefresh = false) {
         const evGameScore = Array.isArray(ev.gameScore) ? ev.gameScore.map((s) => String(s || "").trim()).filter(Boolean) : [];
         const evPointScore = typeof ev.pointScore === "string" && ev.pointScore.toLowerCase() !== "null" && !ev.pointScore.startsWith("[") ? ev.pointScore.trim() : "";
 
+        const sportDurMs = ({ football: 115, tennis: 150, basketball: 145, hockey: 150, darts: 90 }[ev.sport || "football"] || 115) * 60000;
+
         let item = mergedMap.get(eventId);
         if (!item) {
           const homeUid = String(ev.homeTeamId || "").split(":").pop() || "";
           const awayUid = String(ev.awayTeamId || "").split(":").pop() || "";
           const startTs = Number(ev.estimateStartTime) || Date.now();
           const dt = new Date(startTs);
+          const isTimeElapsed = !evIsLive && startTs <= nowMs - sportDurMs;
+          const isCompleted = isExplicitCompleted || isTimeElapsed;
           item = {
             eventId,
             matchId: eventId.split(":").pop() || eventId,
@@ -788,9 +793,11 @@ async function runFullBookmakerScan(forceRefresh = false) {
             isoDate: dt.toISOString().slice(0, 10),
             kickoffUtc: dt.toISOString().slice(11, 16),
             hoursToKickoff: Math.round(((startTs - nowMs) / 3600000) * 10) / 10,
-            isLive: evIsLive,
-            isPreMatch5h: !evIsLive && (startTs - nowMs) >= 5 * 3600000,
-            matchStatus: evStatusStr || (evIsLive ? "LIVE" : "Scheduled"),
+            isLive: evIsLive && !isCompleted,
+            isCompleted,
+            playedByTime: isTimeElapsed && !isExplicitCompleted,
+            isPreMatch5h: !evIsLive && !isCompleted && (startTs - nowMs) >= 5 * 3600000,
+            matchStatus: isCompleted ? (isExplicitCompleted ? evStatusStr : "FT (Elapsed)") : (evStatusStr || (evIsLive ? "LIVE" : "Scheduled")),
             playedSeconds: evPlayedSecs,
             remainingTimeInPeriod: evRemTime,
             period: evPeriod,
@@ -802,7 +809,13 @@ async function runFullBookmakerScan(forceRefresh = false) {
             footballCom: null
           };
           mergedMap.set(eventId, item);
-        } else if (evIsLive) {
+        } else if (isExplicitCompleted) {
+          item.isLive = false;
+          item.isCompleted = true;
+          item.isPreMatch5h = false;
+          item.matchStatus = evStatusStr || "FT";
+          if (evScore && (!item.score || item.score === "0:0")) item.score = evScore;
+        } else if (evIsLive && !item.isCompleted) {
           item.isLive = true;
           item.isPreMatch5h = false;
           if (evStatusStr && (!item.matchStatus || item.matchStatus === "Scheduled" || item.matchStatus === "Not start" || item.matchStatus === "LIVE")) {
@@ -894,8 +907,19 @@ async function runFullBookmakerScan(forceRefresh = false) {
         };
       });
 
+      const todayUtcIso = new Date(nowMs).toISOString().slice(0, 10);
+      const completedToday = [];
+      const activeRawGames = [];
+      for (const g of games) {
+        if (g.isCompleted) {
+          if (g.isoDate === todayUtcIso) completedToday.push(g);
+        } else {
+          activeRawGames.push(g);
+        }
+      }
+
       // Prioritize >= 5h Pre-Match games found on BOTH Football.com & OneFootball (and upcoming before live for tips)
-      games.sort((a, b) => {
+      activeRawGames.sort((a, b) => {
         if (a.isPreMatch5h !== b.isPreMatch5h) return a.isPreMatch5h ? -1 : 1;
         if (a.onFootballCom !== b.onFootballCom) return a.onFootballCom ? -1 : 1;
         if (a.onOneFootball !== b.onOneFootball) return a.onOneFootball ? -1 : 1;
@@ -905,16 +929,16 @@ async function runFullBookmakerScan(forceRefresh = false) {
       });
 
       // Hydrate team stats across >=5h Pre-Match AND live games for all 5 sports
-      const footballPre5h = games.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 60);
-      const footballLive = games.filter((g) => g.sport === "football" && g.isLive).slice(0, 20);
+      const footballPre5h = activeRawGames.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 60);
+      const footballLive = activeRawGames.filter((g) => g.sport === "football" && g.isLive).slice(0, 20);
       const nonFootballImmediate = [];
       for (const sp of ["tennis", "basketball", "hockey", "darts"]) {
-        nonFootballImmediate.push(...games.filter((g) => g.sport === sp && g.isPreMatch5h).slice(0, 20));
-        nonFootballImmediate.push(...games.filter((g) => g.sport === sp && g.isLive).slice(0, 15));
+        nonFootballImmediate.push(...activeRawGames.filter((g) => g.sport === sp && g.isPreMatch5h).slice(0, 20));
+        nonFootballImmediate.push(...activeRawGames.filter((g) => g.sport === sp && g.isLive).slice(0, 15));
       }
       const immediateGames = [...footballPre5h, ...footballLive, ...nonFootballImmediate];
       const immediateIds = new Set(immediateGames.map((g) => g.eventId));
-      const deferredGames = games.filter((g) => !immediateIds.has(g.eventId));
+      const deferredGames = activeRawGames.filter((g) => !immediateIds.has(g.eventId));
 
       const immediateUids = [
         ...new Set(
@@ -934,12 +958,12 @@ async function runFullBookmakerScan(forceRefresh = false) {
             ...new Set(deferredGames.flatMap((g) => [g.homeUid, g.awayUid]).filter(Boolean))
           ];
           await runPool(remUids, 20, (uid) => fetchTeamLast10Stats(uid));
-          await runPool(games.slice(24, 120), 12, (g) => fetchH2hStats(g.homeUid, g.awayUid));
+          await runPool(activeRawGames.slice(24, 120), 12, (g) => fetchH2hStats(g.homeUid, g.awayUid));
           cachedScanExpiresAt = 0; // allow next request to pick up 100% hydrated cache
         })().catch(() => {});
       }
 
-      const evaluated = games
+      const evaluated = activeRawGames
         .map((g) => {
           const hs = teamStatsCache.get(String(g.homeUid))?.data || g.homeStats || null;
           const as = teamStatsCache.get(String(g.awayUid))?.data || g.awayStats || null;
@@ -1213,7 +1237,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
         strongAwayMismatch: strongAwayMismatch.slice(0, 20),
         worstHomeMismatch: worstHomeMismatch.slice(0, 20),
         worstAwayMismatch: worstAwayMismatch.slice(0, 20),
-        allGames: balancedAllGames
+        allGames: balancedAllGames,
+        completedToday
       };
 
       cachedScan = payload;

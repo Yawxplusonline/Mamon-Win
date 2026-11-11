@@ -1539,9 +1539,54 @@ ul {
 
 .match-desktop .time .status-text {
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ko-day-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--ground-subtle);
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+  font-weight: 700;
   color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.ko-day-pill.is-today {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #047857;
+}
+
+.ko-day-mobile {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ft-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.36);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  color: #047857;
+  white-space: nowrap;
+}
+
+.ft-badge.is-compact {
+  font-size: 9.5px;
+  padding: 1px 5px;
 }
 
 .match-desktop .team-home,

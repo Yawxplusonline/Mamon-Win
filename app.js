@@ -62,6 +62,9 @@
     if (isLive) {
       return "0 - 0";
     }
+    if (isFT) {
+      return "FT";
+    }
     return "vs";
   }
 
@@ -889,14 +892,29 @@
     `;
   }
 
+  function formatKickoffCompact(item) {
+    if (RT?.formatKickoffTimeLabel) {
+      return RT.formatKickoffTimeLabel(item);
+    }
+    const rawTime = String(item?.kickoffUtc || item?.displayTime || "TBD").trim();
+    const rawDate = String(item?.date || item?.isoDate || "").trim();
+    const full = rawDate ? `${rawDate} · ${rawTime}` : rawTime;
+    return { dateIso: rawDate, dayLabel: rawDate || "Today", shortDay: rawDate || "Today", timeStr: rawTime, isToday: false, fullLabel: full, compactLabel: full };
+  }
+
   function renderVerifyKoPills(item, opts = {}) {
     if (!item) return "";
     const fbId = item.footballComGameId || item.footballCom?.gameId || (item.gameId && String(item.gameId) !== "-" && !String(item.gameId).startsWith("sr:") ? item.gameId : null);
     const sbId = item.sportybetGameId || item.sportybet?.gameId || null;
-    const koText = item.countdownLabel || (RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(item) : "");
+    const koInfo = formatKickoffCompact(item);
+    const countdown = item.countdownLabel || (RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(item) : "");
+    const koTimePart = koInfo?.timeStr && /^\d{2}:\d{2}/.test(koInfo.timeStr) ? `${koInfo.compactLabel}` : "";
+    const combinedKo = koTimePart && countdown && countdown !== "Started / In-Play"
+      ? `${koTimePart} (${countdown})`
+      : (countdown && countdown !== "Started / In-Play" ? countdown : koTimePart);
     const pills = [];
-    if (koText && koText !== "Started / In-Play") {
-      pills.push(`<span class="prematch-5h-pill" title="Pre-Match Tip >= 5 hours before kickoff">🕒 ${escapeHtml(koText)}</span>`);
+    if (combinedKo) {
+      pills.push(`<span class="prematch-5h-pill" title="Match Kickoff Time &amp; Lead Time (>= 5h Pre-Match)">🕒 ${escapeHtml(combinedKo)}</span>`);
     }
     if (fbId && String(fbId) !== "-") {
       pills.push(`<button type="button" class="bookie-id-chip is-fb" data-copy-gameid="${escapeHtml(String(fbId))}" data-bookie="Football.com" title="Search this Game ID on football.com (Click to copy)">FB #${escapeHtml(String(fbId))} ⧉</button>`);
@@ -969,14 +987,16 @@
                       const h = getTeam(leg.match.home);
                       const a = getTeam(leg.match.away);
                       const fbId = leg.match.footballComGameId || leg.match.footballCom?.gameId;
-                      const countdown = RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(leg.match) : leg.match.displayTime;
+                      const koInfo = formatKickoffCompact(leg.match);
+                      const countdown = RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(leg.match) : "";
+                      const timeDisplay = koInfo?.timeStr ? `${koInfo.compactLabel}${countdown ? ` · ${countdown}` : ""}` : (countdown || leg.match.displayTime);
                       const ppgBadgeHtml = leg.ppgStrength
                         ? `<span class="sure-mini-ppg-badge">💎 PPG ${leg.ppgStrength.strongPpg.toFixed(2)} (+${leg.ppgStrength.gap.toFixed(2)})</span>`
                         : "";
                       return `
                         <button type="button" class="sure-leg-mini" data-match-id="${leg.match.id}" data-open-analysis="1">
                           <div class="min-w-0">
-                            <div class="font-semibold truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} <span style="color:#7CE8C4;">(🕒 ${escapeHtml(countdown)})</span></div>
+                            <div class="font-semibold truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} <span style="color:#7CE8C4;">(🕒 ${escapeHtml(timeDisplay)})</span></div>
                             <div class="truncate" style="font-size:11px;color:#A8C6BC;">${escapeHtml(leg.market.label)} ${fbId ? `· FB #${escapeHtml(String(fbId))}` : ""} ${ppgBadgeHtml}</div>
                           </div>
                           <span class="pick-badge">@ ${leg.market.odds.toFixed(2)}</span>
@@ -1210,15 +1230,24 @@
       m.analysis?.factors?.suspensions?.away?.length
     );
 
+    const koParts = formatKickoffCompact(m);
+    const hasValidKoTime = koParts?.timeStr && /^\d{2}:\d{2}/.test(koParts.timeStr);
+    const mobileTimeHtml = isLive
+      ? `<span class="live-label"><span class="live-dot"></span>${escapeHtml(liveClock)}</span><span class="live-half-pill is-compact">${escapeHtml(halfLabel)}</span>`
+      : isFT
+      ? `<span class="ft-badge is-compact">FT</span><span class="ko-time">${escapeHtml(hasValidKoTime ? koParts.timeStr : m.displayTime)}</span>`
+      : `${koParts.dayLabel ? `<span class="ko-day-mobile">${escapeHtml(koParts.shortDay)}</span>` : ""}<span class="ko-time">${escapeHtml(hasValidKoTime ? koParts.timeStr : m.displayTime)}</span>`;
+    const desktopTimeHtml = isLive
+      ? `<span class="live-dot"></span><span class="live-clock-pill">${escapeHtml(liveClock)}</span><span class="live-half-pill">${escapeHtml(halfLabel)}</span>`
+      : isFT
+      ? `<span class="ft-badge">FT</span><span class="status-text font-mono">${escapeHtml(hasValidKoTime ? koParts.timeStr : m.displayTime)}</span>`
+      : `${koParts.dayLabel ? `<span class="ko-day-pill${koParts.isToday ? " is-today" : ""}">${escapeHtml(koParts.shortDay)}</span>` : ""}<span class="status-text font-mono">${escapeHtml(hasValidKoTime ? koParts.timeStr : m.displayTime)}</span>`;
+
     return `
       <div class="match-row" data-match-id="${m.id}">
         <div class="match-mobile">
           <div class="match-mobile-time">
-            ${
-              isLive
-                ? `<span class="live-label"><span class="live-dot"></span>${escapeHtml(liveClock)}</span><span class="live-half-pill is-compact">${escapeHtml(halfLabel)}</span>`
-                : `<span class="ko-time">${escapeHtml(m.displayTime)}</span>`
-            }
+            ${mobileTimeHtml}
           </div>
           <div class="match-mobile-teams">
             <div class="match-mobile-team">
@@ -1250,11 +1279,7 @@
 
         <div class="match-desktop">
           <div class="time">
-            ${
-              isLive
-                ? `<span class="live-dot"></span><span class="live-clock-pill">${escapeHtml(liveClock)}</span><span class="live-half-pill">${escapeHtml(halfLabel)}</span>`
-                : `<span class="status-text">${escapeHtml(m.displayTime)}</span>`
-            }
+            ${desktopTimeHtml}
           </div>
           <div class="team-home">
             ${crestImg(home.logo, home.name, home.color, 19)}
@@ -1440,6 +1465,10 @@
           : arr
       );
 
+      const finishedSportPool = finishedTodayMatches
+        .filter((m) => !isNcaaOrWomenMatch(m))
+        .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
+
       if (state.matchFilter === "SCHEDULED") {
         filtered = byDateFilter(schedPool);
       } else if (state.matchFilter === "PREMATCH_5H") {
@@ -1450,10 +1479,8 @@
         filtered = byDateFilter(schedPool.filter((m) => Boolean(m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0)));
       } else if (state.matchFilter === "ALERTS") {
         filtered = byDateFilter(schedPool.filter((m) => Boolean(m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)));
-      } else if (state.matchFilter === "FT" && allowCompletedToggle) {
-        filtered = finishedTodayMatches
-          .filter((m) => !isNcaaOrWomenMatch(m))
-          .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
+      } else if (state.matchFilter === "FT") {
+        filtered = [...finishedSportPool].sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
       } else {
         filtered = byDateFilter(schedPool);
       }
@@ -1463,11 +1490,9 @@
         { id: "PREMATCH_5H", icon: "🕒", label: "≥5h Before KO", count: pre5Count },
         { id: "VERIFIED", icon: "⚽", label: "OF + FB.com", count: verifiedCount },
         { id: "DROPS", icon: "📉", label: "Dropping Odds", count: dropsCount },
-        { id: "ALERTS", icon: "⚠️", label: "Inj / Susp Alerts", count: alertsCount }
+        { id: "ALERTS", icon: "⚠️", label: "Inj / Susp Alerts", count: alertsCount },
+        { id: "FT", icon: "✅", label: "Completed Today", count: finishedSportPool.length }
       ];
-      if (allowCompletedToggle && finishedTodayMatches.length > 0) {
-        upcomingModes.push({ id: "FT", icon: "✅", label: "Completed Today", count: finishedTodayMatches.length });
-      }
 
       // Build complete Matchday pills (DATA.DATES + extra active upcoming dates, capped neatly with live counts)
       const dateCountMap = new Map();
@@ -1544,8 +1569,8 @@
         </div>
       `;
     } else if (activeSportKey !== "all") {
-      // SINGLE SPORT ACTIVE: Non-football sports render the Run-In Difficulty Table format directly
-      if (nonFootballSports.includes(activeSportKey)) {
+      // SINGLE SPORT ACTIVE: Non-football sports render the Run-In Difficulty Table format for Live & Upcoming, or Completed list for FT
+      if (nonFootballSports.includes(activeSportKey) && state.matchFilter !== "FT") {
         const spMeta = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || spDef;
         groupsHtml = renderNonFootballRuninSection(spMeta.key, {
           mode: isLiveSection ? "LIVE" : "SCHEDULED",
@@ -1567,6 +1592,15 @@
               <h3>No live ${escapeHtml(spDef.label)} matches in play right now</h3>
               <p class="text-sm">Live scores and minutes update automatically as soon as games kick off.</p>
               <a href="/upcoming" data-route="/upcoming" class="analyze-inline-btn mt-3">View Upcoming Fixtures (${schedCount}) &rarr;</a>
+            </div>
+          `;
+        } else if (state.matchFilter === "FT") {
+          groupsHtml = `
+            <div class="empty-state">
+              <span style="font-size:32px;">✅</span>
+              <h3>No completed ${escapeHtml(spDef.label)} matches logged for today yet</h3>
+              <p class="text-sm">Matches whose scheduled kickoff + full playtime have finished appear here automatically.</p>
+              <button type="button" class="analyze-inline-btn mt-3" data-filter="SCHEDULED">View Upcoming Fixtures (${schedCount}) &rarr;</button>
             </div>
           `;
         } else {
@@ -1626,7 +1660,7 @@
       const sectionsHtml = sportsToGroup
         .map((sp) => {
           const spMatches = filtered.filter((m) => (m.sport || "football").toLowerCase() === sp.key);
-          if (sp.key !== "football") {
+          if (sp.key !== "football" && state.matchFilter !== "FT") {
             return renderNonFootballRuninSection(sp.key, {
               mode: isLiveSection ? "LIVE" : "SCHEDULED",
               dateFilter: isLiveSection ? null : (state.matchFilter === "FT" ? null : state.selectedDate),
@@ -1646,7 +1680,7 @@
           let subLeaguesHtml = "";
           for (const { sample, items } of groups.values()) {
             const lg = getLeagueInfo(sample);
-            const sortedItems = sortMatchesInOrder(items);
+            const sortedItems = state.matchFilter === "FT" ? items : sortMatchesInOrder(items);
             subLeaguesHtml += `
               <div>
                 <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
@@ -1666,6 +1700,11 @@
             `;
           }
 
+          const cardModeTitle = state.matchFilter === "FT" ? `${sp.label} Complete Matches of the Day` : `${sp.label} Fixtures &amp; Odds`;
+          const cardModeSub = state.matchFilter === "FT"
+            ? `${spMatches.length} Played matches completed today in ${sp.label}`
+            : `${spMatches.length} Matches belonging strictly to ${sp.label} · SportyBet &amp; Football.com`;
+
           return `
             <div class="sport-category-card" data-sport-group="${sp.key}">
               <div class="sport-category-header is-centered">
@@ -1673,8 +1712,8 @@
                 <div class="sport-hdr-center">
                   <span class="sport-category-icon">${sp.icon}</span>
                   <div>
-                    <h3 class="sport-category-title">${sp.label} Fixtures &amp; Odds</h3>
-                    <span class="sport-category-subtitle">${spMatches.length} Matches belonging strictly to ${sp.label} · SportyBet &amp; Football.com</span>
+                    <h3 class="sport-category-title">${cardModeTitle}</h3>
+                    <span class="sport-category-subtitle">${cardModeSub}</span>
                   </div>
                 </div>
                 <div class="sport-hdr-right">
@@ -1701,6 +1740,8 @@
 
     const panelTitle = isLiveSection
       ? (activeSportKey !== "all" ? `${spDef.icon} ${spDef.label} · 🔴 Live Matches` : "🔴 Live In-Play Matches")
+      : state.matchFilter === "FT"
+      ? (activeSportKey !== "all" ? `${spDef.icon} ${spDef.label} · ✅ Complete Matches of the Day` : "✅ Complete Matches of the Day")
       : (activeSportKey !== "all" ? `${spDef.icon} ${spDef.label} · 📅 Upcoming Fixtures` : title);
 
     const seeAllLink = isLiveSection
@@ -2650,9 +2691,11 @@
       const fbGameId = g.footballComGameId || g.footballCom?.gameId || null;
       const isPre5h = Boolean(!isLive && RT?.isTipEligiblePreMatch5h?.(g));
       const koCountdown = !isLive && RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(g) : "";
+      const koParts = formatKickoffCompact(g);
+      const koStamp = koParts?.timeStr ? koParts.compactLabel : (g.kickoffUtc || g.isoDate || "Today");
       const timeLabel = isLive
         ? `${clockInfo.liveClock} ${clockInfo.halfLabel}`.trim()
-        : (koCountdown && koCountdown !== "Started / In-Play" ? koCountdown : (g.kickoffUtc || g.isoDate || "Today"));
+        : (koCountdown && koCountdown !== "Started / In-Play" ? `${koStamp} · ${koCountdown}` : koStamp);
 
       if (isLive) {
         hPart.hasLiveMatch = true;
@@ -2751,7 +2794,49 @@
     const clickRoute = opts.clickRoute || null;
     const inlineLimit = opts.inlineLimit || 3;
 
-    const rowsHtml = rows.map((row) => {
+    // Enrich Football Run-In upcoming chips with exact real kickoff date/time & FB#ID when matched to live/upcoming fixtures
+    const liveFixtureByTeams = new Map();
+    for (const lm of liveMatches || []) {
+      if ((lm.sport || "football").toLowerCase() !== "football" || lm.status === "FT") continue;
+      const hN = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
+      const aN = lm.awayTeamName || DATA.TEAMS?.[lm.away]?.name || "";
+      if (!hN || !aN) continue;
+      const key = `${normSportParticipantKey(hN)}|${normSportParticipantKey(aN)}`;
+      if (!liveFixtureByTeams.has(key)) liveFixtureByTeams.set(key, lm);
+    }
+
+    const enrichUpcomingWithTime = (teamName, remList) => {
+      if (!Array.isArray(remList) || remList.length === 0) return remList;
+      return remList.map((op) => {
+        if (op.isLive || (op.date && /\d{2}:\d{2}/.test(String(op.date)))) return op;
+        const hTeam = op.venue === "H" ? teamName : op.opponent;
+        const aTeam = op.venue === "H" ? op.opponent : teamName;
+        const exact = liveFixtureByTeams.get(`${normSportParticipantKey(hTeam)}|${normSportParticipantKey(aTeam)}`);
+        let matched = exact;
+        if (!matched && RT?.matchTeamsSimilar) {
+          for (const lm of liveFixtureByTeams.values()) {
+            const lh = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
+            const la = lm.awayTeamName || DATA.TEAMS?.[lm.away]?.name || "";
+            if (RT.matchTeamsSimilar(lh, hTeam) && RT.matchTeamsSimilar(la, aTeam)) {
+              matched = lm;
+              break;
+            }
+          }
+        }
+        if (!matched) return op;
+        const kp = formatKickoffCompact(matched);
+        return {
+          ...op,
+          date: kp.compactLabel,
+          footballComGameId: op.footballComGameId || matched.footballComGameId || matched.footballCom?.gameId || null
+        };
+      });
+    };
+
+    const rowsHtml = rows.map((rowRaw) => {
+      const row = rowRaw.sport && rowRaw.sport !== "football"
+        ? rowRaw
+        : { ...rowRaw, remainingOpponents: enrichUpcomingWithTime(rowRaw.team, rowRaw.remainingOpponents) };
       const expandId = `${scopeKey}:${row.team}`;
       const isExpanded = expandedRuninTeam === expandId;
       const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
@@ -3254,7 +3339,7 @@
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(16, 185, 129, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(16, 185, 129, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">🎯 WINNING HANDICAP TIPS</span>
-            <span class="sure-pill-tag">+EV PRE-MATCH (≥5H KO) (${totalCount})</span>
+            <span class="sure-pill-tag" style="background:rgba(16,185,129,0.14);color:var(--text);border:1px solid rgba(16,185,129,0.3);font-weight:700;">+EV PRE-MATCH (≥5H KO) (${totalCount})</span>
             <span class="font-mono text-xs text-muted">· Football.com &amp; OneFootball Verified</span>
           </div>
           <div class="flex items-center gap-2">
@@ -3263,7 +3348,9 @@
         </div>
         <div class="p-3">
           <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
-            ${topTips.map((tip, i) => `
+            ${topTips.map((tip, i) => {
+              const koLabel = formatKickoffCompact(tip).compactLabel;
+              return `
               <a class="power-preview-tile is-strong" href="/handicap" data-route="/handicap" style="border-left: 3px solid #10B981; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} HANDICAP VALUE PICK</span>
@@ -3271,14 +3358,14 @@
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(tip.fixture)}</div>
                 <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
-                <div class="text-xs font-mono text-muted truncate mt-0.5">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))}` : ""}${tip.countdownLabel ? ` · 🕒 ${escapeHtml(tip.countdownLabel)}` : ""}${tip.onOneFootball ? " · ⚽ OneFootball" : ""}</div>
+                <div class="text-xs font-mono text-muted truncate mt-0.5">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
                 <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
-            `).join("")}
+            `; }).join("")}
           </div>
         </div>
       </section>
@@ -3297,7 +3384,7 @@
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(6, 182, 212, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(6, 182, 212, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#06B6D4;color:#042F2E;font-weight:800;">⏱️ 5-MIN DRAW &amp; DEFENSE TIPS</span>
-            <span class="sure-pill-tag">${totalCount} REAL PRE-MATCH TIPS (≥5H BEFORE KO)</span>
+            <span class="sure-pill-tag" style="background:rgba(6,182,212,0.14);color:var(--text);border:1px solid rgba(6,182,212,0.35);font-weight:700;">${totalCount} REAL PRE-MATCH TIPS (≥5H BEFORE KO)</span>
             <span class="font-mono text-xs text-muted">· OneFootball + Football.com Real Schedules</span>
           </div>
           <div class="flex items-center gap-2">
@@ -3306,36 +3393,40 @@
         </div>
         <div class="p-3">
           <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
-            ${top5Min.map((tip, i) => `
+            ${top5Min.map((tip, i) => {
+              const koLabel = formatKickoffCompact(tip).compactLabel;
+              return `
               <a class="power-preview-tile is-strong" href="/special-tips?tab=5MIN_DRAW" data-route="/special-tips?tab=5MIN_DRAW" style="border-left: 3px solid #06B6D4; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#06B6D4;">#${i + 1} 5-MIN DRAW (0-0)</span>
                   <span class="ev-return-pill" style="background:#06B6D4;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""}${tip.countdownLabel ? ` · 🕒 ${escapeHtml(tip.countdownLabel)}` : ""}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
                 <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#06B6D4;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
-            `).join("")}
-            ${topNo3.map((tip, i) => `
+            `; }).join("")}
+            ${topNo3.map((tip, i) => {
+              const koLabel = formatKickoffCompact(tip).compactLabel;
+              return `
               <a class="power-preview-tile is-strong" href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW" style="border-left: 3px solid #10B981; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} NO 3+ GOALS IN A ROW</span>
                   <span class="ev-return-pill" style="background:#10B981;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
+                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
                 <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
-            `).join("")}
+            `; }).join("")}
           </div>
         </div>
       </section>
@@ -3511,7 +3602,7 @@
       ${renderHomeSpecialTipsCard()}
       ${renderHomeRunInCard()}
       ${liveMatchesPool.length > 0 ? renderHomeLiveCard(liveMatchesPool, spDef) : ""}
-      ${renderMatchesPanel(liveMatches, upcomingTitle, true, false, "UPCOMING")}
+      ${renderMatchesPanel(liveMatches, upcomingTitle, true, true, "UPCOMING")}
       ${renderMarketIntelligenceStrip()}
       ${renderHomeBookmakerMismatchCard()}
       ${renderStandingsPanel()}
@@ -5412,10 +5503,11 @@
       }
 
       const startTs = Number(g.estimateStartTime) || Date.now();
+      const koLocal = formatKickoffCompact({ timestamp: startTs, kickoffUtc: g.kickoffUtc, isoDate: g.isoDate });
       const dt = new Date(startTs);
       const isoDateTime = dt.toISOString();
-      const dateStr = g.isoDate || isoDateTime.slice(0, 10);
-      const timeStr = g.kickoffUtc || isoDateTime.slice(11, 16);
+      const dateStr = koLocal.dateIso || g.isoDate || isoDateTime.slice(0, 10);
+      const timeStr = (koLocal.timeStr && /^\d{2}:\d{2}/.test(koLocal.timeStr)) ? koLocal.timeStr : (g.kickoffUtc || isoDateTime.slice(11, 16));
 
       let parsedHomeScore = null;
       let parsedAwayScore = null;
@@ -5632,6 +5724,69 @@
     if (converted.length > 0) {
       liveMatches = [...liveMatches, ...converted];
     }
+
+    // Ingest any completed-today bookmaker items (sports where playtime finished or FT explicitly flagged)
+    const completedBookieList = Array.isArray(bookmakerScan.completedToday) ? bookmakerScan.completedToday : [];
+    const extraCompleted = [];
+    for (const cg of completedBookieList) {
+      if (isNcaaOrWomenMatch(cg)) continue;
+      const cid = `bm-${cg.eventId}`;
+      const sp = (cg.sport || "football").toLowerCase();
+      const spNm = cg.sportName || sp;
+      const hNm = cg.homeTeamName || "Home";
+      const aNm = cg.awayTeamName || "Away";
+      const hKey = `bk-${(cg.homeUid || hNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      const aKey = `bk-${(cg.awayUid || aNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+      if (DATA?.TEAMS) {
+        if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hNm, short: hNm.slice(0, 16), country: cg.country || spNm, logo: cg.homeLogo || cg.tournamentIcon || "", color: "#10B981" };
+        if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aNm, short: aNm.slice(0, 16), country: cg.country || spNm, logo: cg.awayLogo || cg.tournamentIcon || "", color: "#3B82F6" };
+      }
+      const ts = Number(cg.estimateStartTime) || Date.now();
+      const kp = formatKickoffCompact({ timestamp: ts, kickoffUtc: cg.kickoffUtc, isoDate: cg.isoDate });
+      let cH = null, cA = null;
+      if (cg.score && typeof cg.score === "string") {
+        const ps = cg.score.split(/[:\-–—]/).map((s) => parseInt(s.trim(), 10));
+        if (ps.length >= 2 && Number.isFinite(ps[0]) && Number.isFinite(ps[1])) { cH = ps[0]; cA = ps[1]; }
+      }
+      extraCompleted.push({
+        id: cid,
+        espnId: cid,
+        sport: sp,
+        sportName: spNm,
+        leagueSlug: `${sp}-${(cg.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        leagueName: cg.league || `${spNm} Competition`,
+        leagueCountry: cg.country || "International",
+        leagueLogo: cg.tournamentIcon || "",
+        date: kp.dateIso || cg.isoDate,
+        isoDateTime: new Date(ts).toISOString(),
+        timestamp: ts,
+        estimateStartTime: ts,
+        status: "FT",
+        matchStatus: cg.matchStatus || "FT",
+        playedByTime: Boolean(cg.playedByTime),
+        displayTime: kp.timeStr || cg.kickoffUtc || "FT",
+        home: hKey,
+        away: aKey,
+        homeTeamName: hNm,
+        awayTeamName: aNm,
+        homeScore: cH,
+        awayScore: cA,
+        footballComGameId: cg.footballComGameId || cg.footballCom?.gameId || null,
+        sportybetGameId: cg.sportybetGameId || cg.sportybet?.gameId || null,
+        onFootballCom: Boolean(cg.onFootballCom || cg.footballCom?.gameId),
+        onOneFootball: Boolean(cg.onOneFootball),
+        odds: { home: cg.bestOdds?.home || 1.85, draw: cg.bestOdds?.draw || null, away: cg.bestOdds?.away || 1.95 },
+        analysis: { confidencePct: 75, bestPick: { code: "FT", odds: cg.bestOdds?.home || 1.85 }, factors: {} }
+      });
+    }
+
+    if (RT?.reconcilePlayedMatchesByTime) {
+      const rec = RT.reconcilePlayedMatchesByTime(liveMatches, [...finishedTodayMatches, ...extraCompleted], Date.now());
+      liveMatches = rec.activeRemaining;
+      finishedTodayMatches = rec.finishedList;
+    } else if (extraCompleted.length > 0) {
+      finishedTodayMatches = [...finishedTodayMatches, ...extraCompleted];
+    }
   }
 
   async function syncBookmakerMismatchFeed(forceRefresh = false, showSuccessToast = false) {
@@ -5671,8 +5826,11 @@
   async function syncRealtimeFeed(showSuccessToast = false) {
     if (!RT) return;
     try {
-      const res = await RT.load((updatedActive) => {
+      const res = await RT.load((updatedActive, updatedFinished) => {
         liveMatches = (updatedActive || []).filter((m) => !isNcaaOrWomenMatch(m));
+        if (Array.isArray(updatedFinished)) {
+          finishedTodayMatches = updatedFinished.filter((m) => !isNcaaOrWomenMatch(m));
+        }
         mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
         // Avoid yanking user input focus during typing on /sure-odds or search
@@ -6197,7 +6355,20 @@
     }
   });
 
-  // Auto-refresh live scores every 45s when ticker is enabled
+  // Move elapsed matches into Complete Matches of the Day every 30s & refresh live scores every 45s
+  setInterval(() => {
+    if (RT?.reconcilePlayedMatchesByTime && liveMatches.length > 0) {
+      const prevLen = liveMatches.length;
+      const rec = RT.reconcilePlayedMatchesByTime(liveMatches, finishedTodayMatches, Date.now());
+      if (rec.activeRemaining.length !== prevLen) {
+        liveMatches = rec.activeRemaining;
+        finishedTodayMatches = rec.finishedList;
+        recomputeSlips();
+        renderAll();
+      }
+    }
+  }, 30000);
+
   setInterval(() => {
     if (!state.liveTicker) return;
     syncRealtimeFeed(false);

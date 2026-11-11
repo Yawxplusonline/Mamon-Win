@@ -3893,6 +3893,111 @@ window.MAMON_REALTIME = (() => {
     return runinLeagueCache.get(String(leagueCode || "england").toLowerCase()) || null;
   }
 
+  function computeRuninTip(row) {
+    if (row?.tip?.badge) return row.tip;
+    const ppg = Number(row?.ppg) || 0;
+    const diffPct = Number(row?.diffPct) || 0;
+    const remPpg = Number(row?.remainingPpg) || 0;
+    const nextOpp = Array.isArray(row?.remainingOpponents) && row.remainingOpponents.length > 0 ? row.remainingOpponents[0] : null;
+    const oppV = nextOpp?.oppVenuePpg;
+    const hasWeakNext = typeof oppV === "number" && oppV <= 1.25;
+    const hasModNext = typeof oppV === "number" && oppV <= 1.45;
+    const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : "Next league match";
+    const oppTxt = typeof oppV === "number" ? oppV.toFixed(2) : remPpg.toFixed(2);
+
+    if (Array.isArray(row?.remainingOpponents)) {
+      row.remainingOpponents = row.remainingOpponents.map((op) => {
+        if (op.matchTip) return op;
+        const ov = typeof op.oppVenuePpg === "number" ? op.oppVenuePpg : remPpg;
+        const gap = ppg - ov;
+        let matchTip = "⏭️ Skip (<1.60 PPG)";
+        let tipClass = "is-skip";
+        if (ppg >= 1.60) {
+          if (gap >= 0.45 && ov <= 1.35) {
+            matchTip = op.venue === "H" ? "💎 Back Home Win (1)" : "💎 Back Away Win (2)";
+            tipClass = "is-strong";
+          } else if (gap >= 0.15) {
+            matchTip = op.venue === "H" ? "💎 Home or Draw (1X)" : "💎 Away or Draw (X2)";
+            tipClass = "is-strong";
+          } else {
+            matchTip = "🛡️ Caution · +0.5 AH / DNB";
+            tipClass = "is-safe";
+          }
+        } else if (ppg < 1.20) {
+          matchTip = "🚫 Weak PPG (Fade)";
+          tipClass = "is-avoid";
+        }
+        return { ...op, matchTip, tipClass };
+      });
+    }
+
+    if (ppg >= 1.85) {
+      if (hasModNext || diffPct >= 0) {
+        const market = nextOpp?.venue === "A" ? "Away Win (2) / X2" : "Home Win (1)";
+        return {
+          isStrongPpg: true,
+          tier: "STRONG_LOCK",
+          badge: nextOpp?.venue === "A" ? "💎 BACK AWAY WIN (2) / X2" : "💎 BACK HOME WIN (1)",
+          market,
+          nextFixtureTip: `${nextLabel} → Back ${market}`,
+          reason: `Strong ${ppg.toFixed(2)} PPG (${row.diffLabel || "0%"} run-in) vs opp ${oppTxt} venue PPG.`
+        };
+      }
+      const market = nextOpp?.venue === "A" ? "X2 / Draw No Bet" : "1X / Draw No Bet";
+      return {
+        isStrongPpg: true,
+        tier: "STRONG_SAFE",
+        badge: `🛡️ STRONG PPG · ${market.toUpperCase()}`,
+        market,
+        nextFixtureTip: `${nextLabel} → Safe ${market}`,
+        reason: `Elite ${ppg.toFixed(2)} PPG facing tough ${oppTxt} venue opponent (${row.diffLabel || "0%"} REM).`
+      };
+    }
+
+    if (ppg >= 1.60) {
+      if (diffPct >= 0 || hasWeakNext) {
+        const market = nextOpp?.venue === "A" ? "Away or Draw (X2)" : "Home Win (1) / 1X";
+        return {
+          isStrongPpg: true,
+          tier: "STRONG_EDGE",
+          badge: nextOpp?.venue === "A" ? "💎 STRONG PPG · X2 / OVER 1.5" : "💎 STRONG PPG · HOME (1 / 1X)",
+          market,
+          nextFixtureTip: `${nextLabel} → ${market}`,
+          reason: `Strong ${ppg.toFixed(2)} PPG with ${diffPct >= 0 ? "favorable" : "manageable"} upcoming fixture (${oppTxt} opp PPG).`
+        };
+      }
+      const market = nextOpp?.venue === "A" ? "Away +0.5 AH / X2" : "Home +0.5 AH / 1X";
+      return {
+        isStrongPpg: true,
+        tier: "STRONG_CAUTION",
+        badge: `🛡️ STRONG PPG · ${nextOpp?.venue === "A" ? "X2" : "1X"} SAFE`,
+        market,
+        nextFixtureTip: `${nextLabel} → Safe ${market}`,
+        reason: `Strong ${ppg.toFixed(2)} PPG, but remaining fixtures are tougher (${row.diffLabel || "0%"}).`
+      };
+    }
+
+    if (ppg < 1.20) {
+      return {
+        isStrongPpg: false,
+        tier: "WEAK_AVOID",
+        badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
+        market: "Avoid Backing (Lay)",
+        nextFixtureTip: `${nextLabel} → Avoid backing ${row.team}`,
+        reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60). Only back >=1.60 PPG opponents.`
+      };
+    }
+
+    return {
+      isStrongPpg: false,
+      tier: "MID_SKIP",
+      badge: "⏭️ SKIP WIN (<1.60 PPG)",
+      market: "No Strong PPG Edge",
+      nextFixtureTip: `${nextLabel} → Skip straight win`,
+      reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold.`
+    };
+  }
+
   function buildFallbackRuninTable(leagueCode = "england", matches = []) {
     const code = String(leagueCode || "england").toLowerCase();
     const meta = findRuninLeagueMeta(code);
@@ -4036,7 +4141,9 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
-    const table = Array.from(rowsMap.values()).sort((a, b) => a.rank - b.rank || b.ppg - a.ppg);
+    const table = Array.from(rowsMap.values())
+      .map((r) => ({ ...r, tip: r.tip || computeRuninTip(r) }))
+      .sort((a, b) => a.rank - b.rank || b.ppg - a.ppg);
     return {
       ok: table.length > 0,
       isFallback: true,
@@ -4061,6 +4168,7 @@ window.MAMON_REALTIME = (() => {
     getLeagueRuninCached,
     buildFallbackRuninTable,
     lookupTeamRunin,
+    computeRuninTip,
     getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),
     slugToEspnCode
   };

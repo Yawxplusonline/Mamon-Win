@@ -4771,3 +4771,91 @@ ul {
   border: 1px solid var(--line-soft);
   font-size: 11px;
 }
+.runin-fixtures-td {
+  white-space: normal !important;
+  min-width: 235px;
+  max-width: 310px;
+}
+.runin-inline-fixtures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.runin-mini-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+.runin-score-tag {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.runin-score-tag.is-w {
+  background: rgba(22, 163, 74, 0.16);
+  color: #16A34A;
+}
+.runin-score-tag.is-d {
+  background: rgba(217, 119, 6, 0.16);
+  color: #D97706;
+}
+.runin-score-tag.is-l {
+  background: rgba(220, 38, 38, 0.16);
+  color: #DC2626;
+}
+.runin-tip-td {
+  white-space: normal !important;
+  min-width: 195px;
+  max-width: 240px;
+}
+.runin-tip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.runin-tip-pill.is-strong {
+  background: rgba(16, 185, 129, 0.16);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+}
+.runin-tip-pill.is-safe {
+  background: rgba(59, 130, 246, 0.14);
+  color: #2563EB;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.runin-tip-pill.is-skip {
+  background: rgba(100, 116, 139, 0.12);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.runin-tip-pill.is-avoid {
+  background: rgba(220, 38, 38, 0.12);
+  color: #DC2626;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+.runin-tip-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--line);
+}

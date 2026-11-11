@@ -244,6 +244,315 @@ function parseRuninHtml(html, leagueMeta) {
   };
 }
 
+function computeRuninTip(row) {
+  const ppg = Number(row.ppg) || 0;
+  const diffPct = Number(row.diffPct) || 0;
+  const remPpg = Number(row.remainingPpg) || 0;
+  const nextOpp = Array.isArray(row.remainingOpponents) && row.remainingOpponents.length > 0
+    ? row.remainingOpponents[0]
+    : null;
+
+  const isStrongPpg = ppg >= 1.60;
+  const oppV = nextOpp?.oppVenuePpg;
+  const hasWeakNextOpp = typeof oppV === "number" && oppV <= 1.25;
+  const hasModerateNextOpp = typeof oppV === "number" && oppV <= 1.45;
+  const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : "Next league match";
+  const nextOppPpgTxt = typeof oppV === "number" ? oppV.toFixed(2) : remPpg.toFixed(2);
+
+  // Enrich next 5 upcoming opponents with fixture-level Strong PPG tips
+  if (Array.isArray(row.remainingOpponents)) {
+    row.remainingOpponents = row.remainingOpponents.map((op) => {
+      const ov = typeof op.oppVenuePpg === "number" ? op.oppVenuePpg : remPpg;
+      const gap = ppg - ov;
+      let matchTip = "⏭️ Skip (<1.60 PPG)";
+      let tipClass = "is-skip";
+      if (ppg >= 1.60) {
+        if (gap >= 0.45 && ov <= 1.35) {
+          matchTip = op.venue === "H" ? "💎 Back Home Win (1)" : "💎 Back Away Win (2)";
+          tipClass = "is-strong";
+        } else if (gap >= 0.15) {
+          matchTip = op.venue === "H" ? "💎 Home or Draw (1X)" : "💎 Away or Draw (X2)";
+          tipClass = "is-strong";
+        } else {
+          matchTip = "🛡️ Caution · +0.5 AH / DNB";
+          tipClass = "is-safe";
+        }
+      } else if (ppg < 1.20) {
+        matchTip = "🚫 Weak PPG (Fade)";
+        tipClass = "is-avoid";
+      }
+      return { ...op, matchTip, tipClass };
+    });
+  }
+
+  if (ppg >= 1.85) {
+    if (hasModerateNextOpp || diffPct >= 0) {
+      const market = nextOpp?.venue === "A" ? "Away Win (2) / X2" : "Home Win (1)";
+      return {
+        isStrongPpg: true,
+        tier: "STRONG_LOCK",
+        badge: nextOpp?.venue === "A" ? "💎 BACK AWAY WIN (2) / X2" : "💎 BACK HOME WIN (1)",
+        market,
+        nextFixtureTip: `${nextLabel} → Back ${market}`,
+        reason: `Strong ${ppg.toFixed(2)} PPG (${row.diffLabel} run-in) vs opp ${nextOppPpgTxt} venue PPG.`
+      };
+    }
+    const market = nextOpp?.venue === "A" ? "X2 / Draw No Bet" : "1X / Draw No Bet";
+    return {
+      isStrongPpg: true,
+      tier: "STRONG_SAFE",
+      badge: `🛡️ STRONG PPG · ${market.toUpperCase()}`,
+      market,
+      nextFixtureTip: `${nextLabel} → Safe ${market}`,
+      reason: `Elite ${ppg.toFixed(2)} PPG facing tough ${nextOppPpgTxt} venue opponent (${row.diffLabel} REM).`
+    };
+  }
+
+  if (ppg >= 1.60) {
+    if (diffPct >= 0 || hasWeakNextOpp) {
+      const market = nextOpp?.venue === "A" ? "Away or Draw (X2)" : "Home Win (1) / 1X";
+      return {
+        isStrongPpg: true,
+        tier: "STRONG_EDGE",
+        badge: nextOpp?.venue === "A" ? "💎 STRONG PPG · X2 / OVER 1.5" : "💎 STRONG PPG · HOME (1 / 1X)",
+        market,
+        nextFixtureTip: `${nextLabel} → ${market}`,
+        reason: `Strong ${ppg.toFixed(2)} PPG with ${diffPct >= 0 ? "favorable" : "manageable"} upcoming fixture (${nextOppPpgTxt} opp PPG).`
+      };
+    }
+    const market = nextOpp?.venue === "A" ? "Away +0.5 AH / X2" : "Home +0.5 AH / 1X";
+    return {
+      isStrongPpg: true,
+      tier: "STRONG_CAUTION",
+      badge: `🛡️ STRONG PPG · ${nextOpp?.venue === "A" ? "X2" : "1X"} SAFE`,
+      market,
+      nextFixtureTip: `${nextLabel} → Safe ${market}`,
+      reason: `Strong ${ppg.toFixed(2)} PPG, but remaining fixtures are tougher (${row.diffLabel}).`
+    };
+  }
+
+  if (ppg < 1.20) {
+    return {
+      isStrongPpg: false,
+      tier: "WEAK_AVOID",
+      badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
+      market: "Avoid Backing (Lay)",
+      nextFixtureTip: `${nextLabel} → Avoid backing ${row.team}`,
+      reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60). Only back >=1.60 PPG opponents.`
+    };
+  }
+
+  return {
+    isStrongPpg: false,
+    tier: "MID_SKIP",
+    badge: `⏭️ SKIP WIN (<1.60 PPG)`,
+    market: "No Strong PPG Edge",
+    nextFixtureTip: `${nextLabel} → Skip straight win`,
+    reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold.`
+  };
+}
+
+function teamNamesLooselyMatch(normA, normB) {
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+  if (normA.length >= 4 && normB.length >= 4 && (normA.includes(normB) || normB.includes(normA))) return true;
+  const tA = normA.split(" ").filter((t) => t.length >= 4);
+  const tB = new Set(normB.split(" ").filter((t) => t.length >= 4));
+  return tA.some((t) => tB.has(t));
+}
+
+function parseSoccerStatsScoreRecords(html, isUefa) {
+  const cleanCell = (s) => decodeHtmlEntities(String(s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  const byTeamPlayed = new Map();
+  const byTeamUpcoming = new Map();
+
+  const pushPlayed = (teamName, rec) => {
+    const key = normalizeTeamKey(teamName);
+    if (!key) return;
+    if (!byTeamPlayed.has(key)) byTeamPlayed.set(key, []);
+    byTeamPlayed.get(key).push(rec);
+  };
+  const pushUpcoming = (teamName, rec) => {
+    const key = normalizeTeamKey(teamName);
+    if (!key) return;
+    if (!byTeamUpcoming.has(key)) byTeamUpcoming.set(key, []);
+    byTeamUpcoming.get(key).push(rec);
+  };
+
+  const trs = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+  for (const tr of trs) {
+    if (isUefa) {
+      if (!/tm-match-row/i.test(tr)) continue;
+      const tds = (tr.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(cleanCell);
+      const koMatch = tr.match(/data-kickoff="([^"]*)"/i);
+      const dateStr = koMatch ? koMatch[1].slice(0, 10) : (tds[0] || "");
+      if (tds.length >= 4 && tds[1] && tds[3]) {
+        const scMatch = tds[2].match(/^(\d+)\s*:\s*(\d+)/);
+        if (scMatch) {
+          const hg = parseInt(scMatch[1], 10);
+          const ag = parseInt(scMatch[2], 10);
+          const home = tds[1];
+          const away = tds[3];
+          pushPlayed(home, {
+            venue: "H", opponent: away, oppNorm: normalizeTeamKey(away),
+            teamGoals: hg, oppGoals: ag, score: `${hg}-${ag}`, matchScore: `${hg}-${ag}`,
+            result: hg > ag ? "W" : hg === ag ? "D" : "L", date: dateStr
+          });
+          pushPlayed(away, {
+            venue: "A", opponent: home, oppNorm: normalizeTeamKey(home),
+            teamGoals: ag, oppGoals: hg, score: `${ag}-${hg}`, matchScore: `${hg}-${ag}`,
+            result: ag > hg ? "W" : ag === hg ? "D" : "L", date: dateStr
+          });
+          continue;
+        }
+      }
+      const fixCell = tds.find((c) => /.+\s+-\s+.+/.test(c));
+      if (fixCell) {
+        const parts = fixCell.split(/\s+-\s+/);
+        if (parts.length === 2) {
+          const home = parts[0].trim();
+          const away = parts[1].trim();
+          pushUpcoming(home, { venue: "H", opponent: away, oppNorm: normalizeTeamKey(away), date: dateStr });
+          pushUpcoming(away, { venue: "A", opponent: home, oppNorm: normalizeTeamKey(home), date: dateStr });
+        }
+      }
+      continue;
+    }
+
+    // Domestic results.asp rows
+    if (!tr.includes("/matches/")) continue;
+    const tds = (tr.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(cleanCell);
+    const fixtureIdx = tds.findIndex((c) => /\s+vs\s+/i.test(c));
+    if (fixtureIdx === -1) continue;
+    const vsParts = tds[fixtureIdx].split(/\s+vs\s+/i);
+    if (vsParts.length !== 2) continue;
+    const home = vsParts[0].trim();
+    const away = vsParts[1].trim();
+    const dateStr = tds[0] || "";
+    const scoreCell = tds.slice(fixtureIdx + 1).find((c) => /^\d+\s*[-:]\s*\d+$/.test(c));
+    if (scoreCell) {
+      const m = scoreCell.match(/^(\d+)\s*[-:]\s*(\d+)$/);
+      const hg = parseInt(m[1], 10);
+      const ag = parseInt(m[2], 10);
+      pushPlayed(home, {
+        venue: "H", opponent: away, oppNorm: normalizeTeamKey(away),
+        teamGoals: hg, oppGoals: ag, score: `${hg}-${ag}`, matchScore: `${hg}-${ag}`,
+        result: hg > ag ? "W" : hg === ag ? "D" : "L", date: dateStr
+      });
+      pushPlayed(away, {
+        venue: "A", opponent: home, oppNorm: normalizeTeamKey(home),
+        teamGoals: ag, oppGoals: hg, score: `${ag}-${hg}`, matchScore: `${hg}-${ag}`,
+        result: ag > hg ? "W" : ag === hg ? "D" : "L", date: dateStr
+      });
+    } else {
+      const timeStr = /^\d{1,2}:\d{2}$/.test(tds[1] || "") ? ` ${tds[1]}` : "";
+      const when = `${dateStr}${timeStr}`.trim();
+      pushUpcoming(home, { venue: "H", opponent: away, oppNorm: normalizeTeamKey(away), date: when });
+      pushUpcoming(away, { venue: "A", opponent: home, oppNorm: normalizeTeamKey(home), date: when });
+    }
+  }
+
+  return { byTeamPlayed, byTeamUpcoming };
+}
+
+async function fetchSoccerStatsResults(meta) {
+  const isUefa = ["cleague", "eleague", "cfleague"].includes(meta.code);
+  const url = isUefa
+    ? `https://www.soccerstats.com/en-gb/leagues/${meta.path}`
+    : `https://www.soccerstats.com/results.asp?league=${encodeURIComponent(meta.code)}&pmtype=bydate`;
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-GB,en;q=0.9",
+      Referer: "https://www.soccerstats.com/en-gb/"
+    },
+    signal: AbortSignal.timeout(5500)
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+  return parseSoccerStatsScoreRecords(html, isUefa);
+}
+
+function getTeamMapRecords(mapObj, teamNorm) {
+  if (!mapObj || !teamNorm) return [];
+  if (mapObj.has(teamNorm)) return mapObj.get(teamNorm);
+  for (const [k, list] of mapObj.entries()) {
+    if (teamNamesLooselyMatch(k, teamNorm)) return list;
+  }
+  return [];
+}
+
+function mergeScorelinesAndTipsIntoRows(rows, scoreRecords) {
+  if (!Array.isArray(rows)) return [];
+  const oppPpgByNorm = new Map();
+  for (const r of rows) {
+    oppPpgByNorm.set(r.teamNormalized, { homePpg: r.ppg, awayPpg: r.ppg, ppg: r.ppg });
+  }
+
+  for (const row of rows) {
+    if (scoreRecords) {
+      const teamPlayed = getTeamMapRecords(scoreRecords.byTeamPlayed, row.teamNormalized);
+      const teamUpcoming = getTeamMapRecords(scoreRecords.byTeamUpcoming, row.teamNormalized);
+
+      const usedIdx = new Set();
+      if (Array.isArray(row.playedOpponents) && row.playedOpponents.length > 0 && teamPlayed.length > 0) {
+        row.playedOpponents = row.playedOpponents.map((op) => {
+          const opNorm = normalizeTeamKey(op.opponent);
+          let matchIdx = teamPlayed.findIndex((p, idx) => !usedIdx.has(idx) && p.venue === op.venue && teamNamesLooselyMatch(p.oppNorm, opNorm));
+          if (matchIdx === -1) {
+            matchIdx = teamPlayed.findIndex((p, idx) => !usedIdx.has(idx) && teamNamesLooselyMatch(p.oppNorm, opNorm));
+          }
+          if (matchIdx !== -1) {
+            usedIdx.add(matchIdx);
+            const rec = teamPlayed[matchIdx];
+            return {
+              ...op,
+              score: rec.score,
+              matchScore: rec.matchScore,
+              teamGoals: rec.teamGoals,
+              oppGoals: rec.oppGoals,
+              result: rec.result,
+              date: rec.date || ""
+            };
+          }
+          return op;
+        });
+      } else if ((!row.playedOpponents || row.playedOpponents.length === 0) && teamPlayed.length > 0) {
+        row.playedOpponents = teamPlayed.slice(0, row.gp || 20).map((rec) => {
+          const oppRow = oppPpgByNorm.get(rec.oppNorm);
+          const oppVenuePpg = oppRow ? oppRow.ppg : row.playedPpg || 1.32;
+          return {
+            venue: rec.venue,
+            opponent: rec.opponent,
+            oppVenuePpg,
+            score: rec.score,
+            matchScore: rec.matchScore,
+            teamGoals: rec.teamGoals,
+            oppGoals: rec.oppGoals,
+            result: rec.result,
+            date: rec.date || "",
+            label: `(${rec.venue}) ${rec.venue === "H" ? "vs" : "at"} ${rec.opponent}`,
+            ppgLabel: `PPG ${rec.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
+          };
+        });
+      }
+
+      if (Array.isArray(row.remainingOpponents) && teamUpcoming.length > 0) {
+        row.remainingOpponents = row.remainingOpponents.map((op) => {
+          const opNorm = normalizeTeamKey(op.opponent);
+          const found = teamUpcoming.find((u) => u.venue === op.venue && teamNamesLooselyMatch(u.oppNorm, opNorm))
+            || teamUpcoming.find((u) => teamNamesLooselyMatch(u.oppNorm, opNorm));
+          return found?.date ? { ...op, date: found.date } : op;
+        });
+      }
+    }
+
+    row.tip = computeRuninTip(row);
+  }
+  return rows;
+}
+
 const ESPN_BATCH_FALLBACK_TTL_MS = 10 * 60 * 1000;
 
 function extractEspnStat(statsArr, ...keys) {
@@ -385,19 +694,78 @@ async function fetchEspnRuninFallback(meta, options = {}) {
         const isDone = Boolean(comp.status?.type?.completed || comp.status?.type?.state === "post");
         const v0 = String(c0.homeAway || "").toLowerCase() === "away" ? "A" : "H";
         const v1 = v0 === "H" ? "A" : "H";
+        const s0 = Number(c0.score?.value ?? c0.score ?? NaN);
+        const s1 = Number(c1.score?.value ?? c1.score ?? NaN);
+        const hasSc = isDone && Number.isFinite(s0) && Number.isFinite(s1);
+        const dateStr = String(ev?.date || "").slice(0, 10);
+
         if (id0 && n1) {
           const mapTarget = isDone ? playedByTeam : futureByTeam;
           if (!mapTarget.has(id0)) mapTarget.set(id0, []);
-          mapTarget.get(id0).push({ venue: v0, oppId: id1, oppName: n1 });
+          mapTarget.get(id0).push({
+            venue: v0, oppId: id1, oppName: n1, date: dateStr,
+            ...(hasSc ? { teamGoals: s0, oppGoals: s1, score: `${s0}-${s1}`, result: s0 > s1 ? "W" : s0 === s1 ? "D" : "L" } : {})
+          });
         }
         if (id1 && n0) {
           const mapTarget = isDone ? playedByTeam : futureByTeam;
           if (!mapTarget.has(id1)) mapTarget.set(id1, []);
-          mapTarget.get(id1).push({ venue: v1, oppId: id0, oppName: n0 });
+          mapTarget.get(id1).push({
+            venue: v1, oppId: id0, oppName: n0, date: dateStr,
+            ...(hasSc ? { teamGoals: s1, oppGoals: s0, score: `${s1}-${s0}`, result: s1 > s0 ? "W" : s1 === s0 ? "D" : "L" } : {})
+          });
         }
       }
     } catch {
-      // Scoreboard fixture enrichment is optional; standings matrix provides full opponent breakdown
+      // Scoreboard enrichment is optional
+    }
+
+    // Gentle 10-team alternating schedule fetch (2 small batches of 5) for completed scorelines on single-league fallback
+    const sampleTeams = teamsList.filter((_, idx) => idx % 2 === 0).slice(0, 10);
+    const seenMatchIds = new Set();
+    for (let i = 0; i < sampleTeams.length; i += 5) {
+      const slice = sampleTeams.slice(i, i + 5);
+      const resBatch = await Promise.allSettled(
+        slice.map((t) => fetchJsonWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/soccer/${meta.espnCode}/teams/${t.id}/schedule`, 3200))
+      );
+      for (const r of resBatch) {
+        if (r.status !== "fulfilled" || !Array.isArray(r.value?.events)) continue;
+        for (const ev of r.value.events) {
+          const evId = String(ev.id || "");
+          if (evId && seenMatchIds.has(evId)) continue;
+          const evSlug = String(ev?.league?.slug || "").toLowerCase();
+          if (evSlug && evSlug !== meta.espnCode.toLowerCase()) continue;
+          const comp = ev?.competitions?.[0];
+          if (!comp || !(comp.status?.type?.completed || comp.status?.type?.state === "post")) continue;
+          const comps = comp.competitors || [];
+          if (comps.length < 2) continue;
+          const c0 = comps[0];
+          const c1 = comps[1];
+          const id0 = String(c0.id || c0.team?.id || "");
+          const id1 = String(c1.id || c1.team?.id || "");
+          if (!teamMap.has(id0) || !teamMap.has(id1)) continue;
+          if (evId) seenMatchIds.add(evId);
+          const n0 = String(c0.team?.displayName || c0.team?.name || teamMap.get(id0)?.team || "").trim();
+          const n1 = String(c1.team?.displayName || c1.team?.name || teamMap.get(id1)?.team || "").trim();
+          const v0 = String(c0.homeAway || "").toLowerCase() === "away" ? "A" : "H";
+          const v1 = v0 === "H" ? "A" : "H";
+          const s0 = Number(c0.score?.value ?? c0.score ?? NaN);
+          const s1 = Number(c1.score?.value ?? c1.score ?? NaN);
+          if (!Number.isFinite(s0) || !Number.isFinite(s1)) continue;
+          const dateStr = String(ev.date || "").slice(0, 10);
+
+          if (!playedByTeam.has(id0)) playedByTeam.set(id0, []);
+          playedByTeam.get(id0).push({
+            venue: v0, oppId: id1, oppName: n1, date: dateStr,
+            teamGoals: s0, oppGoals: s1, score: `${s0}-${s1}`, result: s0 > s1 ? "W" : s0 === s1 ? "D" : "L"
+          });
+          if (!playedByTeam.has(id1)) playedByTeam.set(id1, []);
+          playedByTeam.get(id1).push({
+            venue: v1, oppId: id0, oppName: n0, date: dateStr,
+            teamGoals: s1, oppGoals: s0, score: `${s1}-${s0}`, result: s1 > s0 ? "W" : s1 === s0 ? "D" : "L"
+          });
+        }
+      }
     }
   }
 
@@ -417,6 +785,8 @@ async function fetchEspnRuninFallback(meta, options = {}) {
           venue: x.venue,
           opponent: x.oppName,
           oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
+          ...(x.score ? { score: x.score, teamGoals: x.teamGoals, oppGoals: x.oppGoals, result: x.result } : {}),
+          ...(x.date ? { date: x.date } : {}),
           label: `(${x.venue}) ${x.venue === "H" ? "vs" : "at"} ${x.oppName}`,
           ppgLabel: `PPG ${x.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
         };
@@ -433,6 +803,7 @@ async function fetchEspnRuninFallback(meta, options = {}) {
           venue: x.venue,
           opponent: x.oppName,
           oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
+          ...(x.date ? { date: x.date } : {}),
           label: `(${x.venue}) ${x.venue === "H" ? "vs" : "at"} ${x.oppName}`,
           ppgLabel: `PPG ${x.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
         };
@@ -469,7 +840,7 @@ async function fetchEspnRuninFallback(meta, options = {}) {
     const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
     const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
 
-    return {
+    const rowObj = {
       rank: team.rank,
       team: team.team,
       teamNormalized: normalizeTeamKey(team.team),
@@ -493,6 +864,8 @@ async function fetchEspnRuninFallback(meta, options = {}) {
       playedOpponents,
       remainingOpponents
     };
+    rowObj.tip = computeRuninTip(rowObj);
+    return rowObj;
   });
 
   const totalGp = rows.reduce((acc, r) => acc + r.gp, 0);
@@ -522,6 +895,7 @@ async function fetchEspnRuninFallback(meta, options = {}) {
 async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options = {}) {
   const meta = resolveLeagueMeta(leagueCodeOrSlug);
   const fastMatrixOnFallback = Boolean(options.fastMatrixOnFallback);
+  const wantScores = !fastMatrixOnFallback;
   const now = Date.now();
   const cached = leagueCache.get(meta.code);
   if (
@@ -530,7 +904,7 @@ async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options 
     now < cached.expiresAt &&
     Array.isArray(cached.payload?.table) &&
     cached.payload.table.length > 0 &&
-    (fastMatrixOnFallback || !cached.payload.isLightFallback)
+    (fastMatrixOnFallback || (!cached.payload.isLightFallback && cached.payload.hasScores))
   ) {
     return { ...cached.payload, cache: "HIT" };
   }
@@ -546,22 +920,30 @@ async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options 
       let payload = null;
 
       try {
-        const resp = await fetch(targetUrl, {
-          headers: {
-            "User-Agent": UA,
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-GB,en;q=0.9",
-            Referer: "https://www.soccerstats.com/en-gb/"
-          },
-          signal: AbortSignal.timeout(6000)
-        });
+        const [runinSettled, scoreSettled] = await Promise.allSettled([
+          fetch(targetUrl, {
+            headers: {
+              "User-Agent": UA,
+              Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "en-GB,en;q=0.9",
+              Referer: "https://www.soccerstats.com/en-gb/"
+            },
+            signal: AbortSignal.timeout(6000)
+          }),
+          wantScores ? fetchSoccerStatsResults(meta) : Promise.resolve(null)
+        ]);
 
-        if (resp.ok) {
+        const resp = runinSettled.status === "fulfilled" ? runinSettled.value : null;
+        const scoreRecords = scoreSettled.status === "fulfilled" ? scoreSettled.value : null;
+
+        if (resp && resp.ok) {
           const html = await resp.text();
           const { rows, summary } = parseRuninHtml(html, meta);
           if (rows.length > 0) {
+            mergeScorelinesAndTipsIntoRows(rows, scoreRecords);
             payload = {
               ok: true,
+              hasScores: wantScores,
               source: "SoccerSTATS.com Run-In Analysis",
               sourceUrl: targetUrl,
               fetchedAt: new Date().toISOString(),
@@ -578,6 +960,7 @@ async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options 
       if (!payload) {
         try {
           payload = await fetchEspnRuninFallback(meta, { fastMatrixOnly: fastMatrixOnFallback });
+          payload.hasScores = wantScores;
         } catch (fbErr) {
           if (cached && Array.isArray(cached.payload?.table) && cached.payload.table.length > 0) {
             return { ...cached.payload, cache: "STALE" };
@@ -631,6 +1014,7 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
   const teamsIndex = {};
   const compactRow = (row) => ({
     ...row,
+    tip: row.tip || computeRuninTip(row),
     playedCount: row.playedOpponents.length,
     remainingCount: row.remainingOpponents.length,
     playedOpponents: row.playedOpponents.slice(-6),
@@ -645,7 +1029,7 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
       table: compactRows,
       source: res.source,
       sourceUrl: res.sourceUrl,
-      isFullFetch: !res.isLightFallback
+      isFullFetch: Boolean(res.hasScores)
     };
     for (const row of compactRows) {
       const exactKey = row.team.toLowerCase().trim();
@@ -707,4 +1091,5 @@ module.exports = async function handler(req, res) {
 module.exports.fetchLeagueRunin = fetchLeagueRunin;
 module.exports.fetchEspnRuninFallback = fetchEspnRuninFallback;
 module.exports.fetchTopLeaguesRunin = fetchTopLeaguesRunin;
+module.exports.computeRuninTip = computeRuninTip;
 module.exports.SOCCERSTATS_LEAGUES = SOCCERSTATS_LEAGUES;

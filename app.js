@@ -2393,6 +2393,81 @@
     return { activeCode, isLoadingThisLeague, leagueData, catalog, leagueMeta };
   }
 
+  function resolveRowRuninTip(row) {
+    if (row?.tip?.badge) return row.tip;
+    if (RT?.computeRuninTip) return RT.computeRuninTip(row);
+    const ppg = Number(row?.ppg) || 0;
+    return ppg >= 1.60
+      ? { isStrongPpg: true, tier: "STRONG_EDGE", badge: `💎 STRONG PPG (${ppg.toFixed(2)})`, nextFixtureTip: "Back Strong PPG side", reason: `PPG ${ppg.toFixed(2)} >= 1.60` }
+      : { isStrongPpg: false, tier: "MID_SKIP", badge: "⏭️ SKIP (<1.60 PPG)", nextFixtureTip: "Wait for >=1.60 Strong PPG", reason: "Only Strong PPG (>=1.60) is tipped." };
+  }
+
+  function getRuninTipPillClass(tip) {
+    if (!tip) return "is-skip";
+    if (tip.tier === "STRONG_LOCK" || tip.tier === "STRONG_EDGE") return "is-strong";
+    if (tip.isStrongPpg || tip.tier === "STRONG_SAFE" || tip.tier === "STRONG_CAUTION") return "is-safe";
+    if (tip.tier === "WEAK_AVOID") return "is-avoid";
+    return "is-skip";
+  }
+
+  function renderRuninPlayedChips(playedList, inlineLimit = null) {
+    const list = Array.isArray(playedList) ? playedList : [];
+    if (list.length === 0) return `<span class="text-xs text-muted">Pending fixtures</span>`;
+    const subset = inlineLimit ? [...list].slice(-inlineLimit).reverse() : list;
+    const chips = subset.map((op) => {
+      const resCls = op.result === "W" ? "is-w" : op.result === "D" ? "is-d" : op.result === "L" ? "is-l" : "";
+      const scoreHtml = op.score
+        ? `<span class="runin-score-tag ${resCls}">${escapeHtml(`${op.result ? `${op.result} ` : ""}${op.score}`)}</span>`
+        : `<span class="font-mono text-muted">(${op.oppVenuePpg !== null && op.oppVenuePpg !== undefined ? Number(op.oppVenuePpg).toFixed(2) : "-"})</span>`;
+      if (inlineLimit) {
+        return `<span class="runin-mini-chip" title="${escapeHtml(`${op.label || op.opponent}${op.score ? ` · Score ${op.score}` : ""}${op.date ? ` (${op.date})` : ""}`)}"><span class="${op.venue === "H" ? "v-h" : "v-a"}">${op.venue}</span><strong>${escapeHtml(op.opponent)}</strong>${scoreHtml}</span>`;
+      }
+      return `
+        <span class="runin-opp-chip">
+          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
+          <strong>${escapeHtml(op.opponent)}</strong>
+          ${scoreHtml}
+          ${op.date ? `<span class="font-mono text-muted">${escapeHtml(op.date)}</span>` : ""}
+          <span class="font-mono text-muted">(${op.oppVenuePpg !== null && op.oppVenuePpg !== undefined ? Number(op.oppVenuePpg).toFixed(2) : "-"})</span>
+        </span>
+      `;
+    }).join("");
+    const extra = inlineLimit && list.length > inlineLimit
+      ? `<span class="runin-mini-chip text-muted font-mono">+${list.length - inlineLimit} all</span>`
+      : "";
+    return chips + extra;
+  }
+
+  function renderRuninUpcomingChips(remList, inlineLimit = null) {
+    const list = Array.isArray(remList) ? remList : [];
+    if (list.length === 0) return `<span class="text-xs text-muted">Season complete</span>`;
+    const subset = inlineLimit ? list.slice(0, inlineLimit) : list;
+    const chips = subset.map((op) => {
+      const oppPpgNum = op.oppVenuePpg !== null && op.oppVenuePpg !== undefined ? Number(op.oppVenuePpg) : null;
+      const oppPpgTxt = oppPpgNum !== null ? oppPpgNum.toFixed(2) : "-";
+      const oppTone = oppPpgNum === null ? "" : oppPpgNum <= 1.20 ? "color:#16A34A;font-weight:700;" : oppPpgNum >= 1.55 ? "color:#DC2626;font-weight:700;" : "";
+      if (inlineLimit) {
+        return `<span class="runin-mini-chip" title="${escapeHtml(`${op.label || op.opponent} · Opp Venue PPG ${oppPpgTxt}${op.matchTip ? ` · ${op.matchTip}` : ""}`)}"><span class="${op.venue === "H" ? "v-h" : "v-a"}">${op.venue}</span><strong>${escapeHtml(op.opponent)}</strong><span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span></span>`;
+      }
+      const matchTipBadge = op.matchTip
+        ? `<span class="runin-tip-pill ${escapeHtml(op.tipClass || "is-skip")}" style="font-size:9.5px;padding:1px 5px;">${escapeHtml(op.matchTip)}</span>`
+        : "";
+      return `
+        <span class="runin-opp-chip">
+          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
+          <strong>${escapeHtml(op.opponent)}</strong>
+          ${op.date ? `<span class="font-mono text-muted">${escapeHtml(op.date)}</span>` : ""}
+          <span class="font-mono" style="${oppTone}">(${oppPpgTxt})</span>
+          ${matchTipBadge}
+        </span>
+      `;
+    }).join("");
+    const extra = inlineLimit && list.length > inlineLimit
+      ? `<span class="runin-mini-chip text-muted font-mono">+${list.length - inlineLimit} left</span>`
+      : "";
+    return chips + extra;
+  }
+
   // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
   function renderRunInAnalysisView() {
     const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
@@ -2402,6 +2477,7 @@
 
     const favorableRows = rawRows.filter((r) => r.diffPct > 0);
     const toughRows = rawRows.filter((r) => r.diffPct < 0);
+    const strongPpgAllRows = rawRows.filter((r) => r.ppg >= 1.60);
     const strongPpgEasyRows = rawRows.filter((r) => r.ppg >= 1.60 && r.diffPct > 0);
 
     let filteredRows = rawRows;
@@ -2409,6 +2485,8 @@
       filteredRows = [...favorableRows].sort((a, b) => b.diffPct - a.diffPct);
     } else if (activeFilter === "TOUGH") {
       filteredRows = [...toughRows].sort((a, b) => a.diffPct - b.diffPct);
+    } else if (activeFilter === "STRONG_PPG") {
+      filteredRows = [...strongPpgAllRows].sort((a, b) => b.ppg - a.ppg || b.diffPct - a.diffPct);
     } else if (activeFilter === "STRONG_PPG_EASY") {
       filteredRows = [...strongPpgEasyRows].sort((a, b) => (b.ppg + b.diffPct / 100) - (a.ppg + a.diffPct / 100));
     }
@@ -2416,7 +2494,7 @@
     const easiestTop = [...rawRows].sort((a, b) => b.diffPct - a.diffPct)[0];
     const toughestTop = [...rawRows].sort((a, b) => a.diffPct - b.diffPct)[0];
     const strongPpgLock = [...strongPpgEasyRows].sort((a, b) => (b.ppg * 100 + b.diffPct) - (a.ppg * 100 + a.diffPct))[0]
-      || [...rawRows].filter((r) => r.ppg >= 1.60).sort((a, b) => b.diffPct - a.diffPct)[0];
+      || [...strongPpgAllRows].sort((a, b) => b.diffPct - a.diffPct)[0];
 
     const summaryInfo = leagueData?.summary;
 
@@ -2444,40 +2522,34 @@
       const isExpanded = expandedRuninTeam === `${activeCode}:${row.team}`;
       const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
       const isStrongPpg = row.ppg >= 1.60;
+      const tip = resolveRowRuninTip(row);
+      const tipCls = getRuninTipPillClass(tip);
+      const playedCount = row.playedOpponents?.length || row.playedCount || 0;
+      const remCount = row.remainingOpponents?.length || row.remainingCount || 0;
+
       const drawerHtml = !isExpanded ? "" : `
         <tr class="runin-drawer-row">
-          <td colspan="11">
+          <td colspan="12">
+            <div class="runin-tip-banner">
+              <div>
+                <span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span>
+                <strong class="text-sm ml-2 text-text">${escapeHtml(tip.nextFixtureTip || "")}</strong>
+              </div>
+              <div class="text-xs text-muted">${escapeHtml(tip.reason || "")}</div>
+            </div>
             <div class="runin-opp-grid">
               <div>
-                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played (${row.playedOpponents?.length || 0} matches · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
-                <div class="text-xs text-muted mt-0.5">Seasonal away PPG of past home visitors &amp; seasonal home PPG of past away hosts:</div>
+                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played &amp; Scorelines (${playedCount} matches · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Actual scorelines (team result) + opponents&rsquo; seasonal home/away PPG:</div>
                 <div class="runin-opp-list">
-                  ${(row.playedOpponents || []).length === 0
-                    ? `<span class="text-xs text-muted">No completed fixtures listed yet.</span>`
-                    : row.playedOpponents.map((op) => `
-                        <span class="runin-opp-chip">
-                          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
-                          <strong>${escapeHtml(op.opponent)}</strong>
-                          <span class="font-mono text-muted">(${op.oppVenuePpg !== null ? op.oppVenuePpg.toFixed(2) : "-"})</span>
-                        </span>
-                      `).join("")
-                  }
+                  ${renderRuninPlayedChips(row.playedOpponents, null)}
                 </div>
               </div>
               <div>
-                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Remaining Opponents (${row.remainingOpponents?.length || 0} matches · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
-                <div class="text-xs text-muted mt-0.5">Away PPG of upcoming home visitors &amp; home PPG of upcoming away hosts:</div>
+                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Remaining Opponents &amp; Strong PPG Tips (${remCount} matches · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs text-muted mt-0.5">Upcoming opponents&rsquo; venue PPG + Strong PPG match recommendations:</div>
                 <div class="runin-opp-list">
-                  ${(row.remainingOpponents || []).length === 0
-                    ? `<span class="text-xs text-muted">No remaining fixtures listed.</span>`
-                    : row.remainingOpponents.map((op) => `
-                        <span class="runin-opp-chip">
-                          <span class="${op.venue === "H" ? "v-h" : "v-a"}">(${op.venue}) ${op.venue === "H" ? "vs" : "at"}</span>
-                          <strong>${escapeHtml(op.opponent)}</strong>
-                          <span class="font-mono text-muted">(${op.oppVenuePpg !== null ? op.oppVenuePpg.toFixed(2) : "-"})</span>
-                        </span>
-                      `).join("")
-                  }
+                  ${renderRuninUpcomingChips(row.remainingOpponents, null)}
                 </div>
               </div>
             </div>
@@ -2486,7 +2558,7 @@
       `;
 
       return `
-        <tr class="runin-row" data-toggle-runin-team="${escapeHtml(`${activeCode}:${row.team}`)}" title="Click to inspect all Opponents Played (PLD) &amp; Remaining Opponents (REM)">
+        <tr class="runin-row" data-toggle-runin-team="${escapeHtml(`${activeCode}:${row.team}`)}" title="Click to expand all Played Scorelines, Upcoming Fixtures &amp; Strong PPG Tips">
           <td class="font-mono font-bold">${row.rank}</td>
           <td>
             <div class="flex items-center gap-1.5">
@@ -2501,14 +2573,30 @@
           <td class="text-center font-mono">${row.l}</td>
           <td class="text-center font-mono font-bold">${row.pts}</td>
           <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
-          <td class="text-center"><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></td>
-          <td>
+          <td class="runin-fixtures-td">
+            <div class="flex items-center gap-1.5">
+              <span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span>
+              <span class="text-xs text-muted font-mono">(${playedCount} played)</span>
+            </div>
+            <div class="runin-inline-fixtures">
+              ${renderRuninPlayedChips(row.playedOpponents, 3)}
+            </div>
+          </td>
+          <td class="runin-fixtures-td">
             <div class="runin-rem-cell">
               <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
               <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
+              <span class="text-xs text-muted font-mono">(${remCount})</span>
+            </div>
+            <div class="runin-inline-fixtures">
+              ${renderRuninUpcomingChips(row.remainingOpponents, 3)}
             </div>
           </td>
           <td class="text-center"><span class="runin-diff-pill ${diffCls}">${escapeHtml(row.diffLabel)}</span></td>
+          <td class="runin-tip-td">
+            <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
+            <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
+          </td>
         </tr>
         ${drawerHtml}
       `;
@@ -2561,9 +2649,10 @@
         <!-- FILTER TABS -->
         <div class="intel-tabs mt-2" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.12);">
           <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-runin-filter="ALL">All Teams (${rawRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "STRONG_PPG" ? " is-active" : ""}" data-runin-filter="STRONG_PPG" style="color:${activeFilter === "STRONG_PPG" ? "#fff" : "#7CE8C4"};">💎 Strong PPG Tips &ge;1.60 (${strongPpgAllRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "FAVORABLE" ? " is-active" : ""}" data-runin-filter="FAVORABLE" style="color:${activeFilter === "FAVORABLE" ? "#fff" : "#7CE8C4"};">🟢 Easier Run-In (+%) (${favorableRows.length})</button>
           <button type="button" class="filter-chip${activeFilter === "TOUGH" ? " is-active" : ""}" data-runin-filter="TOUGH" style="color:${activeFilter === "TOUGH" ? "#fff" : "#FCA5A5"};">🔴 Tougher Run-In (-%) (${toughRows.length})</button>
-          <button type="button" class="filter-chip${activeFilter === "STRONG_PPG_EASY" ? " is-active" : ""}" data-runin-filter="STRONG_PPG_EASY" style="color:${activeFilter === "STRONG_PPG_EASY" ? "#fff" : "#FDE68A"};">💎 Strong PPG (&ge;1.60) + Easy Run-In (${strongPpgEasyRows.length})</button>
+          <button type="button" class="filter-chip${activeFilter === "STRONG_PPG_EASY" ? " is-active" : ""}" data-runin-filter="STRONG_PPG_EASY" style="color:${activeFilter === "STRONG_PPG_EASY" ? "#fff" : "#FDE68A"};">⚡ Strong PPG + Easy Run-In (${strongPpgEasyRows.length})</button>
         </div>
       </div>
 
@@ -2572,11 +2661,11 @@
       <section class="panel">
         <div class="panel-header">
           <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
-          <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Teams · Click any row for opponent PPG breakdown`}</span>
+          <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Teams · Click any row for all played scores &amp; fixture tips`}</span>
         </div>
         ${
           isLoadingThisLeague && rawRows.length === 0
-            ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD) vs. Remaining Opponents PPG (REM).</p></div>`
+            ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD), Scorelines &amp; Remaining Opponents PPG (REM).</p></div>`
             : rawRows.length === 0
               ? `<div class="empty-state"><h3>Could not load Run-In table for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry below to pull live Run-In fixtures and venue-weighted PPG.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
               : filteredRows.length === 0
@@ -2593,9 +2682,10 @@
                         <th style="text-align:center;">L</th>
                         <th style="text-align:center;">Pts</th>
                         <th style="text-align:center;">PPG</th>
-                        <th style="text-align:center;">Opponents<br>played PPG</th>
-                        <th style="color:#3B82F6;">Opponents<br>remaining PPG</th>
+                        <th>Played Opponents &amp; Scores (PLD)</th>
+                        <th style="color:#3B82F6;">Upcoming Opponents (REM)</th>
                         <th style="text-align:center;">Played vs<br>Remaining</th>
+                        <th>Strong PPG Tip</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2928,29 +3018,42 @@
                         <th style="text-align:center;">GP</th>
                         <th style="text-align:center;">Pts</th>
                         <th style="text-align:center;">PPG</th>
-                        <th style="text-align:center;">Opponents played PPG (PLD)</th>
-                        <th style="color:#3B82F6;">Remaining Opponents PPG (REM)</th>
-                        <th style="text-align:center;">Played vs Remaining</th>
+                        <th>Played Opponents &amp; Scores (PLD)</th>
+                        <th style="color:#3B82F6;">Upcoming Opponents (REM)</th>
+                        <th style="text-align:center;">Diff %</th>
+                        <th>Strong PPG Tip</th>
                       </tr>
                     </thead>
                     <tbody>
-                      ${previewRows.map((row) => `
+                      ${previewRows.map((row) => {
+                        const tip = resolveRowRuninTip(row);
+                        const tipCls = getRuninTipPillClass(tip);
+                        return `
                         <tr class="runin-row" data-route="/run-in?league=${escapeHtml(activeCode)}">
                           <td class="font-mono font-bold">${row.rank}</td>
                           <td><strong>${escapeHtml(row.team)}</strong> ${row.ppg >= 1.60 ? "💎" : ""}</td>
                           <td class="text-center font-mono">${row.gp}</td>
                           <td class="text-center font-mono font-bold">${row.pts}</td>
                           <td class="text-center font-mono font-bold" style="${row.ppg >= 1.60 ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
-                          <td class="text-center"><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></td>
-                          <td>
+                          <td class="runin-fixtures-td">
+                            <div><span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span></div>
+                            <div class="runin-inline-fixtures">${renderRuninPlayedChips(row.playedOpponents, 2)}</div>
+                          </td>
+                          <td class="runin-fixtures-td">
                             <div class="runin-rem-cell">
                               <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
                               <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
                             </div>
+                            <div class="runin-inline-fixtures">${renderRuninUpcomingChips(row.remainingOpponents, 2)}</div>
                           </td>
                           <td class="text-center"><span class="runin-diff-pill ${row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced"}">${escapeHtml(row.diffLabel)}</span></td>
+                          <td class="runin-tip-td">
+                            <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
+                            <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
+                          </td>
                         </tr>
-                      `).join("")}
+                      `;
+                      }).join("")}
                     </tbody>
                   </table>
                 </div>

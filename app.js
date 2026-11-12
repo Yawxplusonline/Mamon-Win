@@ -346,12 +346,28 @@
     }
   }
 
-  function saveState() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state }));
-    } catch {
-      // Ignore quota issues
+  let saveStateTimer = null;
+  function saveState(immediate = false) {
+    if (immediate) {
+      if (saveStateTimer) { clearTimeout(saveStateTimer); saveStateTimer = null; }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state })); } catch {}
+      return;
     }
+    if (saveStateTimer) return;
+    saveStateTimer = setTimeout(() => {
+      saveStateTimer = null;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state })); } catch {}
+    }, 120);
+  }
+
+  let runinSwitchRafId = null;
+  function scheduleRuninLeagueSwitch(code) {
+    if (runinSwitchRafId) cancelAnimationFrame(runinSwitchRafId);
+    runinSwitchRafId = requestAnimationFrame(() => {
+      runinSwitchRafId = null;
+      saveState();
+      loadRuninLeague(code, false);
+    });
   }
 
   function applyTheme() {
@@ -2973,14 +2989,29 @@
       if (!liveFixtureByTeams.has(key)) liveFixtureByTeams.set(key, lm);
     }
 
-    const enrichUpcomingWithTime = (teamName, remList) => {
+    const fixtureMatchCache = new Map();
+    const enrichUpcomingWithTime = (teamName, remList, maxItems = null) => {
       if (!Array.isArray(remList) || remList.length === 0) return remList;
-      return remList.map((op) => {
+      const targetList = maxItems ? remList.slice(0, maxItems) : remList;
+      return targetList.map((op) => {
         if (op.isLive || (op.date && /\d{2}:\d{2}/.test(String(op.date)))) return op;
         const hTeam = op.venue === "H" ? teamName : op.opponent;
         const aTeam = op.venue === "H" ? op.opponent : teamName;
-        const exact = liveFixtureByTeams.get(`${normSportParticipantKey(hTeam)}|${normSportParticipantKey(aTeam)}`);
-        let matched = exact;
+        const cacheKey = `${hTeam}|${aTeam}`;
+        if (fixtureMatchCache.has(cacheKey)) {
+          const cachedMatched = fixtureMatchCache.get(cacheKey);
+          if (!cachedMatched) return op;
+          const kp = formatKickoffCompact(cachedMatched);
+          return {
+            ...op,
+            date: kp.compactLabel,
+            footballComGameId: op.footballComGameId || cachedMatched.footballComGameId || cachedMatched.footballCom?.gameId || null
+          };
+        }
+
+        const normH = normSportParticipantKey(hTeam);
+        const normA = normSportParticipantKey(aTeam);
+        let matched = liveFixtureByTeams.get(`${normH}|${normA}`) || null;
         if (!matched && RT?.matchTeamsSimilar) {
           for (const lm of liveFixtureByTeams.values()) {
             const lh = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
@@ -2991,6 +3022,7 @@
             }
           }
         }
+        fixtureMatchCache.set(cacheKey, matched);
         if (!matched) return op;
         const kp = formatKickoffCompact(matched);
         return {
@@ -3002,9 +3034,10 @@
     };
 
     const rowsHtml = rows.map((rowRaw) => {
-      const row = rowRaw.sport && rowRaw.sport !== "football"
-        ? rowRaw
-        : { ...rowRaw, remainingOpponents: enrichUpcomingWithTime(rowRaw.team, rowRaw.remainingOpponents) };
+      const inlineRem = rowRaw.sport && rowRaw.sport !== "football"
+        ? (rowRaw.remainingOpponents || []).slice(0, inlineLimit)
+        : enrichUpcomingWithTime(rowRaw.team, rowRaw.remainingOpponents, inlineLimit);
+      const row = { ...rowRaw, inlineRemainingOpponents: inlineRem };
       const expandId = `${scopeKey}:${row.team}`;
       const isExpanded = expandedRuninTeam === expandId;
       const diffCls = row.diffPct > 0 ? "is-easy" : row.diffPct < 0 ? "is-tough" : "is-balanced";
@@ -3087,7 +3120,7 @@
               <span class="text-xs text-muted font-mono">(Next ${Math.min(5, remCount)} / ${remCount})</span>
             </div>
             <div class="runin-inline-fixtures">
-              ${renderRuninUpcomingChips(row.remainingOpponents, inlineLimit)}
+              ${renderRuninUpcomingChips(row.inlineRemainingOpponents || row.remainingOpponents, inlineLimit)}
             </div>
           </td>
           <td class="text-center"><span class="runin-diff-pill ${diffCls}">${escapeHtml(row.diffLabel)}</span></td>
@@ -6213,6 +6246,11 @@
 
   // ============ GLOBAL EVENT DELEGATION ============
   document.addEventListener("click", (e) => {
+    // Fast-path: Native form controls (select, option, input, textarea) -> zero blocking for native browser controls (INP < 16ms)
+    if (e.target.tagName === "SELECT" || e.target.tagName === "OPTION" || e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") {
+      return;
+    }
+
     // Fast-path Modal Close (zero selector cascade latency -> optimal INP)
     if (e.target.closest("[data-close-modal]") || e.target.id === "modalBackdrop") {
       closeModal();
@@ -6311,16 +6349,14 @@
       expandedRuninTeam = null;
       state.activeRuninLeague = code;
       state.activeRuninFilter = "ALL";
-      saveState();
-      loadRuninLeague(code, false);
-      renderMainContent();
+      scheduleRuninLeagueSwitch(code);
       return;
     }
     const runinFilterBtn = e.target.closest("[data-runin-filter]");
     if (runinFilterBtn) {
       state.activeRuninFilter = runinFilterBtn.getAttribute("data-runin-filter") || "ALL";
       saveState();
-      renderMainContent();
+      requestAnimationFrame(() => renderMainContent());
       return;
     }
     if (e.target.closest("[data-runin-refresh]")) {
@@ -6675,20 +6711,19 @@
     if (e.target.id === "oddsFormatSelect") {
       state.oddsFormat = e.target.value;
       saveState();
-      renderMainContent();
+      requestAnimationFrame(() => renderMainContent());
     } else if (e.target.id === "runinLeagueSelect") {
       const code = e.target.value || "england";
       expandedRuninTeam = null;
       state.activeRuninLeague = code;
       state.activeRuninFilter = "ALL";
-      saveState();
-      loadRuninLeague(code, false);
-      renderMainContent();
+      // Immediate asynchronous yield: native select closes and paints with 0ms event loop blocking
+      scheduleRuninLeagueSwitch(code);
     } else if (e.target.id === "runinSportLeagueSelect") {
       expandedRuninTeam = null;
       state.activeRuninSportLeague = e.target.value || "ALL";
       saveState();
-      renderMainContent();
+      requestAnimationFrame(() => renderMainContent());
     }
   });
 

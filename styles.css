@@ -9,7 +9,7 @@
 
 :root {
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-headline: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-headline: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Roboto Mono', 'SF Mono', monospace;
 
   --brand: #0A7B5C;
@@ -81,8 +81,14 @@ body {
   line-height: 1.5;
   letter-spacing: -0.011em;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, .font-headline {
+  font-family: var(--font-headline);
+  letter-spacing: -0.022em;
 }
 
 img {
@@ -690,15 +696,16 @@ ul {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 11px;
+  padding: 5px 12px;
   border-radius: 9999px;
   background: rgba(16, 185, 129, 0.10);
   border: 1px solid rgba(16, 185, 129, 0.32);
   color: #047857;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
@@ -1516,8 +1523,9 @@ ul {
 
 @media (min-width: 1100px) {
   .match-desktop {
-    gap: 16px;
-    grid-template-columns: minmax(250px, 360px) minmax(150px, 1fr) 114px minmax(150px, 1fr) minmax(250px, 360px);
+    gap: 14px;
+    grid-template-columns: 152px minmax(180px, 1fr) 76px minmax(180px, 1fr) minmax(260px, 310px);
+    padding: 11px 16px;
   }
 }
 
@@ -1587,7 +1595,8 @@ ul {
 }
 
 .match-desktop .time .status-text {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 12.5px;
   font-weight: 700;
   color: var(--text);
@@ -2593,13 +2602,36 @@ ul {
 .hero-banner h1 {
   font-family: var(--font-headline);
   font-size: 24px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #FFFFFF;
 }
 
 .hero-banner p {
   margin-top: 6px;
   font-size: 14px;
   color: #D1E0D9;
+}
+
+.hero-banner .ev-formula-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.hero-banner .ev-formula-card .step-title {
+  color: #7CE8C4;
+}
+.hero-banner .ev-formula-card .step-math {
+  background: rgba(7, 16, 15, 0.6);
+  color: #FFFFFF;
+}
+.hero-banner .ev-formula-card .step-desc,
+.hero-banner .ev-formula-card .text-text-secondary {
+  color: #D1E0D9;
+}
+.hero-banner .ev-formula-card .text-muted {
+  color: #94D3BE;
+}
+.hero-banner .ev-formula-card .text-brand {
+  color: #7CE8C4;
 }
 
 .stat-strip {
@@ -3439,12 +3471,13 @@ ul {
 }
 
 .sure-pill-tag {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 3px 8px;
+  letter-spacing: 0.05em;
+  padding: 3px 10px;
   border-radius: var(--radius-pill);
   background: rgba(19, 168, 126, 0.24);
   border: 1px solid rgba(124, 232, 196, 0.35);
@@ -3740,10 +3773,11 @@ ul {
 }
 
 .factor-edge-pill {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 1px 6px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
   background: var(--brand-soft);
   color: var(--brand);
@@ -3880,10 +3914,11 @@ ul {
 .ppg-chip {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
@@ -4092,19 +4127,20 @@ ul {
 }
 
 .power-preview-tile .tile-kicker {
-  font-family: var(--font-mono);
-  font-size: 10px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   color: var(--muted);
 }
 
 .power-score-pill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: var(--radius-pill);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
@@ -4123,7 +4159,7 @@ ul {
 }
 
 .power-team-card {
-  padding: 14px 16px;
+  padding: 18px 20px;
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
   transition: background-color 0.15s;
@@ -4140,8 +4176,8 @@ ul {
 .power-criteria-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 @media (min-width: 640px) {
@@ -4163,9 +4199,10 @@ ul {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: var(--radius-pill);
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 700;
   border: 1px solid var(--line);
@@ -4493,8 +4530,8 @@ ul {
 .ev-formula-card .step-title {
   font-size: 11px;
   text-transform: uppercase;
-  font-family: var(--font-mono);
-  letter-spacing: 0.04em;
+  font-family: var(--font-sans);
+  letter-spacing: 0.05em;
   font-weight: 700;
   color: #10B981;
 }
@@ -4741,9 +4778,9 @@ ul {
   color: var(--text);
 }
 .sport-category-subtitle {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
   color: var(--muted);
 }
 .sport-category-filter-btn {
@@ -4807,12 +4844,12 @@ ul {
 }
 
 .draw-defense-hero {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(16, 185, 129, 0.08) 50%, rgba(99, 102, 241, 0.06) 100%);
+  background: linear-gradient(135deg, #07100F 0%, #0B2B2C 55%, #0C2B23 100%);
   border: 1px solid rgba(6, 182, 212, 0.35);
   border-radius: var(--radius-lg);
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+  padding: 22px;
+  margin-bottom: 20px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
 }
 
 .draw-defense-grid {
@@ -5082,11 +5119,12 @@ ul {
 }
 .runin-table th {
   background: var(--ground-subtle);
-  padding: 9px 7px;
-  font-family: var(--font-mono);
+  padding: 10px 8px;
+  font-family: var(--font-sans);
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--muted);
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
   text-transform: uppercase;
   border-bottom: 2px solid var(--line);
   white-space: nowrap;
@@ -5317,7 +5355,7 @@ ul {
 }
 @media (min-width: 960px) {
   .runin-league-selector-row {
-    grid-template-columns: minmax(0, 1fr) 260px;
+    grid-template-columns: minmax(0, 1fr) 295px;
   }
 }
 .runin-quick-tabs {
@@ -5462,28 +5500,30 @@ ul {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
-  background: rgba(59, 130, 246, 0.14);
-  border: 1px solid rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.32);
   color: #2563EB;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .of-verify-pill {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: var(--radius-pill);
-  background: rgba(16, 185, 129, 0.14);
-  border: 1px solid rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.32);
   color: #059669;
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  font-weight: 700;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -5572,10 +5612,11 @@ ul {
   gap: 6px;
 }
 .country-meta-pill {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 2px 9px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 10px;
   border-radius: 9999px;
   background: var(--ground-subtle);
   border: 1px solid var(--line-soft);
@@ -5600,7 +5641,8 @@ ul {
   background: rgba(255, 255, 255, 0.03);
 }
 .runin-select-wrap {
-  min-width: 265px;
+  min-width: 0;
+  width: 100%;
 }
 .runin-fixtures-td .runin-inline-fixtures {
   max-width: 440px;

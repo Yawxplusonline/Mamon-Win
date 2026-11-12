@@ -19,6 +19,11 @@
     return Math.max(min, Math.min(max, val));
   }
 
+  function fmtNum(val, digits = 2, fallback = "-") {
+    const n = Number(val);
+    return val !== null && val !== undefined && val !== "" && Number.isFinite(n) ? n.toFixed(digits) : fallback;
+  }
+
   function escapeHtml(str) {
     return String(str ?? "")
       .replace(/&/g, "&amp;")
@@ -2219,6 +2224,11 @@
             const lg = getLeagueInfo(m);
             const d = m.droppingOdds.bestDrop;
             const isHeavy = d.dropPct >= 5.0;
+            const impliedShift = Number.isFinite(Number(d.impliedShiftPct))
+              ? d.impliedShiftPct
+              : (Number.isFinite(Number(d.openOdd)) && Number.isFinite(Number(d.currentOdd)) && d.openOdd > 1 && d.currentOdd > 1
+                ? Math.max(0, Math.round(((1 / d.currentOdd - 1 / d.openOdd) * 100) * 10) / 10)
+                : Math.round((Number(d.dropPct || 0) * 0.45) * 10) / 10);
             return `
               <div class="intel-row-card" data-match-id="${m.id}" style="${isHeavy ? "border-left: 3px solid var(--live);" : ""}">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -2248,7 +2258,7 @@
                   <div class="text-xs">
                     <span class="font-bold text-brand uppercase">Sharp Market Move:</span>
                     <strong class="ml-1">${escapeHtml(d.label)}</strong>
-                    <span class="text-muted ml-2">(Implied Shift: <strong class="text-brand">+${d.impliedShiftPct}%</strong> · Provider: ${escapeHtml(m.droppingOdds.provider)})</span>
+                    <span class="text-muted ml-2">(Implied Shift: <strong class="text-brand">+${impliedShift}%</strong> · Provider: ${escapeHtml(m.droppingOdds.provider)})</span>
                   </div>
                   <div class="font-mono text-sm mt-1">
                     <span class="text-muted" style="text-decoration:line-through;">${d.openOdd.toFixed(2)}</span>
@@ -2366,47 +2376,47 @@
                     <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
                   </div>
                   <div class="flex items-center gap-1.5 flex-wrap">
-                    ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 Drop Risk</span>` : ""}
-                    ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 Gain Points</span>` : ""}
-                    <span class="factor-edge-pill font-mono font-bold">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)} PPG)</span>
+                    ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 DROP RISK</span>` : ""}
+                    ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 GAIN POINTS</span>` : ""}
+                    <span class="factor-edge-pill font-bold">PPG Edge: ${escapeHtml(ppg.edge || h.short)} (+${fmtNum(ppg.gap, 2, "0.00")} PPG)</span>
                   </div>
                 </div>
 
                 <div class="ppg-matrix-grid mt-2">
-                  <div class="ppg-side-card ${ppg.homeOverall >= ppg.awayOverall ? "is-edge" : ""}">
+                  <div class="ppg-side-card ${(ppg.homeOverall ?? 0) >= (ppg.awayOverall ?? 0) ? "is-edge" : ""}">
                     <div class="flex items-center justify-between gap-2">
                       <div class="flex items-center gap-2 min-w-0">
                         ${crestImg(h.logo, h.name, h.color, 20)}
                         <strong class="text-sm truncate">${escapeHtml(h.name)}</strong>
-                        <span class="text-xs text-muted font-mono">(Host)</span>
+                        <span class="text-xs text-muted">(Host)</span>
                       </div>
                       ${hSos ? `<span class="ppg-sos-badge ${hSos.isDropRed ? "is-drop-red" : hSos.isGainBlue ? "is-gain-blue" : "is-neutral"}">${escapeHtml(hSos.badge)}</span>` : ""}
                     </div>
                     <div class="ppg-stat-pills">
-                      <span class="ppg-stat-badge">Overall: <strong>${ppg.homeOverall.toFixed(2)} PPG</strong></span>
-                      <span class="ppg-stat-badge">Home: <strong>${ppg.homeHomePpg !== null ? ppg.homeHomePpg.toFixed(2) : "-"} PPG</strong></span>
+                      <span class="ppg-stat-badge">Overall: <strong>${fmtNum(ppg.homeOverall)} PPG</strong></span>
+                      <span class="ppg-stat-badge">Home: <strong>${fmtNum(ppg.homeHomePpg)} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formH}</strong></span>
-                      ${factors?.runInAnalysis?.homeStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${factors.runInAnalysis.homeStats.playedPpg.toFixed(2)} &rarr; REM ${factors.runInAnalysis.homeStats.remainingPpg.toFixed(2)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.homeStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.homeStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.homeStats.diffLabel)}</span></span>` : ""}
+                      ${factors?.runInAnalysis?.homeStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${fmtNum(factors.runInAnalysis.homeStats.playedPpg)} &rarr; REM ${fmtNum(factors.runInAnalysis.homeStats.remainingPpg)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.homeStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.homeStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.homeStats.diffLabel)}</span></span>` : ""}
                     </div>
-                    ${hSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${hSos.isDropRed ? "text-danger font-semibold" : hSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(hSos.reason)}</div>` : ""}
+                    ${hSos?.reason ? `<div class="text-xs mt-1.5 ${hSos.isDropRed ? "text-danger font-semibold" : hSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(hSos.reason)}</div>` : ""}
                   </div>
 
-                  <div class="ppg-side-card ${ppg.awayOverall > ppg.homeOverall ? "is-edge" : ""}">
+                  <div class="ppg-side-card ${(ppg.awayOverall ?? 0) > (ppg.homeOverall ?? 0) ? "is-edge" : ""}">
                     <div class="flex items-center justify-between gap-2">
                       <div class="flex items-center gap-2 min-w-0">
                         ${crestImg(a.logo, a.name, a.color, 20)}
                         <strong class="text-sm truncate">${escapeHtml(a.name)}</strong>
-                        <span class="text-xs text-muted font-mono">(Visitor)</span>
+                        <span class="text-xs text-muted">(Visitor)</span>
                       </div>
                       ${aSos ? `<span class="ppg-sos-badge ${aSos.isDropRed ? "is-drop-red" : aSos.isGainBlue ? "is-gain-blue" : "is-neutral"}">${escapeHtml(aSos.badge)}</span>` : ""}
                     </div>
                     <div class="ppg-stat-pills">
-                      <span class="ppg-stat-badge">Overall: <strong>${ppg.awayOverall.toFixed(2)} PPG</strong></span>
-                      <span class="ppg-stat-badge">Away: <strong>${ppg.awayAwayPpg !== null ? ppg.awayAwayPpg.toFixed(2) : "-"} PPG</strong></span>
+                      <span class="ppg-stat-badge">Overall: <strong>${fmtNum(ppg.awayOverall)} PPG</strong></span>
+                      <span class="ppg-stat-badge">Away: <strong>${fmtNum(ppg.awayAwayPpg)} PPG</strong></span>
                       <span class="ppg-stat-badge">Form: <strong>${formA}</strong></span>
-                      ${factors?.runInAnalysis?.awayStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${factors.runInAnalysis.awayStats.playedPpg.toFixed(2)} &rarr; REM ${factors.runInAnalysis.awayStats.remainingPpg.toFixed(2)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.awayStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.awayStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.awayStats.diffLabel)}</span></span>` : ""}
+                      ${factors?.runInAnalysis?.awayStats ? `<span class="ppg-stat-badge">Run-In: <strong>PLD ${fmtNum(factors.runInAnalysis.awayStats.playedPpg)} &rarr; REM ${fmtNum(factors.runInAnalysis.awayStats.remainingPpg)}</strong> <span class="runin-diff-pill ${factors.runInAnalysis.awayStats.diffPct > 0 ? "is-easy" : factors.runInAnalysis.awayStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="padding:1px 5px;font-size:10px;">${escapeHtml(factors.runInAnalysis.awayStats.diffLabel)}</span></span>` : ""}
                     </div>
-                    ${aSos?.reason ? `<div class="text-xs mt-1.5 font-mono ${aSos.isDropRed ? "text-danger font-semibold" : aSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(aSos.reason)}</div>` : ""}
+                    ${aSos?.reason ? `<div class="text-xs mt-1.5 ${aSos.isDropRed ? "text-danger font-semibold" : aSos.isGainBlue ? "text-brand font-semibold" : "text-muted"}">${escapeHtml(aSos.reason)}</div>` : ""}
                   </div>
                 </div>
 
@@ -2437,7 +2447,7 @@
                 ${best ? `
                   <div class="flex items-center justify-between gap-2 flex-wrap mt-2 pt-2 border-t border-line-soft">
                     <div class="text-xs text-text-secondary">
-                      Sure Pick Aligned with PPG: <strong class="text-brand font-mono">${escapeHtml(best.label)} @ ${best.odds.toFixed(2)}</strong> (${Math.round(best.prob * 100)}% modeled probability)
+                      Sure Pick Aligned with PPG: <strong class="text-brand font-mono">${escapeHtml(best.label)} @ ${fmtNum(best.odds)}</strong> (${Math.round((best.prob || 0) * 100)}% modeled probability)
                     </div>
                     <button type="button" class="analyze-inline-btn" data-match-id="${m.id}">Scouting Modal &rarr;</button>
                   </div>
@@ -3486,11 +3496,11 @@
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(tip.fixture)}</div>
                 <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
-                <div class="text-xs font-mono text-muted truncate mt-0.5">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
-                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
-                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
-                  <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                <div class="text-xs font-mono text-muted truncate mt-0.5 w-full">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
+                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#10B981;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
             `; }).join("")}
@@ -3530,11 +3540,11 @@
                   <span class="ev-return-pill" style="background:#06B6D4;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
-                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
-                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
-                  <span>Bookie: <strong style="color:#06B6D4;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
+                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#06B6D4;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
             `; }).join("")}
@@ -3547,11 +3557,11 @@
                   <span class="ev-return-pill" style="background:#10B981;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
                 <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-muted">${escapeHtml(tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
-                <div class="flex items-center justify-between text-xs text-muted mt-1.5 pt-1" style="border-top:1px dashed var(--line-soft);">
-                  <span>Prob: <strong class="text-text font-mono">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text font-mono">${tip.fairOdds.toFixed(2)}</strong></span>
-                  <span>Bookie: <strong style="color:#10B981;" class="font-mono">${tip.bookmakerOdds.toFixed(2)}</strong></span>
+                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${escapeHtml(tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
+                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                  <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
+                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Bookie: <strong style="color:#10B981;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
             `; }).join("")}
@@ -4705,18 +4715,18 @@
     }
 
     return `
-      <div class="hero-banner" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(59, 130, 246, 0.08) 100%); border-bottom: 2px solid rgba(16, 185, 129, 0.4);">
+      <div class="hero-banner">
         <div class="flex items-center gap-2 flex-wrap mb-1">
           <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">💎 STRONG PPG ENGINE ENFORCED</span>
           <span class="sure-pill-tag" style="background:#3B82F6;color:#ffffff;font-weight:800;">🎯 WINNING HANDICAP TIPS</span>
           <span class="sure-pill-tag">POSITIVE EXPECTED VALUE (+EV)</span>
-          <span class="font-mono text-xs text-muted">· Live Audited</span>
+          <span class="text-xs" style="color:#94D3BE;">· Live Audited</span>
         </div>
-        <h1 class="font-headline font-black text-2xl md:text-3xl" style="color:var(--text); letter-spacing:-0.02em;">
+        <h1 class="mt-2">
           Winning Handicap Tips &amp; Value Bets (+EV)
         </h1>
-        <p class="text-sm text-text-secondary mt-1 max-w-3xl">
-          Derived from the exact 3-step value betting formula: We calculate the true mathematical probability \(P\), determine Fair Odds \(\frac{1}{P}\), compare them with live bookmaker odds \(O\), and identify market inefficiencies where \(EV = (P \times O) - 1 > 0\).
+        <p class="text-sm mt-1 max-w-3xl">
+          Derived from the exact 3-step value betting formula: we calculate true mathematical probability <strong>(P)</strong>, determine <strong>Fair Odds = 1 / P</strong>, compare them with live bookmaker odds <strong>(O)</strong>, and isolate positive value edges where <strong>EV = (P &times; O) &minus; 1 &gt; 0</strong>.
         </p>
 
         <!-- 3-STEP VALUE BETTING FORMULA CARDS -->
@@ -4996,18 +5006,18 @@
 
     return `
       <!-- HERO BANNER -->
-      <div class="draw-defense-hero">
+      <div class="hero-banner draw-defense-hero">
         <div class="flex items-center gap-2 flex-wrap mb-1">
           <span class="sure-pill-tag" style="background:#10B981;color:#07100F;font-weight:800;">💎 STRONG DEFENSIVE PPG ENFORCED</span>
           <span class="sure-pill-tag" style="background:#06B6D4;color:#042F2E;font-weight:800;">⏱️ 5-MIN DRAW WINNING TIPS</span>
           <span class="sure-pill-tag" style="background:#10B981;color:#042F2E;font-weight:800;">🛡️ NO 3+ GOALS IN A ROW</span>
           <span class="sure-pill-tag">100 VERIFIED WINNING TIPS</span>
-          <span class="font-mono text-xs text-muted">· Screened Across 22 Low-Scoring Leagues</span>
+          <span class="text-xs" style="color:#94D3BE;">· Screened Across 22 Low-Scoring Leagues</span>
         </div>
-        <h1 class="font-headline font-black text-2xl md:text-3xl" style="color:var(--text); letter-spacing:-0.02em;">
+        <h1 class="mt-2">
           5-Minute Draw &amp; Defensive Winning Tips
         </h1>
-        <p class="text-sm text-text-secondary mt-1 max-w-3xl">
+        <p class="text-sm mt-1 max-w-3xl">
           Engineered specifically for low-scoring and draw-heavy leagues worldwide. Backed by Poisson early feeling-out suppression formulas and anti-blowout consecutive goal resistance metrics.
         </p>
 
@@ -5175,49 +5185,54 @@
     if (!main) return;
     const r = state.route;
 
-    if (r === "/" || r === "") {
-      main.innerHTML = renderHomeView();
-    } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
-      main.innerHTML = renderHandicapValueBetsView();
-    } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
-      main.innerHTML = renderDrawDefenseSpecialTipsView();
-    } else if (r === "/sure-odds" || r === "/game-points") {
-      main.innerHTML = renderSureOddsView();
-      bindSureCalculatorEvents();
-    } else if (r === "/dropping-odds" || r === "/drops") {
-      main.innerHTML = renderDroppingOddsView();
-    } else if (r === "/ppg" || r === "/ppg-intelligence" || r === "/points-per-game") {
-      main.innerHTML = renderPpgIntelligenceView();
-    } else if (r === "/run-in" || r === "/runin" || r === "/run-in-analysis") {
-      main.innerHTML = renderRunInAnalysisView();
-    } else if (r === "/live" || r === "/upcoming" || r === "/matches") {
-      main.innerHTML = renderMatchesView();
-    } else if (r === "/strong-teams" || r === "/strong-teams-today" || r === "/power-picks" || r === "/community") {
-      main.innerHTML = renderStrongTeamsView();
-    } else if (r === "/worst-teams" || r === "/worst-teams-today") {
-      main.innerHTML = renderWorstTeamsView();
-    } else if (r === "/odds-mismatch") {
-      main.innerHTML = renderOddsMismatchView();
-    } else if (r === "/search") {
-      main.innerHTML = renderSearchView();
-      const pageSearch = document.getElementById("pageSearchInput");
-      if (pageSearch) {
-        pageSearch.addEventListener("input", (e) => {
-          const desktopInput = document.getElementById("desktopSearchInput");
-          if (desktopInput) desktopInput.value = e.target.value;
-          renderMainContent();
-          const newInput = document.getElementById("pageSearchInput");
-          if (newInput) {
-            newInput.focus();
-            newInput.setSelectionRange(newInput.value.length, newInput.value.length);
-          }
-        });
+    try {
+      if (r === "/" || r === "") {
+        main.innerHTML = renderHomeView();
+      } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
+        main.innerHTML = renderHandicapValueBetsView();
+      } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
+        main.innerHTML = renderDrawDefenseSpecialTipsView();
+      } else if (r === "/sure-odds" || r === "/game-points") {
+        main.innerHTML = renderSureOddsView();
+        bindSureCalculatorEvents();
+      } else if (r === "/dropping-odds" || r === "/drops") {
+        main.innerHTML = renderDroppingOddsView();
+      } else if (r === "/ppg" || r === "/ppg-intelligence" || r === "/points-per-game") {
+        main.innerHTML = renderPpgIntelligenceView();
+      } else if (r === "/run-in" || r === "/runin" || r === "/run-in-analysis") {
+        main.innerHTML = renderRunInAnalysisView();
+      } else if (r === "/live" || r === "/upcoming" || r === "/matches") {
+        main.innerHTML = renderMatchesView();
+      } else if (r === "/strong-teams" || r === "/strong-teams-today" || r === "/power-picks" || r === "/community") {
+        main.innerHTML = renderStrongTeamsView();
+      } else if (r === "/worst-teams" || r === "/worst-teams-today") {
+        main.innerHTML = renderWorstTeamsView();
+      } else if (r === "/odds-mismatch") {
+        main.innerHTML = renderOddsMismatchView();
+      } else if (r === "/search") {
+        main.innerHTML = renderSearchView();
+        const pageSearch = document.getElementById("pageSearchInput");
+        if (pageSearch) {
+          pageSearch.addEventListener("input", (e) => {
+            const desktopInput = document.getElementById("desktopSearchInput");
+            if (desktopInput) desktopInput.value = e.target.value;
+            renderMainContent();
+            const newInput = document.getElementById("pageSearchInput");
+            if (newInput) {
+              newInput.focus();
+              newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+            }
+          });
+        }
+      } else if (r.startsWith("/competitions/")) {
+        const slug = r.replace("/competitions/", "");
+        main.innerHTML = renderCompetitionView(slug);
+      } else {
+        main.innerHTML = renderHomeView();
       }
-    } else if (r.startsWith("/competitions/")) {
-      const slug = r.replace("/competitions/", "");
-      main.innerHTML = renderCompetitionView(slug);
-    } else {
-      main.innerHTML = renderHomeView();
+    } catch (err) {
+      console.error("[MAMON WIN] Route render recovery:", r, err);
+      main.innerHTML = `<div class="empty-state"><h3>Refreshing View...</h3><p class="text-sm text-muted">Live market feeds are synchronizing. Click any tab above to retry.</p></div>`;
     }
   }
 

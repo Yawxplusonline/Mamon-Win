@@ -38,7 +38,8 @@ function trackLiveLineMovement(eventKey, bH, bD, bA, bO25, homeName, awayName) {
   for (const c of candidates) {
     if (!Number.isFinite(c.openOdd) || !Number.isFinite(c.currentOdd) || c.openOdd <= 1 || c.currentOdd <= 1) continue;
     const dropPct = Math.round(((c.openOdd - c.currentOdd) / c.openOdd) * 1000) / 10;
-    allMoves.push({ ...c, dropPct });
+    const impliedShiftPct = Math.round(((1 / c.currentOdd - 1 / c.openOdd) * 100) * 10) / 10;
+    allMoves.push({ ...c, dropPct, impliedShiftPct });
   }
   const significantDrops = allMoves.filter((m) => m.dropPct >= 1.5).sort((a, b) => b.dropPct - a.dropPct);
   return {

@@ -4721,6 +4721,13 @@ window.MAMON_REALTIME = (() => {
     // Reconcile & ingest all real matches from OneFootball (https://onefootball.com/en/matches)
     if (onefootballJson?.ok && Array.isArray(onefootballJson.matches)) {
       const existingValues = Array.from(activeMap.values());
+      const existingLookupMap = new Map();
+      for (const m of existingValues) {
+        const hKey = normalizeRuninTeamKey(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "");
+        const aKey = normalizeRuninTeamKey(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "");
+        if (hKey && aKey) existingLookupMap.set(`${hKey}|${aKey}`, m);
+      }
+
       for (const ofm of onefootballJson.matches) {
         if (ofm.status === "FT") {
           const todayUtcIso = new Date().toISOString().slice(0, 10);
@@ -4731,11 +4738,17 @@ window.MAMON_REALTIME = (() => {
           }
           continue;
         }
-        const matchExisting = existingValues.find((m) => {
-          const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
-          const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
-          return matchTeamsSimilar(hName, ofm.homeTeamName) && matchTeamsSimilar(aName, ofm.awayTeamName);
-        });
+        const ofH = normalizeRuninTeamKey(ofm.homeTeamName);
+        const ofA = normalizeRuninTeamKey(ofm.awayTeamName);
+        let matchExisting = (ofH && ofA) ? existingLookupMap.get(`${ofH}|${ofA}`) : null;
+        if (!matchExisting) {
+          matchExisting = existingValues.find((m) => {
+            const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
+            const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
+            return matchTeamsSimilar(hName, ofm.homeTeamName) && matchTeamsSimilar(aName, ofm.awayTeamName);
+          });
+          if (matchExisting && ofH && ofA) existingLookupMap.set(`${ofH}|${ofA}`, matchExisting);
+        }
         if (matchExisting) {
           matchExisting.onOneFootball = true;
           matchExisting.onefootballId = ofm.onefootballId;
@@ -4857,8 +4870,8 @@ window.MAMON_REALTIME = (() => {
           for (let i = 0; i < hydrationQueue.length; i += 4) {
             const batch = hydrationQueue.slice(i, i + 4);
             await Promise.all(batch.map((m) => enrichMatchDetails(m).catch(() => m)));
-            onProgress(activeMatches, finishedToday);
           }
+          onProgress(activeMatches, finishedToday);
           const postPower = buildTodayPowerRankings(activeMatches);
           const postWeatherTargets = [
             ...postPower.strongHome.slice(0, 6),

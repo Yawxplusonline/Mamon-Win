@@ -278,24 +278,36 @@
   let uiRenderTimer = null;
   let pendingRenderAll = false;
 
+  let lastUserActiveMs = Date.now();
+  function recordUserActive() {
+    lastUserActiveMs = Date.now();
+  }
+  if (typeof window !== "undefined") {
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach((evt) => {
+      window.addEventListener(evt, recordUserActive, { passive: true });
+    });
+  }
+
   function isUserTypingInInput() {
     const id = document.activeElement?.id;
     return id === "sureStakeInput" || id === "desktopSearchInput" || id === "pageSearchInput";
   }
 
-  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 120) {
+  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 300) {
     if (fullAll) pendingRenderAll = true;
     clearTimeout(uiRenderTimer);
     uiRenderTimer = setTimeout(() => {
-      if (isUserTypingInInput() || activeModalMatchId || (Date.now() - lastModalInteractionMs) < 500) {
-        scheduleBackgroundUiRefresh(pendingRenderAll, 450);
+      const userActiveRecently = (Date.now() - lastUserActiveMs) < 1800;
+      const modalActive = activeModalMatchId || (Date.now() - lastModalInteractionMs) < 800;
+      if (isUserTypingInInput() || modalActive || userActiveRecently) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, 1200);
         return;
       }
       const doAll = pendingRenderAll;
       pendingRenderAll = false;
       requestAnimationFrame(() => {
-        if (activeModalMatchId || isUserTypingInInput()) return;
-        if (doAll) renderAll();
+        if (activeModalMatchId || isUserTypingInInput() || (Date.now() - lastUserActiveMs) < 1000) return;
+        if (doAll && state.route === "/") renderAll();
         else renderMainContent();
       });
     }, delayMs);
@@ -5723,11 +5735,16 @@
   function mergeBookmakerGamesIntoLiveMatches() {
     if (!bookmakerScan?.allGames || !Array.isArray(bookmakerScan.allGames)) return;
     const existingById = new Map(liveMatches.map((m) => [m.id, m]));
-    const bySportExisting = new Map();
+    const matchLookupByTeams = new Map();
+    const matchLookupSwapped = new Map();
     for (const m of liveMatches) {
       const sp = (m.sport || "football").toLowerCase();
-      if (!bySportExisting.has(sp)) bySportExisting.set(sp, []);
-      bySportExisting.get(sp).push(m);
+      const mH = normSportParticipantKey(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "");
+      const mA = normSportParticipantKey(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "");
+      if (mH && mA) {
+        matchLookupByTeams.set(`${sp}:${mH}|${mA}`, m);
+        matchLookupSwapped.set(`${sp}:${mA}|${mH}`, m);
+      }
     }
     const converted = [];
 
@@ -5818,20 +5835,15 @@
 
       let existing = existingById.get(matchId);
       let matchedSwappedOrientation = false;
-      if (!existing && RT?.matchTeamsSimilar) {
-        const pool = bySportExisting.get(sport) || [];
-        existing = pool.find((m) => {
-          const mH = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
-          const mA = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
-          return RT.matchTeamsSimilar(mH, homeName) && RT.matchTeamsSimilar(mA, awayName);
-        });
-        if (!existing) {
-          existing = pool.find((m) => {
-            const mH = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
-            const mA = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
-            return RT.matchTeamsSimilar(mH, awayName) && RT.matchTeamsSimilar(mA, homeName);
-          });
-          if (existing) matchedSwappedOrientation = true;
+      if (!existing) {
+        const normH = normSportParticipantKey(homeName);
+        const normA = normSportParticipantKey(awayName);
+        if (normH && normA) {
+          existing = matchLookupByTeams.get(`${sport}:${normH}|${normA}`) || null;
+          if (!existing) {
+            existing = matchLookupSwapped.get(`${sport}:${normH}|${normA}`) || null;
+            if (existing) matchedSwappedOrientation = true;
+          }
         }
       }
 
@@ -6186,11 +6198,7 @@
           updatedScan = true;
           mergeBookmakerGamesIntoLiveMatches();
           recomputeSlips();
-          if (!activeModalMatchId && !isUserTypingInInput()) {
-            renderAll();
-          } else {
-            scheduleBackgroundUiRefresh(true, 300);
-          }
+          scheduleBackgroundUiRefresh(state.route === "/", 300);
         }
       }
     } catch {
@@ -6218,8 +6226,7 @@
         }
         mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
-        // Coalesce progressive updates & avoid blocking active modal interactions
-        scheduleBackgroundUiRefresh(true, 180);
+        scheduleBackgroundUiRefresh(state.route === "/", 400);
       });
       liveMatches = (res.activeMatches || []).filter((m) => !isNcaaOrWomenMatch(m));
       finishedTodayMatches = (res.finishedToday || []).filter((m) => !isNcaaOrWomenMatch(m));
@@ -6227,11 +6234,7 @@
       lastSyncIso = res.fetchedAt;
       isLoadingRealtime = false;
       recomputeSlips();
-      if (!activeModalMatchId && !isUserTypingInInput()) {
-        renderAll();
-      } else {
-        scheduleBackgroundUiRefresh(true, 300);
-      }
+      scheduleBackgroundUiRefresh(state.route === "/", 300);
       if (showSuccessToast) {
         showToast(`Synced ${liveMatches.length} real-time matches.`);
       }
@@ -6907,21 +6910,24 @@
         liveMatches = rec.activeRemaining;
         finishedTodayMatches = rec.finishedList;
         recomputeSlips();
-        renderAll();
+        scheduleBackgroundUiRefresh(true, 400);
       }
     }
   }, 30000);
 
   setInterval(() => {
     if (!state.liveTicker) return;
+    // When SSE is streaming live updates, skip polling unless disconnected or stale > 90s
+    if (sseConnected && (Date.now() - missionLastPullMs) < 90000) return;
     missionLastPullMs = Date.now();
     syncRealtimeFeed(false);
-  }, 45000);
+  }, 60000);
 
   setInterval(() => {
     if (!state.liveTicker) return;
+    if (sseConnected && (Date.now() - missionLastPullMs) < 120000) return;
     syncBookmakerMismatchFeed(false, false);
-  }, 90000);
+  }, 120000);
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {

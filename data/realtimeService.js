@@ -1128,7 +1128,7 @@ window.MAMON_REALTIME = (() => {
     const t = comp?.team || {};
     const id = String(t.id || comp?.id || Math.random().toString(36).slice(2, 8));
     const key = `espn-${id}`;
-    const logo = t.logo || t.logos?.[0]?.href || `https://a.espncdn.com/i/teamlogos/soccer/500/${id}.png`;
+    const logo = t.logo || t.logos?.[0]?.href || "";
     const color = t.color ? `#${t.color.replace(/^#/, "")}` : "#0A7B5C";
     const teamObj = {
       key,
@@ -3027,47 +3027,56 @@ window.MAMON_REALTIME = (() => {
 
   // Deep ESPN Hydration for any single match (H2H + Last 5 Home/Away + Clean Sheets + Run-in + Injuries/Suspensions)
   async function enrichMatchDetails(match) {
-    if (!match || !match.espnId) return match;
+    if (!match) return match;
     if (match.enriched && match.analysis?.factors?.h2h?.isLiveFeed && match.analysis?.factors?.last5HomeGames?.isLiveFeed) {
       return match;
     }
 
+    const rawEspnId = String(match.espnId || "").trim();
+    const isNumericEspnId = /^\d+$/.test(rawEspnId);
+    const isValidNumericId = (v) => /^\d+$/.test(String(v || "").trim());
+
     const code = match.espnLeagueCode && match.espnLeagueCode !== "all" ? match.espnLeagueCode : "all";
-    const sumPromise = summaryCache.has(match.espnId)
-      ? Promise.resolve(summaryCache.get(match.espnId))
-      : fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/summary?event=${match.espnId}`, 5000)
-          .then((d) => {
-            if (d) summaryCache.set(match.espnId, d);
-            return d;
-          });
+    const sumPromise = !isNumericEspnId
+      ? Promise.resolve(null)
+      : summaryCache.has(rawEspnId)
+        ? Promise.resolve(summaryCache.get(rawEspnId))
+        : fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/summary?event=${rawEspnId}`, 5000)
+            .then((d) => {
+              if (d) summaryCache.set(rawEspnId, d);
+              return d;
+            })
+            .catch(() => null);
 
     const fetchTeamSched = async (teamId) => {
-      if (!teamId) return null;
-      if (teamScheduleCache.has(teamId)) return teamScheduleCache.get(teamId);
+      if (!isValidNumericId(teamId)) return null;
+      const tid = String(teamId).trim();
+      if (teamScheduleCache.has(tid)) return teamScheduleCache.get(tid);
       const [pastRes, futRes] = await Promise.all([
-        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule`, 5000),
-        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule?fixture=true`, 5000)
+        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${tid}/schedule`, 5000),
+        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${tid}/schedule?fixture=true`, 5000)
       ]);
       const data = {
         past: pastRes?.events || [],
         upcoming: futRes?.events || []
       };
-      teamScheduleCache.set(teamId, data);
+      teamScheduleCache.set(tid, data);
       return data;
     };
 
     const fetchTeamRoster = async (teamId) => {
-      if (!teamId) return null;
-      const stGlobal = standingsByTeamId.get(String(teamId));
-      const stMatchLg = standingsByTeamId.get(`${match.leagueSlug}:${teamId}`);
+      if (!isValidNumericId(teamId)) return null;
+      const tid = String(teamId).trim();
+      const stGlobal = standingsByTeamId.get(tid);
+      const stMatchLg = standingsByTeamId.get(`${match.leagueSlug}:${tid}`);
       const domesticCode = stGlobal && !stGlobal.isUEFA ? stGlobal.espnCode : (stMatchLg && !stMatchLg.isUEFA ? stMatchLg.espnCode : null);
       const rCode = code?.startsWith("uefa.")
         ? (domesticCode || code)
         : (code !== "all" ? code : (domesticCode || stMatchLg?.espnCode));
       if (!rCode || rCode === "all") return null;
-      const cacheKey = `${rCode}:${teamId}`;
+      const cacheKey = `${rCode}:${tid}`;
       if (teamRosterCache.has(cacheKey)) return teamRosterCache.get(cacheKey);
-      const rJson = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${rCode}/teams/${teamId}/roster`, 4500);
+      const rJson = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${rCode}/teams/${tid}/roster`, 4500);
       teamRosterCache.set(cacheKey, rJson || null);
       return rJson;
     };
@@ -3197,7 +3206,7 @@ window.MAMON_REALTIME = (() => {
             const stMap = new Map((entry.stats || []).map((s) => [s.abbreviation || s.name, s.value]));
             const tid = String(entry.team?.id || "");
             const key = `espn-${tid}`;
-            const logo = entry.team?.logos?.[0]?.href || `https://a.espncdn.com/i/teamlogos/soccer/500/${tid}.png`;
+            const logo = entry.team?.logos?.[0]?.href || "";
 
             DATA.TEAMS[key] = {
               ...(DATA.TEAMS[key] || {}),
@@ -4579,9 +4588,10 @@ window.MAMON_REALTIME = (() => {
       ...initialPower.worstAway.slice(0, 6).map((x) => x.match)
     ];
 
+    const isHydratableEspnMatch = (m) => /^\d+$/.test(String(m?.espnId || "").trim()) || /^\d+$/.test(String(m?.homeEspnId || "").trim()) || /^\d+$/.test(String(m?.awayEspnId || "").trim());
     const hydrationQueue = [
-      ...activeMatches.filter((m) => isTipEligiblePreMatch5h(m)).slice(0, 12),
-      ...activeMatches.slice(0, 12)
+      ...activeMatches.filter((m) => isTipEligiblePreMatch5h(m) && isHydratableEspnMatch(m)).slice(0, 12),
+      ...activeMatches.filter((m) => isHydratableEspnMatch(m)).slice(0, 12)
     ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 20);
     if (typeof onProgress === "function") {
       syncTopRuninTables().then((riRes) => {
@@ -4591,7 +4601,7 @@ window.MAMON_REALTIME = (() => {
           });
           onProgress(activeMatches, finishedToday);
         }
-      });
+      }).catch(() => {});
 
       if (initialWeatherTargets.length > 0) {
         hydrateWeatherForMatches(initialWeatherTargets).then((wChanged) => {
@@ -4601,14 +4611,14 @@ window.MAMON_REALTIME = (() => {
             });
             onProgress(activeMatches, finishedToday);
           }
-        });
+        }).catch(() => {});
       }
 
       if (hydrationQueue.length > 0) {
         (async () => {
           for (let i = 0; i < hydrationQueue.length; i += 4) {
             const batch = hydrationQueue.slice(i, i + 4);
-            await Promise.all(batch.map((m) => enrichMatchDetails(m)));
+            await Promise.all(batch.map((m) => enrichMatchDetails(m).catch(() => m)));
             onProgress(activeMatches, finishedToday);
           }
           const postPower = buildTodayPowerRankings(activeMatches);
@@ -4625,7 +4635,7 @@ window.MAMON_REALTIME = (() => {
             });
             onProgress(activeMatches, finishedToday);
           }
-        })();
+        })().catch(() => {});
       }
     }
 

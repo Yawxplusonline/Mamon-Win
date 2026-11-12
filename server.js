@@ -224,6 +224,7 @@ const server = http.createServer(async (req, res) => {
 
     let reqPath = decodeURIComponent(reqUrl.pathname);
     if (reqPath === "/") reqPath = "/index.html";
+    if (reqPath === "/favicon.ico") reqPath = "/assets/motexiz-mark.svg";
 
     // Prevent directory traversal
     const resolved = path.resolve(ROOT, "." + reqPath);

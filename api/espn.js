@@ -1,5 +1,19 @@
 const apiCache = new Map();
 const inFlight = new Map();
+const MAX_CACHE_ENTRIES = 300;
+
+function pruneEspnCache() {
+  if (apiCache.size < MAX_CACHE_ENTRIES) return;
+  const now = Date.now();
+  for (const [k, v] of apiCache) {
+    if (!v || now >= v.expiresAt) apiCache.delete(k);
+  }
+  while (apiCache.size >= MAX_CACHE_ENTRIES) {
+    const firstKey = apiCache.keys().next().value;
+    if (firstKey === undefined) break;
+    apiCache.delete(firstKey);
+  }
+}
 
 function getCacheTtlMs(apiPath) {
   if (apiPath.includes("/scoreboard")) return 20000;
@@ -42,6 +56,7 @@ module.exports = async function handler(req, res) {
         .then(async (upstream) => {
           const text = await upstream.text();
           if (upstream.ok) {
+            pruneEspnCache();
             apiCache.set(relPath, {
               body: text,
               expiresAt: Date.now() + getCacheTtlMs(relPath)

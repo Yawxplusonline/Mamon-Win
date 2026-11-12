@@ -2746,8 +2746,8 @@ ul {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(7, 16, 15, 0.62);
-  backdrop-filter: blur(4px);
+  background: rgba(7, 16, 15, 0.72);
+  contain: layout style;
   z-index: 80;
   display: flex;
   align-items: center;
@@ -2764,6 +2764,7 @@ ul {
   max-width: 780px;
   max-height: 90dvh;
   overflow-y: auto;
+  contain: layout style paint;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);

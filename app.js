@@ -264,6 +264,35 @@
   const runinLoadingCodes = new Set();
   let runinCatalogClient = [];
   let expandedRuninTeam = null;
+  let lastModalInteractionMs = 0;
+  let modalCleanupRaf = null;
+  let isSyncingRealtime = false;
+  let isSyncingBookmakers = false;
+  let uiRenderTimer = null;
+  let pendingRenderAll = false;
+
+  function isUserTypingInInput() {
+    const id = document.activeElement?.id;
+    return id === "sureStakeInput" || id === "desktopSearchInput" || id === "pageSearchInput";
+  }
+
+  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 120) {
+    if (fullAll) pendingRenderAll = true;
+    clearTimeout(uiRenderTimer);
+    uiRenderTimer = setTimeout(() => {
+      if (isUserTypingInInput() || activeModalMatchId || (Date.now() - lastModalInteractionMs) < 500) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, 450);
+        return;
+      }
+      const doAll = pendingRenderAll;
+      pendingRenderAll = false;
+      requestAnimationFrame(() => {
+        if (activeModalMatchId || isUserTypingInInput()) return;
+        if (doAll) renderAll();
+        else renderMainContent();
+      });
+    }, delayMs);
+  }
 
   async function loadRuninLeague(leagueCode, force = false) {
     const code = String(leagueCode || state.activeRuninLeague || "england").toLowerCase();
@@ -3918,7 +3947,11 @@
         isHydratingPowerWeather = true;
         RT.hydrateWeatherForMatches(visibleMatches).then((changed) => {
           isHydratingPowerWeather = false;
-          if (changed && (state.route === "/strong-teams" || state.route === "/power-picks")) renderMainContent();
+          if (changed && (state.route === "/strong-teams" || state.route === "/power-picks")) {
+            scheduleBackgroundUiRefresh(false, 60);
+          }
+        }).catch(() => {
+          isHydratingPowerWeather = false;
         });
       }
     }
@@ -3986,7 +4019,11 @@
         isHydratingPowerWeather = true;
         RT.hydrateWeatherForMatches(visibleMatches).then((changed) => {
           isHydratingPowerWeather = false;
-          if (changed && state.route === "/worst-teams") renderMainContent();
+          if (changed && state.route === "/worst-teams") {
+            scheduleBackgroundUiRefresh(false, 60);
+          }
+        }).catch(() => {
+          isHydratingPowerWeather = false;
         });
       }
     }
@@ -5222,14 +5259,28 @@
     const backdrop = document.getElementById("modalBackdrop");
     const dialog = document.getElementById("modalDialog");
     if (!backdrop || !dialog) return;
+    if (modalCleanupRaf) {
+      cancelAnimationFrame(modalCleanupRaf);
+      modalCleanupRaf = null;
+    }
+    lastModalInteractionMs = Date.now();
     dialog.innerHTML = html;
     backdrop.classList.remove("hidden");
   }
 
   function closeModal() {
+    lastModalInteractionMs = Date.now();
     activeModalMatchId = null;
     const backdrop = document.getElementById("modalBackdrop");
     if (backdrop) backdrop.classList.add("hidden");
+    modalCleanupRaf = requestAnimationFrame(() => {
+      modalCleanupRaf = null;
+      if (activeModalMatchId) return;
+      const dialog = document.getElementById("modalDialog");
+      if (dialog && document.getElementById("modalBackdrop")?.classList.contains("hidden")) {
+        dialog.innerHTML = "";
+      }
+    });
   }
 
   function openMatchModal(matchId, activeTab = "analysis") {
@@ -5239,14 +5290,18 @@
     activeModalMatchId = matchId;
     activeModalTab = activeTab;
 
-    // Trigger live ESPN summary + schedule enrichment in background when modal opens
-    if (RT && !m.enriched) {
+    // Trigger live summary / team schedule / weather enrichment only when needed
+    const hasNumericEspn = /^\d+$/.test(String(m.espnId || "").trim()) || /^\d+$/.test(String(m.homeEspnId || "").trim()) || /^\d+$/.test(String(m.awayEspnId || "").trim());
+    const needsWeather = Boolean(m.venueCity && !m.weather?.ok);
+    if (RT && !m.enriched && (hasNumericEspn || needsWeather)) {
       RT.enrichMatchDetails(m).then(() => {
-        recomputeSlips();
         if (activeModalMatchId === matchId) {
+          recomputeSlips();
           openMatchModal(matchId, activeModalTab);
+        } else {
+          setTimeout(() => { recomputeSlips(); }, 0);
         }
-      });
+      }).catch(() => {});
     }
 
     const home = getTeam(m.home, "Home");
@@ -5914,16 +5969,19 @@
         RT.hydrateWeatherForMatches(topWeatherCandidates).then((changed) => {
           if (changed) {
             recomputeSlips();
-            renderAll();
+            scheduleBackgroundUiRefresh(true, 120);
           }
-        });
+        }).catch(() => {});
       }
     }
   }
 
   async function syncBookmakerMismatchFeed(forceRefresh = false, showSuccessToast = false) {
+    if (isSyncingBookmakers) return;
+    isSyncingBookmakers = true;
     isLoadingBookmakers = true;
     if (state.route === "/odds-mismatch") renderMainContent();
+    let updatedScan = false;
     try {
       const url = `/api/bookmakers${forceRefresh ? "?refresh=1" : ""}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(45000) });
@@ -5931,22 +5989,22 @@
         const data = await res.json();
         if (data?.ok) {
           bookmakerScan = data;
+          updatedScan = true;
           mergeBookmakerGamesIntoLiveMatches();
           recomputeSlips();
-          renderAll();
+          if (!activeModalMatchId && !isUserTypingInInput()) {
+            renderAll();
+          } else {
+            scheduleBackgroundUiRefresh(true, 300);
+          }
         }
       }
     } catch {
       // Keep previous scan if any
     } finally {
+      isSyncingBookmakers = false;
       isLoadingBookmakers = false;
-      mergeBookmakerGamesIntoLiveMatches();
-      recomputeSlips();
-      if (
-        document.activeElement?.id !== "sureStakeInput" &&
-        document.activeElement?.id !== "desktopSearchInput" &&
-        document.activeElement?.id !== "pageSearchInput"
-      ) {
+      if (!updatedScan && state.route === "/odds-mismatch" && !isUserTypingInInput() && !activeModalMatchId) {
         renderMainContent();
       }
       if (showSuccessToast && bookmakerScan) {
@@ -5956,7 +6014,8 @@
   }
 
   async function syncRealtimeFeed(showSuccessToast = false) {
-    if (!RT) return;
+    if (!RT || isSyncingRealtime) return;
+    isSyncingRealtime = true;
     try {
       const res = await RT.load((updatedActive, updatedFinished) => {
         liveMatches = (updatedActive || []).filter((m) => !isNcaaOrWomenMatch(m));
@@ -5965,14 +6024,8 @@
         }
         mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
-        // Avoid yanking user input focus during typing on /sure-odds or search
-        if (
-          document.activeElement?.id !== "sureStakeInput" &&
-          document.activeElement?.id !== "desktopSearchInput" &&
-          document.activeElement?.id !== "pageSearchInput"
-        ) {
-          renderAll();
-        }
+        // Coalesce progressive updates & avoid blocking active modal interactions
+        scheduleBackgroundUiRefresh(true, 180);
       });
       liveMatches = (res.activeMatches || []).filter((m) => !isNcaaOrWomenMatch(m));
       finishedTodayMatches = (res.finishedToday || []).filter((m) => !isNcaaOrWomenMatch(m));
@@ -5980,19 +6033,37 @@
       lastSyncIso = res.fetchedAt;
       isLoadingRealtime = false;
       recomputeSlips();
-      renderAll();
+      if (!activeModalMatchId && !isUserTypingInInput()) {
+        renderAll();
+      } else {
+        scheduleBackgroundUiRefresh(true, 300);
+      }
       if (showSuccessToast) {
         showToast(`Synced ${liveMatches.length} real-time matches.`);
       }
     } catch {
       isLoadingRealtime = false;
       mergeBookmakerGamesIntoLiveMatches();
-      renderAll();
+      scheduleBackgroundUiRefresh(true, 120);
+    } finally {
+      isSyncingRealtime = false;
     }
   }
 
   // ============ GLOBAL EVENT DELEGATION ============
   document.addEventListener("click", (e) => {
+    // Fast-path Modal Close (zero selector cascade latency -> optimal INP)
+    if (e.target.closest("[data-close-modal]") || e.target.id === "modalBackdrop") {
+      closeModal();
+      return;
+    }
+
+    // Fast-path Match Modal Tab switching
+    const fastMatchTab = e.target.closest("[data-match-tab]");
+    if (fastMatchTab) {
+      openMatchModal(fastMatchTab.getAttribute("data-match-id"), fastMatchTab.getAttribute("data-match-tab"));
+      return;
+    }
     // Switch Active Sport Filter (Football, Tennis, Basketball, Darts, Ice Hockey)
     const sportBtn = e.target.closest("[data-sport-filter]");
     if (sportBtn) {
@@ -6227,7 +6298,7 @@
         RT.enrichMatchDetails(targetMatch).then(() => {
           recomputeSlips();
           renderMainContent();
-        });
+        }).catch(() => {});
       }
       renderMainContent();
       return;
@@ -6241,7 +6312,9 @@
         slip.legs.forEach((l) => {
           state.expandedLegs[l.matchId] = anyClosed;
           if (anyClosed && RT && !l.match.enriched) {
-            RT.enrichMatchDetails(l.match).then(() => renderMainContent());
+            RT.enrichMatchDetails(l.match).then(() => {
+              scheduleBackgroundUiRefresh(false, 80);
+            }).catch(() => {});
           }
         });
         renderMainContent();
@@ -6266,6 +6339,9 @@
             renderAll();
           }
           showToast("Synced live H2H, Home/Away splits & Run-in schedule.");
+        }).catch(() => {
+          hydrateBtn.disabled = false;
+          hydrateBtn.textContent = "↻ Refresh Live Splits";
         });
       }
       return;
@@ -6355,13 +6431,6 @@
       return;
     }
 
-    // Match modal tabs
-    const matchTab = e.target.closest("[data-match-tab]");
-    if (matchTab) {
-      openMatchModal(matchTab.getAttribute("data-match-id"), matchTab.getAttribute("data-match-tab"));
-      return;
-    }
-
     // Open Match Center modal
     const matchCard = e.target.closest("[data-match-id]");
     if (matchCard) {
@@ -6383,12 +6452,6 @@
     if (legalLink) {
       e.preventDefault();
       openLegalModal(legalLink.getAttribute("data-legal"));
-      return;
-    }
-
-    // Close modal
-    if (e.target.closest("[data-close-modal]") || e.target.id === "modalBackdrop") {
-      closeModal();
       return;
     }
 

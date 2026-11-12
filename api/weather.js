@@ -148,6 +148,17 @@ module.exports = async function handler(req, res) {
       if (!fResp.ok) throw new Error(`Open-Meteo HTTP ${fResp.status}`);
       const fData = await fResp.json();
       forecast = { data: fData, expiresAt: Date.now() + 1800000 };
+      if (weatherCache.size >= 400) {
+        const nowTs = Date.now();
+        for (const [k, v] of weatherCache) {
+          if (!v || nowTs >= v.expiresAt) weatherCache.delete(k);
+        }
+        while (weatherCache.size >= 400) {
+          const oldestKey = weatherCache.keys().next().value;
+          if (oldestKey === undefined) break;
+          weatherCache.delete(oldestKey);
+        }
+      }
       weatherCache.set(wKey, forecast);
     }
 

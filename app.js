@@ -997,17 +997,37 @@
           }
         </div>
 
-        <!-- 14. Stadium Weather Conditions -->
+        <!-- 14. Pitch & Surface Condition -->
+        <div class="factor-tile">
+          <div class="factor-tile-head">
+            <span class="factor-name">14. Pitch &amp; Surface Condition</span>
+            <span class="factor-edge-pill">${escapeHtml(f.pitchCondition?.condition || (f.weather?.ok ? f.weather.pitchCondition : "Firm Grass"))}</span>
+          </div>
+          <div class="text-xs font-semibold">${escapeHtml(f.pitchCondition?.surfaceType || "Natural / Hybrid Grass")}</div>
+          <div class="text-xs text-muted mt-0.5">${escapeHtml(f.pitchCondition?.impact || "Optimal playing surface expected")}</div>
+        </div>
+
+        <!-- 15. Appointed Referee & Discipline Profile -->
+        <div class="factor-tile">
+          <div class="factor-tile-head">
+            <span class="factor-name">15. Appointed Referee &amp; Cards</span>
+            <span class="factor-edge-pill">${escapeHtml(f.referee?.cardRisk || "MODERATE")} CARD RISK</span>
+          </div>
+          <div class="text-xs font-semibold">${escapeHtml(f.referee?.name || "Match Official Panel")} <span class="text-muted font-normal">(${escapeHtml(f.referee?.cardTendency || "Balanced whistle")})</span></div>
+          <div class="text-xs text-muted mt-0.5">${escapeHtml(f.referee?.impactNote || "Normal foul & set-piece tempo expected.")}</div>
+        </div>
+
+        <!-- 16. Stadium Weather Conditions -->
         <div class="factor-tile is-wide">
           <div class="factor-tile-head">
-            <span class="factor-name">14. Stadium Weather Conditions (${escapeHtml(match.venue || match.venueCity || "Pitch")})</span>
+            <span class="factor-name">16. Stadium Weather Conditions (${escapeHtml(match.venue || match.venueCity || match.leagueCountry || "Venue")})</span>
             <span class="factor-edge-pill">${f.weather?.ok ? `${f.weather.tempC}°C · ${escapeHtml(f.weather.condition)}` : "Forecast Sync"}</span>
           </div>
           <div class="text-xs">
             ${
               f.weather?.ok
-                ? `<strong class="font-mono text-brand">${f.weather.tempC}°C</strong> · ${escapeHtml(f.weather.condition)} · Wind <strong class="font-mono">${f.weather.windKmh} km/h</strong> · Rain <strong class="font-mono">${f.weather.precipMm}mm</strong> (${escapeHtml(f.weather.impact)})`
-                : `${escapeHtml(match.venueCity ? `${match.venueCity}, ${match.venueCountry}` : "Match venue")} — ${escapeHtml(f.weather?.impact || "Normal playing conditions")}`
+                ? `<strong class="font-mono text-brand">${f.weather.tempC}°C</strong> · ${escapeHtml(f.weather.condition)} · Wind <strong class="font-mono">${f.weather.windKmh} km/h</strong> · Rain <strong class="font-mono">${f.weather.precipMm}mm</strong>${f.weather.humidityPct !== null && f.weather.humidityPct !== undefined ? ` · Humidity <strong class="font-mono">${f.weather.humidityPct}%</strong>` : ""} (${escapeHtml(f.weather.impact)})`
+                : `${escapeHtml(match.venueCity ? `${match.venueCity}, ${match.venueCountry}` : (match.leagueCountry || "Match venue"))} — ${escapeHtml(f.weather?.impact || "Normal playing conditions")}`
             }
           </div>
         </div>
@@ -1340,7 +1360,7 @@
       ? `<span class="ppg-sos-badge is-drop-red" title="${escapeHtml(sched.home?.isDropRed ? sched.home.reason : sched.away?.reason)}">🔴 Drop Risk</span>`
       : sched?.home?.isGainBlue || sched?.away?.isGainBlue
       ? `<span class="ppg-sos-badge is-gain-blue" title="${escapeHtml(sched.home?.isGainBlue ? sched.home.reason : sched.away?.reason)}">🔵 Gain Points</span>`
-      : "";
+      : `<span class="ppg-sos-badge is-neutral" title="Balanced Strength of Schedule">⚖️ Steady</span>`;
     const riHome = m.analysis?.factors?.runInAnalysis?.homeStats;
     const riAway = m.analysis?.factors?.runInAnalysis?.awayStats;
     const runinBadgeHtml = (riHome && riAway && (riHome.isLiveSoccerStats || riAway.isLiveSoccerStats))
@@ -1421,14 +1441,18 @@
             ${redBadges(m.awayRed)}
           </div>
           <div class="chevron">
-            ${sosBadge}
-            ${runinBadgeHtml}
-            ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
-            ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
-            ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
-            ${m.onOneFootball ? `<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OF</span>` : ""}
-            <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            <div class="chevron-meta-row">
+              ${runinBadgeHtml}
+              ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
+              ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
+              ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
+              ${m.onOneFootball ? `<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OF</span>` : ""}
+            </div>
+            <div class="chevron-action-row">
+              ${sosBadge}
+              <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+            </div>
           </div>
         </div>
       </div>
@@ -2313,8 +2337,8 @@
                     <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
                   </div>
                   <div class="flex items-center gap-1.5 flex-wrap">
-                    ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 Drop Risk Alert</span>` : ""}
-                    ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 Points Gainer</span>` : ""}
+                    ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 Drop Risk</span>` : ""}
+                    ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 Gain Points</span>` : ""}
                     <span class="factor-edge-pill font-mono font-bold">PPG Edge: ${escapeHtml(ppg.edge)} (+${ppg.gap.toFixed(2)} PPG)</span>
                   </div>
                 </div>
@@ -2418,11 +2442,11 @@
           </div>
           <div class="ppg-sos-legend">
             <div class="ppg-sos-legend-item">
-              <span class="ppg-sos-badge is-drop-red">🔴 DROP POINTS RISK (RED)</span>
+              <span class="ppg-sos-badge is-drop-red is-wide">🔴 DROP POINTS RISK (RED)</span>
               <span class="text-xs text-text-secondary">Played soft/cheap opponents; facing difficult opponent today — high danger of dropping points.</span>
             </div>
             <div class="ppg-sos-legend-item">
-              <span class="ppg-sos-badge is-gain-blue">🔵 GAIN POINTS SURGE (BLUE)</span>
+              <span class="ppg-sos-badge is-gain-blue is-wide">🔵 GAIN POINTS SURGE (BLUE)</span>
               <span class="text-xs text-text-secondary">Battle-tested against top tier; facing soft/weak defense today — primed to gain points and win.</span>
             </div>
           </div>
@@ -5876,6 +5900,21 @@
       finishedTodayMatches = rec.finishedList;
     } else if (extraCompleted.length > 0) {
       finishedTodayMatches = [...finishedTodayMatches, ...extraCompleted];
+    }
+
+    if (RT?.hydrateWeatherForMatches && RT?.isTipEligiblePreMatch5h) {
+      const topWeatherCandidates = liveMatches
+        .filter((m) => (m.sport || "football").toLowerCase() === "football" && !m.weather?.ok && RT.isTipEligiblePreMatch5h(m))
+        .sort((a, b) => (b.analysis?.confidencePct || 0) - (a.analysis?.confidencePct || 0))
+        .slice(0, 24);
+      if (topWeatherCandidates.length > 0) {
+        RT.hydrateWeatherForMatches(topWeatherCandidates).then((changed) => {
+          if (changed) {
+            recomputeSlips();
+            renderAll();
+          }
+        });
+      }
     }
   }
 

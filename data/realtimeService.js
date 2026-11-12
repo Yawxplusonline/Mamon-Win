@@ -506,26 +506,73 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
-  async function fetchMatchWeather(match) {
+  const COUNTRY_FALLBACK_CITY = {
+    "england": "London", "scotland": "Glasgow", "wales": "Cardiff", "spain": "Madrid",
+    "germany": "Berlin", "italy": "Rome", "france": "Paris", "portugal": "Lisbon",
+    "netherlands": "Amsterdam", "belgium": "Brussels", "turkey": "Istanbul", "turkiye": "Istanbul",
+    "brazil": "Sao Paulo", "argentina": "Buenos Aires", "colombia": "Bogota", "uruguay": "Montevideo",
+    "venezuela": "Caracas", "chile": "Santiago", "peru": "Lima", "ecuador": "Quito",
+    "mexico": "Mexico City", "usa": "New York", "united states": "New York", "canada": "Toronto",
+    "el salvador": "San Salvador", "cayman islands": "George Town", "guyana": "Georgetown",
+    "czechia": "Prague", "czech republic": "Prague", "croatia": "Zagreb", "serbia": "Belgrade",
+    "poland": "Warsaw", "austria": "Vienna", "switzerland": "Zurich", "greece": "Athens",
+    "ukraine": "Kyiv", "russia": "Moscow", "sweden": "Stockholm", "norway": "Oslo",
+    "denmark": "Copenhagen", "egypt": "Cairo", "morocco": "Casablanca", "ghana": "Accra",
+    "nigeria": "Lagos", "south africa": "Johannesburg", "kenya": "Nairobi", "madagascar": "Antananarivo",
+    "congo dr": "Kinshasa", "sierra leone": "Freetown", "australia": "Sydney", "japan": "Tokyo"
+  };
+
+  function resolveWeatherQueryTarget(match) {
+    if (!match) return { city: "", country: "" };
+    const homeName = String(match.homeTeamName || DATA.TEAMS?.[match.home]?.name || "").trim().toLowerCase();
+    let city = String(match.venueCity || "").trim();
+    let country = String(match.venueCountry || "").trim();
+    if (!country && match.leagueCountry && !["International", "Europe", "Africa", "CONCACAF", "South America", "Asia", "International Clubs"].includes(match.leagueCountry)) {
+      country = match.leagueCountry;
+    }
+    if (!city && homeName && COUNTRY_FALLBACK_CITY[homeName]) {
+      city = COUNTRY_FALLBACK_CITY[homeName];
+      if (!country) country = match.homeTeamName || homeName;
+    }
+    if (!city && country && COUNTRY_FALLBACK_CITY[country.toLowerCase()]) {
+      city = COUNTRY_FALLBACK_CITY[country.toLowerCase()];
+    }
+    if (!city && country) {
+      city = country;
+    }
+    if (!city && homeName && /argentin|spain|england|france|germany|italy|brazil|ghana|morocco|egypt|nigeria|mexico|turkey|portugal/i.test(String(match.leagueName || ""))) {
+      const lgLow = String(match.leagueName || "").toLowerCase();
+      for (const [k, cName] of Object.entries(COUNTRY_FALLBACK_CITY)) {
+        if (lgLow.includes(k)) { city = cName; break; }
+      }
+    }
+    return { city, country };
+  }
+
+  async function fetchMatchWeather(match, opts = {}) {
     if (!match) return null;
     if (match.weather?.ok) return match.weather;
-    const city = match.venueCity || "";
-    const country = match.venueCountry || "";
-    if (!city) return null;
+    const { city, country } = resolveWeatherQueryTarget(match);
+    if (!city && !country) return null;
+    const surface = match.pitchSurface || "grass";
     const hourKey = String(match.isoDateTime || "").slice(0, 13);
-    const key = `${city.toLowerCase()}|${country.toLowerCase()}|${hourKey}`;
+    const key = `${city.toLowerCase()}|${country.toLowerCase()}|${hourKey}|${surface.toLowerCase()}`;
     if (weatherCache.has(key)) {
       const cached = weatherCache.get(key);
       if (cached) {
         match.weather = cached;
-        if (match.analysis?.factors) match.analysis.factors.weather = cached;
+        if (match.analysis && !opts.skipReanalyze) {
+          match.analysis = buildMatchAnalysis(match);
+        } else if (match.analysis?.factors) {
+          match.analysis.factors.weather = cached;
+        }
       }
       return cached;
     }
     try {
       let reqPromise = weatherInFlight.get(key);
       if (!reqPromise) {
-        const url = `/api/weather?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&iso=${encodeURIComponent(match.isoDateTime || "")}`;
+        const url = `/api/weather?city=${encodeURIComponent(city)}&country=${encodeURIComponent(country)}&iso=${encodeURIComponent(match.isoDateTime || "")}&surface=${encodeURIComponent(surface)}`;
         reqPromise = fetch(url, { signal: AbortSignal.timeout(4500) })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => {
@@ -540,7 +587,11 @@ window.MAMON_REALTIME = (() => {
       const data = await reqPromise;
       if (data?.ok) {
         match.weather = data;
-        if (match.analysis?.factors) match.analysis.factors.weather = data;
+        if (match.analysis && !opts.skipReanalyze) {
+          match.analysis = buildMatchAnalysis(match);
+        } else if (match.analysis?.factors) {
+          match.analysis.factors.weather = data;
+        }
         return data;
       }
       return null;
@@ -553,19 +604,26 @@ window.MAMON_REALTIME = (() => {
     const seen = new Set();
     const targets = [];
     for (const m of matches || []) {
-      if (!m || !m.venueCity || m.weather?.ok) continue;
+      if (!m || m.weather?.ok) continue;
+      const q = resolveWeatherQueryTarget(m);
+      if (!q.city && !q.country) continue;
       const idKey = m.espnId || m.id;
       if (seen.has(idKey)) continue;
       seen.add(idKey);
       targets.push(m);
-      if (targets.length >= 40) break;
+      if (targets.length >= 48) break;
     }
     if (!targets.length) return false;
     let changed = false;
     for (let i = 0; i < targets.length; i += 8) {
       const batch = targets.slice(i, i + 8);
-      const res = await Promise.all(batch.map((m) => fetchMatchWeather(m)));
+      const res = await Promise.all(batch.map((m) => fetchMatchWeather(m, { skipReanalyze: true })));
       if (res.some((w) => w?.ok)) changed = true;
+    }
+    if (changed) {
+      for (const m of targets) {
+        if (m.weather?.ok) m.analysis = buildMatchAnalysis(m);
+      }
     }
     return changed;
   }
@@ -1268,6 +1326,10 @@ window.MAMON_REALTIME = (() => {
       venue: comp.venue?.fullName || DATA.TEAMS[homeKey]?.stadium || "Match Stadium",
       venueCity: comp.venue?.address?.city || "",
       venueCountry: comp.venue?.address?.country || "",
+      pitchSurface: comp.venue?.grass === false ? "Artificial Turf" : "Natural / Hybrid Grass",
+      refereeName: Array.isArray(ev.competitions?.[0]?.officials) && ev.competitions[0].officials[0]?.fullName
+        ? ev.competitions[0].officials[0].fullName
+        : "",
       weather: null,
       hasBookOdds: Boolean(rawOdds?.moneyline?.home?.close?.odds || rawOdds?.moneyline?.home?.open?.odds),
       droppingOdds,
@@ -1927,6 +1989,75 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  function resolveRefereeProfile(match, sum, squadReport) {
+    const officials = sum?.gameInfo?.officials || [];
+    const leadRef = officials.find((o) => /referee/i.test(o.position?.name || o.position?.displayName || "")) || officials[0];
+    const appointedName = leadRef?.fullName || leadRef?.displayName || match.refereeName || "";
+    const isLiveAppointed = Boolean(appointedName);
+
+    const lgTxt = `${match.leagueCountry || ""} ${match.leagueName || ""}`.toLowerCase();
+    const totalRc = (squadReport?.homeSeasonRedCards || 0) + (squadReport?.awaySeasonRedCards || 0) + (match.homeRed || 0) + (match.awayRed || 0);
+    const totalSusp = (squadReport?.homeSuspensions?.length || 0) + (squadReport?.awaySuspensions?.length || 0);
+
+    let cardRisk = "MODERATE";
+    let cardTendency = "4.1 yellows / match avg";
+    let homeWhistleEdge = 0.02;
+    let xgGoalModifier = 0;
+    let confShift = 0;
+    let impactNote = "Balanced officiating flow; normal set-piece & foul frequency expected";
+
+    if (/copa|cup|qualif|south america|conmebol|argentin|brazil|colombi|la liga|laliga|africa|concacaf|turk/i.test(lgTxt) || totalRc >= 4 || totalSusp >= 2) {
+      cardRisk = "HIGH";
+      cardTendency = "4.8+ cards · elevated foul & penalty watch";
+      homeWhistleEdge = 0.04;
+      xgGoalModifier = -0.02;
+      confShift = -2;
+      impactNote = "Higher whistle stoppages & card volatility tighten straight-win margins (favors 1X/X2 or set-piece threats)";
+    } else if (/premier league|bundesliga|eredivisie|uefa champions|uefa nations/i.test(lgTxt)) {
+      cardRisk = "CONTROLLED";
+      cardTendency = "3.4–3.9 cards · advantage-rule flow";
+      homeWhistleEdge = 0.03;
+      xgGoalModifier = 0.02;
+      confShift = 1;
+      impactNote = "Clean tempo management lets technical Strong PPG teams sustain buildup & chance volume";
+    }
+
+    return {
+      isLiveAppointed,
+      name: appointedName || `${match.leagueCountry || "Competition"} Match Official Panel`,
+      role: isLiveAppointed ? (leadRef?.position?.displayName || "Center Referee") : "Assignment Pending Kickoff Window",
+      cardRisk,
+      cardTendency,
+      homeWhistleEdge,
+      xgGoalModifier,
+      confShift,
+      impactNote
+    };
+  }
+
+  function resolvePitchProfile(match) {
+    const surfaceType = match.pitchSurface || match.weather?.surfaceType || "Natural / Hybrid Grass";
+    if (match.weather?.ok && match.weather?.pitchCondition) {
+      return {
+        isLiveSynced: true,
+        surfaceType,
+        condition: match.weather.pitchCondition,
+        rating: match.weather.pitchRating || "OPTIMAL_FIRM",
+        impact: match.weather.pitchImpact || "Good surface footing",
+        pitchModifier: Number(match.weather.pitchModifier) || 0
+      };
+    }
+    const cityLabel = match.venueCity || match.leagueCountry || "Stadium Venue";
+    return {
+      isLiveSynced: false,
+      surfaceType,
+      condition: `${surfaceType} · ${cityLabel}`,
+      rating: "PENDING",
+      impact: "Firm standard pitch assumed until live stadium weather & surface sync completes",
+      pitchModifier: 0
+    };
+  }
+
   function buildMatchAnalysis(match, sum = null, homeSched = null, awaySched = null, homeRoster = null, awayRoster = null) {
     const homeTeam = DATA.TEAMS[match.home] || { name: "Home", short: "HOM" };
     const awayTeam = DATA.TEAMS[match.away] || { name: "Away", short: "AWY" };
@@ -2060,8 +2191,10 @@ window.MAMON_REALTIME = (() => {
     const awayCsSample = away5Summary.isLiveFeed ? Math.max(1, away5Summary.games.length) : 5;
     const awayCsPct = Math.round((awayCsCount / awayCsSample) * 100);
 
-    // 3 & 4: Injuries & Suspensions
+    // 3 & 4: Injuries & Suspensions + 14/15/16 Situational Profiles (Pitch, Referee, Weather)
     const squadReport = scanInjuriesAndSuspensions(match, sum, homeRoster, awayRoster);
+    const refProfile = resolveRefereeProfile(match, sum, squadReport);
+    const pitchProfile = resolvePitchProfile(match);
 
     // PPG (Points Per Game: Overall + Venue Home/Away splits)
     const calcPpg = (gamesArr) => {
@@ -2165,8 +2298,12 @@ window.MAMON_REALTIME = (() => {
       lamH += (liveH2h.homeWins - liveH2h.awayWins) * 0.06;
       lamA += (liveH2h.awayWins - liveH2h.homeWins) * 0.05;
     }
-    lamH -= Math.min(0.32, (squadReport.homeInjuries.length * 0.07 + squadReport.homeSuspensions.length * 0.12));
-    lamA -= Math.min(0.32, (squadReport.awayInjuries.length * 0.07 + squadReport.awaySuspensions.length * 0.12));
+    const hAbsenceLoad = squadReport.homeInjuries.length * 0.075 + squadReport.homeSuspensions.length * 0.13;
+    const aAbsenceLoad = squadReport.awayInjuries.length * 0.075 + squadReport.awaySuspensions.length * 0.13;
+    lamH -= Math.min(0.36, hAbsenceLoad);
+    lamA -= Math.min(0.36, aAbsenceLoad);
+    lamH += Math.min(0.14, aAbsenceLoad * 0.28);
+    lamA += Math.min(0.14, hAbsenceLoad * 0.28);
 
     // Market anchor using real 1X2 implied strength + sharp dropping odds steam
     const impH = 1 / (match.odds?.home || 2.1);
@@ -2186,11 +2323,15 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
-    if (match.weather?.ok && typeof match.weather.modifier === "number" && match.weather.modifier < 0) {
-      const dampen = 1 + match.weather.modifier;
-      lamH = clamp(lamH * dampen, 0.50, 3.25);
-      lamA = clamp(lamA * dampen, 0.35, 2.85);
-    }
+    // Appointed Referee + Pitch Surface + Live Weather Integration
+    lamH = clamp(lamH * (1 + (refProfile.xgGoalModifier || 0)) + (refProfile.homeWhistleEdge || 0), 0.50, 3.35);
+    lamA = clamp(lamA * (1 + (refProfile.xgGoalModifier || 0)), 0.35, 2.95);
+
+    const weatherMod = match.weather?.ok && typeof match.weather.modifier === "number" ? match.weather.modifier : 0;
+    const pitchMod = typeof pitchProfile.pitchModifier === "number" ? pitchProfile.pitchModifier : 0;
+    const envMultiplier = 1 + clamp(weatherMod * 0.65 + pitchMod * 0.65, -0.09, 0.04);
+    lamH = clamp(lamH * envMultiplier, 0.50, 3.35);
+    lamA = clamp(lamA * envMultiplier, 0.35, 2.95);
 
     // Account for in-play elapsed time & score if LIVE
     let probs = computePoissonProbs(lamH, lamA);
@@ -2380,7 +2521,11 @@ window.MAMON_REALTIME = (() => {
     const isHomeStrong = (homeOverallPpg >= 1.60 || homeGain || (homeOverallPpg - awayOverallPpg >= 0.25)) && !homeDrop;
     const isAwayStrong = (awayOverallPpg >= 1.45 || awayGain || (awayOverallPpg - homeOverallPpg >= 0.25)) && !awayDrop;
 
-    // Best primary recommendation - strictly aligned with Strong PPG, rejecting DROP_RED
+    const isHeavyEnv = envMultiplier <= 0.95;
+    const isStrongHomeDepleted = hAbsenceLoad >= 0.20 && isHomeStrong;
+    const isStrongAwayDepleted = aAbsenceLoad >= 0.20 && isAwayStrong;
+
+    // Best primary recommendation - strictly aligned with Strong PPG, rejecting DROP_RED & adjusting for Pitch/Weather/Injuries/Ref
     const sortedCore = [...markets]
       .filter((x) => {
         // Disallow markets backing a team with DROP_RED
@@ -2402,7 +2547,14 @@ window.MAMON_REALTIME = (() => {
         const ppgMatchBoostB = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(b.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(b.code)) ? 0.08 : 0;
         const dropBoostA = (a.dropPct || 0) >= 3 ? 0.04 : 0;
         const dropBoostB = (b.dropPct || 0) >= 3 ? 0.04 : 0;
-        return (b.prob * 0.78 + (1 / b.odds) * 0.22 + ppgMatchBoostB + dropBoostB) - (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA);
+        const safetyBias = (mkt) => {
+          let adj = 0;
+          if ((isHeavyEnv || isStrongHomeDepleted || isStrongAwayDepleted) && ["1X", "X2", "U35"].includes(mkt.code)) adj += 0.05;
+          if (isHeavyEnv && ["HOME", "AWAY", "O15", "H_O15", "A_O15"].includes(mkt.code)) adj -= 0.03;
+          return adj;
+        };
+        return (b.prob * 0.78 + (1 / b.odds) * 0.22 + ppgMatchBoostB + dropBoostB + safetyBias(b)) -
+          (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA + safetyBias(a));
       });
 
     const bestPick = sortedCore[0] || markets.find((m) => m.code === "1X" || m.code === "O15") || markets[0];
@@ -2424,7 +2576,10 @@ window.MAMON_REALTIME = (() => {
       badge: "💎 STRONG PPG BACKED",
       badgeText: `Strong PPG: ${strongTeam.short} (${strongPpgVal.toFixed(2)} PPG) vs ${oppTeam.short} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGap.toFixed(2)} Edge`
     };
-    const modelConfPct = Math.round(clamp(bestPick.prob * 100, 48, 92));
+    const backedAbsencePenalty = strongSide === "HOME" ? hAbsenceLoad * 10 - aAbsenceLoad * 4 : aAbsenceLoad * 10 - hAbsenceLoad * 4;
+    const pitchConfShift = pitchMod >= 0.015 ? 2 : pitchMod <= -0.04 ? -4 : pitchMod <= -0.02 ? -2 : 0;
+    const situConfShift = (refProfile.confShift || 0) + pitchConfShift - Math.round(clamp(backedAbsencePenalty, -4, 6));
+    const modelConfPct = Math.round(clamp(bestPick.prob * 100 + situConfShift, 46, 93));
     const calcHome = computeTeamStandingsCalc(match, "home", stH, stA);
     const calcAway = computeTeamStandingsCalc(match, "away", stA, stH);
 
@@ -2532,7 +2687,11 @@ window.MAMON_REALTIME = (() => {
           awayStats: awayRuninStats,
           edge: runInEdge
         },
-        // Weather conditions at stadium city
+        // 14. Pitch & Surface Condition
+        pitchCondition: pitchProfile,
+        // 15. Appointed Referee & Officiating Discipline Profile
+        referee: refProfile,
+        // 16. Weather conditions at stadium city
         weather: match.weather?.ok
           ? match.weather
           : {
@@ -2882,7 +3041,7 @@ window.MAMON_REALTIME = (() => {
       fetchTeamSched(match.awayEspnId),
       fetchTeamRoster(match.homeEspnId),
       fetchTeamRoster(match.awayEspnId),
-      fetchMatchWeather(match)
+      fetchMatchWeather(match, { skipReanalyze: true })
     ]);
 
     // Update live stats & events & lineups from summary if present
@@ -2897,6 +3056,21 @@ window.MAMON_REALTIME = (() => {
 
       if (sum.gameInfo?.venue?.fullName) {
         match.venue = sum.gameInfo.venue.fullName;
+      }
+      if (sum.gameInfo?.venue?.address?.city && !match.venueCity) {
+        match.venueCity = sum.gameInfo.venue.address.city;
+      }
+      if (sum.gameInfo?.venue?.address?.country && !match.venueCountry) {
+        match.venueCountry = sum.gameInfo.venue.address.country;
+      }
+      if (typeof sum.gameInfo?.venue?.grass === "boolean") {
+        match.pitchSurface = sum.gameInfo.venue.grass ? "Natural Grass" : "Artificial Turf";
+      }
+      if (Array.isArray(sum.gameInfo?.officials) && sum.gameInfo.officials.length > 0) {
+        const leadRef = sum.gameInfo.officials.find((o) => /referee/i.test(o.position?.name || o.position?.displayName || "")) || sum.gameInfo.officials[0];
+        if (leadRef?.fullName || leadRef?.displayName) {
+          match.refereeName = leadRef.fullName || leadRef.displayName;
+        }
       }
 
       // Live keyEvents timeline
@@ -4354,16 +4528,24 @@ window.MAMON_REALTIME = (() => {
       DATA.NEWS = [...liveArticles.slice(0, 6), ...DATA.NEWS];
     }
 
-    // Launch immediate city weather hydration in parallel for Top Today Power Pick venues + background-hydrate top 18 fixtures
+    // Launch immediate city weather + pitch hydration in parallel for Top Today Power & >=5h Sure-Odds candidates + background-hydrate top 24 fixtures
     const initialPower = buildTodayPowerRankings(activeMatches);
+    const topPre5Candidates = activeMatches
+      .filter((m) => isTipEligiblePreMatch5h(m))
+      .sort((a, b) => (b.analysis?.confidencePct || 0) - (a.analysis?.confidencePct || 0))
+      .slice(0, 18);
     const initialWeatherTargets = [
-      ...initialPower.strongHome.slice(0, 6),
-      ...initialPower.strongAway.slice(0, 6),
-      ...initialPower.worstHome.slice(0, 6),
-      ...initialPower.worstAway.slice(0, 6)
-    ].map((x) => x.match);
+      ...topPre5Candidates,
+      ...initialPower.strongHome.slice(0, 6).map((x) => x.match),
+      ...initialPower.strongAway.slice(0, 6).map((x) => x.match),
+      ...initialPower.worstHome.slice(0, 6).map((x) => x.match),
+      ...initialPower.worstAway.slice(0, 6).map((x) => x.match)
+    ];
 
-    const hydrationQueue = activeMatches.slice(0, 18);
+    const hydrationQueue = [
+      ...activeMatches.filter((m) => isTipEligiblePreMatch5h(m)).slice(0, 12),
+      ...activeMatches.slice(0, 12)
+    ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 20);
     if (typeof onProgress === "function") {
       syncTopRuninTables().then((riRes) => {
         if (riRes?.ok) {

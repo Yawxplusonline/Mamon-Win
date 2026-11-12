@@ -2559,7 +2559,7 @@
 
   function resolveRuninStateForCode(code) {
     const activeCode = String(code || "england").toLowerCase();
-    const isLoadingThisLeague = runinLoadingCodes.has(activeCode);
+    let isLoadingThisLeague = runinLoadingCodes.has(activeCode);
     const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
     const hasCachedRows = Boolean(cachedLive && Array.isArray(cachedLive.table) && cachedLive.table.length > 0);
     const fallbackData = !hasCachedRows && runinAttemptedCodes.has(activeCode)
@@ -2568,6 +2568,8 @@
     const leagueData = hasCachedRows ? cachedLive : (fallbackData?.ok && fallbackData.table?.length > 0 ? fallbackData : null);
 
     if ((!cachedLive || !cachedLive.isFullFetch || !hasCachedRows) && !isLoadingThisLeague && !runinAttemptedCodes.has(activeCode)) {
+      runinLoadingCodes.add(activeCode);
+      isLoadingThisLeague = true;
       setTimeout(() => loadRuninLeague(activeCode, false), 0);
     }
 
@@ -3345,7 +3347,15 @@
           <span class="panel-hdr-spacer" aria-hidden="true"></span>
           <div class="panel-hdr-center">
             <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
-            <span class="count">${isLoadingThisLeague ? "Syncing live Run-In data..." : `${filteredRows.length} Competitors · Click any row for all played scores &amp; fixture tips`}</span>
+            <span class="count">${
+              isLoadingThisLeague
+                ? "Syncing live Run-In data..."
+                : rawRows.length > 0
+                  ? (filteredRows.length !== rawRows.length
+                      ? `${rawRows.length} Competitors (${filteredRows.length} shown) · Click any row for all played scores &amp; fixture tips`
+                      : `${rawRows.length} Competitors · Click any row for all played scores &amp; fixture tips`)
+                  : "0 Competitors · Click any row for all played scores &amp; fixture tips"
+            }</span>
           </div>
           <div class="panel-hdr-right"></div>
         </div>
@@ -3355,7 +3365,14 @@
             : rawRows.length === 0
               ? `<div class="empty-state"><h3>No Run-In fixtures currently loaded for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry / Sync below to refresh live schedule &amp; bookmaker stats.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
               : filteredRows.length === 0
-                ? `<div class="empty-state"><h3>No teams or players match current Run-In filter</h3><p class="text-sm">Switch to All above or pick another active league.</p></div>`
+                ? `<div class="empty-state">
+                    <h3>No teams match the "${escapeHtml(activeFilter)}" filter in ${escapeHtml(leagueMeta.name)}</h3>
+                    <p class="text-sm">Currently no teams in this competition satisfy both criteria. View all ${rawRows.length} teams or Strong PPG tips.</p>
+                    <div class="flex items-center justify-center gap-2 mt-3 flex-wrap">
+                      <button type="button" class="filter-chip is-active" data-runin-filter="ALL">Show all ${rawRows.length} teams in ${escapeHtml(leagueMeta.name)}</button>
+                      ${strongPpgAllRows.length > 0 ? `<button type="button" class="filter-chip" data-runin-filter="STRONG_PPG">Strong PPG (${strongPpgAllRows.length})</button>` : ""}
+                    </div>
+                  </div>`
                 : tableBlockHtml
         }
       </section>
@@ -6293,6 +6310,7 @@
       const code = runinLgBtn.getAttribute("data-runin-league") || "england";
       expandedRuninTeam = null;
       state.activeRuninLeague = code;
+      state.activeRuninFilter = "ALL";
       saveState();
       loadRuninLeague(code, false);
       renderMainContent();
@@ -6307,7 +6325,9 @@
     }
     if (e.target.closest("[data-runin-refresh]")) {
       if ((state.activeRuninSport || "football") === "football") {
-        loadRuninLeague(state.activeRuninLeague || "england", true);
+        const activeCode = state.activeRuninLeague || "england";
+        runinAttemptedCodes.delete(activeCode);
+        loadRuninLeague(activeCode, true);
       } else {
         syncBookmakerMismatchFeed(true, true);
       }
@@ -6660,6 +6680,7 @@
       const code = e.target.value || "england";
       expandedRuninTeam = null;
       state.activeRuninLeague = code;
+      state.activeRuninFilter = "ALL";
       saveState();
       loadRuninLeague(code, false);
       renderMainContent();

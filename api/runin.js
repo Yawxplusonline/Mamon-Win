@@ -54,17 +54,11 @@ const SOCCERSTATS_LEAGUES = [
   { code: "finland", espnCode: "fin.1", mamonSlug: "finland-veikkausliiga", name: "Veikkausliiga", country: "Finland", flag: "🇫🇮", path: "finland/veikkausliiga/finland", priority: 40 }
 ];
 
-const CORE_TOP_CODES = [
-  "england", "spain", "italy", "germany", "france",
-  "cleague", "eleague", "cfleague",
-  "netherlands", "portugal", "turkey", "belgium", "scotland",
-  "england2", "germany2", "spain2", "italy2", "france2",
-  "brazil", "argentina"
-];
+const CORE_TOP_CODES = SOCCERSTATS_LEAGUES.map((l) => l.code);
 
 const leagueCache = new Map(); // code -> { expiresAt, payload }
 const inFlight = new Map();
-const CACHE_TTL_MS = 20 * 60 * 1000;
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 function decodeHtmlEntities(str) {
   return String(str || "")
@@ -571,7 +565,7 @@ async function fetchSoccerStatsResults(meta) {
       "Accept-Language": "en-GB,en;q=0.9",
       Referer: "https://www.soccerstats.com/en-gb/"
     },
-    signal: AbortSignal.timeout(5500)
+    signal: AbortSignal.timeout(12000)
   });
   if (!resp.ok) return null;
   const html = await resp.text();
@@ -737,10 +731,16 @@ async function fetchEspnRuninFallback(meta, options = {}) {
   const teamMap = new Map();
   const teamsList = [];
 
+  const rawEntries = [];
   for (const child of sJson.children || []) {
-    const entries = child?.standings?.entries || [];
-    for (let idx = 0; idx < entries.length; idx++) {
-      const entry = entries[idx];
+    if (Array.isArray(child?.standings?.entries)) rawEntries.push(...child.standings.entries);
+  }
+  if (rawEntries.length === 0 && Array.isArray(sJson.standings?.entries)) {
+    rawEntries.push(...sJson.standings.entries);
+  }
+
+  for (let idx = 0; idx < rawEntries.length; idx++) {
+    const entry = rawEntries[idx];
       const tid = String(entry?.team?.id || "").trim();
       const teamName = String(entry?.team?.displayName || entry?.team?.name || "").trim();
       if (!tid || !teamName || seenIds.has(tid)) continue;
@@ -774,7 +774,6 @@ async function fetchEspnRuninFallback(meta, options = {}) {
       };
       teamMap.set(tid, tRec);
       teamsList.push(tRec);
-    }
   }
 
   if (teamsList.length === 0) {
@@ -1112,7 +1111,7 @@ async function fetchLeagueRunin(leagueCodeOrSlug, forceRefresh = false, options 
               "Accept-Language": "en-GB,en;q=0.9",
               Referer: "https://www.soccerstats.com/en-gb/"
             },
-            signal: AbortSignal.timeout(6000)
+            signal: AbortSignal.timeout(15000)
           }),
           wantScores ? fetchSoccerStatsResults(meta) : Promise.resolve(null)
         ]);
@@ -1179,7 +1178,7 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
     return cachedTopPayload;
   }
 
-  const targetCodes = CORE_TOP_CODES.slice(0, 14);
+  const targetCodes = CORE_TOP_CODES;
   const batchSize = 4;
   const results = [];
   for (let i = 0; i < targetCodes.length; i += batchSize) {

@@ -30,7 +30,26 @@ window.MAMON_REALTIME = (() => {
     { code: "bra.1", slug: "brazil-serie-a", name: "Brazilian Serie A", country: "Brazil", priority: 22 },
     { code: "arg.1", slug: "argentina-liga-profesional", name: "Argentine Liga Profesional", country: "Argentina", priority: 23 },
     { code: "rus.1", slug: "russia-premier-league", name: "Russian Premier League", country: "Russia", priority: 24 },
-    { code: "chn.1", slug: "china-super-league", name: "Chinese Super League", country: "China", priority: 25 }
+    { code: "chn.1", slug: "china-super-league", name: "Chinese Super League", country: "China", priority: 25 },
+    { code: "eng.3", slug: "england-league-one", name: "English League One", country: "England", priority: 26 },
+    { code: "eng.4", slug: "england-league-two", name: "English League Two", country: "England", priority: 27 },
+    { code: "eng.5", slug: "england-national-league", name: "English National League", country: "England", priority: 28 },
+    { code: "ned.2", slug: "netherlands-eerste-divisie", name: "Eerste Divisie", country: "Netherlands", priority: 29 },
+    { code: "por.2", slug: "portugal-liga-2", name: "Liga Portugal 2", country: "Portugal", priority: 30 },
+    { code: "sco.2", slug: "scotland-championship", name: "Scottish Championship", country: "Scotland", priority: 31 },
+    { code: "aut.1", slug: "austria-bundesliga", name: "Austrian Bundesliga", country: "Austria", priority: 32 },
+    { code: "sui.1", slug: "switzerland-super-league", name: "Swiss Super League", country: "Switzerland", priority: 33 },
+    { code: "den.1", slug: "denmark-superligaen", name: "Superligaen", country: "Denmark", priority: 34 },
+    { code: "gre.1", slug: "greece-super-league", name: "Super League Greece", country: "Greece", priority: 35 },
+    { code: "nor.1", slug: "norway-eliteserien", name: "Eliteserien", country: "Norway", priority: 36 },
+    { code: "swe.1", slug: "sweden-allsvenskan", name: "Allsvenskan", country: "Sweden", priority: 37 },
+    { code: "pol.1", slug: "poland-ekstraklasa", name: "Ekstraklasa", country: "Poland", priority: 38 },
+    { code: "cze.1", slug: "czech-first-league", name: "Czech 1. Liga", country: "Czech Republic", priority: 39 },
+    { code: "ukr.1", slug: "ukraine-premier-league", name: "Ukrainian Premier League", country: "Ukraine", priority: 40 },
+    { code: "jpn.1", slug: "japan-j1-league", name: "J1 League", country: "Japan", priority: 41 },
+    { code: "kor.1", slug: "south-korea-k-league-1", name: "K League 1", country: "South Korea", priority: 42 },
+    { code: "aus.1", slug: "australia-a-league", name: "A-League", country: "Australia", priority: 43 },
+    { code: "fin.1", slug: "finland-veikkausliiga", name: "Veikkausliiga", country: "Finland", priority: 44 }
   ];
 
   const codeToMeta = new Map(ESPN_LEAGUES.map((x) => [x.code, x]));
@@ -63,7 +82,25 @@ window.MAMON_REALTIME = (() => {
     [/brazilian-serie-a/i, "bra.1"],
     [/argentine-liga-profesional/i, "arg.1"],
     [/russian-premier-league/i, "rus.1"],
-    [/chinese-super-league/i, "chn.1"]
+    [/chinese-super-league/i, "chn.1"],
+    [/austria.*bundesliga/i, "aut.1"],
+    [/swiss.*super.*league|switzerland/i, "sui.1"],
+    [/superligaen|denmark/i, "den.1"],
+    [/greece.*super.*league/i, "gre.1"],
+    [/eliteserien|norway/i, "nor.1"],
+    [/allsvenskan|sweden/i, "swe.1"],
+    [/ekstraklasa|poland/i, "pol.1"],
+    [/czech.*(1|first).*liga|czechrepublic/i, "cze.1"],
+    [/ukraine.*premier.*league/i, "ukr.1"],
+    [/j1.*league|japan/i, "jpn.1"],
+    [/k.*league.*1|south.*korea/i, "kor.1"],
+    [/a-league|australia/i, "aus.1"],
+    [/veikkausliiga|finland/i, "fin.1"],
+    [/league-one/i, "eng.3"],
+    [/league-two/i, "eng.4"],
+    [/national-league/i, "eng.5"],
+    [/liga.*portugal.*2/i, "por.2"],
+    [/scottish-championship/i, "sco.2"]
   ];
 
   function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
@@ -141,7 +178,27 @@ window.MAMON_REALTIME = (() => {
     { code: "italy2", espnCode: "ita.2", mamonSlug: "italy-serie-b", name: "Serie B", country: "Italy", flag: "🇮🇹" },
     { code: "france2", espnCode: "fra.2", mamonSlug: "france-ligue-2", name: "Ligue 2", country: "France", flag: "🇫🇷" },
     { code: "brazil", espnCode: "bra.1", mamonSlug: "brazil-serie-a", name: "Brazil Serie A", country: "Brazil", flag: "🇧🇷" },
-    { code: "argentina", espnCode: "arg.1", mamonSlug: "argentina-liga-profesional", name: "Liga Profesional", country: "Argentina", flag: "🇦🇷" }
+    { code: "argentina", espnCode: "arg.1", mamonSlug: "argentina-liga-profesional", name: "Liga Profesional", country: "Argentina", flag: "🇦🇷" },
+    { code: "england3", espnCode: "eng.3", mamonSlug: "england-league-one", name: "English League One", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "england4", espnCode: "eng.4", mamonSlug: "england-league-two", name: "English League Two", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "england5", espnCode: "eng.5", mamonSlug: "england-national-league", name: "English National League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "netherlands2", espnCode: "ned.2", mamonSlug: "netherlands-eerste-divisie", name: "Eerste Divisie", country: "Netherlands", flag: "🇳🇱" },
+    { code: "portugal2", espnCode: "por.2", mamonSlug: "portugal-liga-2", name: "Liga Portugal 2", country: "Portugal", flag: "🇵🇹" },
+    { code: "scotland2", espnCode: "sco.2", mamonSlug: "scotland-championship", name: "Scottish Championship", country: "Scotland", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" },
+    { code: "austria", espnCode: "aut.1", mamonSlug: "austria-bundesliga", name: "Austrian Bundesliga", country: "Austria", flag: "🇦🇹" },
+    { code: "switzerland", espnCode: "sui.1", mamonSlug: "switzerland-super-league", name: "Swiss Super League", country: "Switzerland", flag: "🇨🇭" },
+    { code: "denmark", espnCode: "den.1", mamonSlug: "denmark-superligaen", name: "Superligaen", country: "Denmark", flag: "🇩🇰" },
+    { code: "greece", espnCode: "gre.1", mamonSlug: "greece-super-league", name: "Super League Greece", country: "Greece", flag: "🇬🇷" },
+    { code: "norway", espnCode: "nor.1", mamonSlug: "norway-eliteserien", name: "Eliteserien", country: "Norway", flag: "🇳🇴" },
+    { code: "sweden", espnCode: "swe.1", mamonSlug: "sweden-allsvenskan", name: "Allsvenskan", country: "Sweden", flag: "🇸🇪" },
+    { code: "poland", espnCode: "pol.1", mamonSlug: "poland-ekstraklasa", name: "Ekstraklasa", country: "Poland", flag: "🇵🇱" },
+    { code: "czechrepublic", espnCode: "cze.1", mamonSlug: "czech-first-league", name: "Czech 1. Liga", country: "Czech Republic", flag: "🇨🇿" },
+    { code: "russia", espnCode: "rus.1", mamonSlug: "russia-premier-league", name: "Russian Premier League", country: "Russia", flag: "🇷🇺" },
+    { code: "ukraine", espnCode: "ukr.1", mamonSlug: "ukraine-premier-league", name: "Ukrainian Premier League", country: "Ukraine", flag: "🇺🇦" },
+    { code: "japan", espnCode: "jpn.1", mamonSlug: "japan-j1-league", name: "J1 League", country: "Japan", flag: "🇯🇵" },
+    { code: "southkorea", espnCode: "kor.1", mamonSlug: "south-korea-k-league-1", name: "K League 1", country: "South Korea", flag: "🇰🇷" },
+    { code: "australia", espnCode: "aus.1", mamonSlug: "australia-a-league", name: "A-League", country: "Australia", flag: "🇦🇺" },
+    { code: "finland", espnCode: "fin.1", mamonSlug: "finland-veikkausliiga", name: "Veikkausliiga", country: "Finland", flag: "🇫🇮" }
   ];
   const runinLeagueCache = new Map();
   const runinTeamsMap = new Map();

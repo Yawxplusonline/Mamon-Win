@@ -813,7 +813,7 @@
             <span class="factor-edge-pill">${f.h2h.isLiveFeed ? `${f.h2h.meetings} meetings` : "Baseline"}</span>
           </div>
           <div class="text-xs font-semibold">${escapeHtml(f.h2h.summary)}</div>
-          <div class="text-xs text-muted">Record (${escapeHtml(home.short)}-D-${escapeHtml(away.short)}): <strong class="font-mono text-text">${f.h2h.homeWins}-${f.h2h.draws}-${f.h2h.awayWins}</strong> · Avg Goals <strong class="font-mono text-brand">${f.h2h.avgGoals}</strong></div>
+          <div class="text-xs text-muted">Record (${escapeHtml(home.name)}-D-${escapeHtml(away.name)}): <strong class="font-mono text-text">${f.h2h.homeWins}-${f.h2h.draws}-${f.h2h.awayWins}</strong> · Avg Goals <strong class="font-mono text-brand">${f.h2h.avgGoals}</strong></div>
           ${
             f.h2h.recent?.length
               ? `<div class="flex flex-wrap gap-1 mt-1">${f.h2h.recent.map((r) => `<span class="mini-score-pill">${escapeHtml(r.label)}</span>`).join("")}</div>`
@@ -829,11 +829,11 @@
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} (${f.currentForm.homePts}/15 pts · ${escapeHtml(f.currentForm.homeRecord)})</div>
+              <div class="side-lbl">${escapeHtml(home.name)} (${f.currentForm.homePts}/15 pts · ${escapeHtml(f.currentForm.homeRecord)})</div>
               ${formBadges(f.currentForm.homeForm)}
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} (${f.currentForm.awayPts}/15 pts · ${escapeHtml(f.currentForm.awayRecord)})</div>
+              <div class="side-lbl">${escapeHtml(away.name)} (${f.currentForm.awayPts}/15 pts · ${escapeHtml(f.currentForm.awayRecord)})</div>
               ${formBadges(f.currentForm.awayForm)}
             </div>
           </div>
@@ -847,11 +847,11 @@
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} Injuries</div>
+              <div class="side-lbl">${escapeHtml(home.name)} Injuries</div>
               <div class="text-xs">${f.injuries.home.length ? f.injuries.home.map((x) => `• ${escapeHtml(x)}`).join("<br>") : escapeHtml(f.injuries.statusTextHome)}</div>
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} Injuries</div>
+              <div class="side-lbl">${escapeHtml(away.name)} Injuries</div>
               <div class="text-xs">${f.injuries.away.length ? f.injuries.away.map((x) => `• ${escapeHtml(x)}`).join("<br>") : escapeHtml(f.injuries.statusTextAway)}</div>
             </div>
           </div>
@@ -865,11 +865,11 @@
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} Suspensions</div>
+              <div class="side-lbl">${escapeHtml(home.name)} Suspensions</div>
               <div class="text-xs">${escapeHtml(f.suspensions.statusTextHome)}</div>
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} Suspensions</div>
+              <div class="side-lbl">${escapeHtml(away.name)} Suspensions</div>
               <div class="text-xs">${escapeHtml(f.suspensions.statusTextAway)}</div>
             </div>
           </div>
@@ -878,7 +878,7 @@
         <!-- 5. Last 5 Games for Home Games -->
         <div class="factor-tile">
           <div class="factor-tile-head">
-            <span class="factor-name">5. Last 5 Home Games (${escapeHtml(home.short)})</span>
+            <span class="factor-name">5. Last 5 Home Games (${escapeHtml(home.name)})</span>
             <span class="factor-edge-pill">${f.last5HomeGames.wins}W-${f.last5HomeGames.draws}D-${f.last5HomeGames.losses}L</span>
           </div>
           <div class="text-xs text-muted">${f.last5HomeGames.isLiveFeed ? `Scored ${f.last5HomeGames.gf} · Conceded ${f.last5HomeGames.ga} at Home` : "Tap Refresh Live Stats for venue split"}</div>
@@ -888,7 +888,7 @@
         <!-- 6. Last 5 Games for Away Games -->
         <div class="factor-tile">
           <div class="factor-tile-head">
-            <span class="factor-name">6. Last 5 Away Games (${escapeHtml(away.short)})</span>
+            <span class="factor-name">6. Last 5 Away Games (${escapeHtml(away.name)})</span>
             <span class="factor-edge-pill">${f.last5AwayGames.wins}W-${f.last5AwayGames.draws}D-${f.last5AwayGames.losses}L</span>
           </div>
           <div class="text-xs text-muted">${f.last5AwayGames.isLiveFeed ? `Scored ${f.last5AwayGames.gf} · Conceded ${f.last5AwayGames.ga} Away` : "Tap Refresh Live Stats for venue split"}</div>
@@ -903,11 +903,11 @@
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} Attack</div>
+              <div class="side-lbl">${escapeHtml(home.name)} Attack</div>
               <div class="font-mono font-bold text-brand">${f.goalsScored.homeAvg}/g <span class="text-muted font-normal">(${f.goalsScored.homeTotal} tot)</span></div>
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} Attack</div>
+              <div class="side-lbl">${escapeHtml(away.name)} Attack</div>
               <div class="font-mono font-bold text-brand">${f.goalsScored.awayAvg}/g <span class="text-muted font-normal">(${f.goalsScored.awayTotal} tot)</span></div>
             </div>
           </div>
@@ -921,11 +921,11 @@
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} Defense</div>
+              <div class="side-lbl">${escapeHtml(home.name)} Defense</div>
               <div class="font-mono font-bold">${f.goalsConceded.homeAvg}/g <span class="text-muted font-normal">(${f.goalsConceded.homeTotal} tot)</span></div>
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} Defense</div>
+              <div class="side-lbl">${escapeHtml(away.name)} Defense</div>
               <div class="font-mono font-bold">${f.goalsConceded.awayAvg}/g <span class="text-muted font-normal">(${f.goalsConceded.awayTotal} tot)</span></div>
             </div>
           </div>
@@ -960,7 +960,7 @@
           <div class="factor-vs-row">
             <div class="factor-side">
               <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div class="side-lbl">${escapeHtml(home.short)} · ${escapeHtml(f.runInAnalysis.homeStake)}</div>
+                <div class="side-lbl">${escapeHtml(home.name)} · ${escapeHtml(f.runInAnalysis.homeStake)}</div>
                 ${f.runInAnalysis.homeStats ? `<span class="runin-diff-pill ${f.runInAnalysis.homeStats.diffPct > 0 ? "is-easy" : f.runInAnalysis.homeStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="font-size:10.5px;">${escapeHtml(f.runInAnalysis.homeStats.diffLabel)} ${f.runInAnalysis.homeStats.diffPct > 0 ? "Easier" : f.runInAnalysis.homeStats.diffPct < 0 ? "Tougher" : "Balanced"}</span>` : ""}
               </div>
               ${f.runInAnalysis.homeStats ? `
@@ -983,7 +983,7 @@
             </div>
             <div class="factor-side">
               <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div class="side-lbl">${escapeHtml(away.short)} · ${escapeHtml(f.runInAnalysis.awayStake)}</div>
+                <div class="side-lbl">${escapeHtml(away.name)} · ${escapeHtml(f.runInAnalysis.awayStake)}</div>
                 ${f.runInAnalysis.awayStats ? `<span class="runin-diff-pill ${f.runInAnalysis.awayStats.diffPct > 0 ? "is-easy" : f.runInAnalysis.awayStats.diffPct < 0 ? "is-tough" : "is-balanced"}" style="font-size:10.5px;">${escapeHtml(f.runInAnalysis.awayStats.diffLabel)} ${f.runInAnalysis.awayStats.diffPct > 0 ? "Easier" : f.runInAnalysis.awayStats.diffPct < 0 ? "Tougher" : "Balanced"}</span>` : ""}
               </div>
               ${f.runInAnalysis.awayStats ? `
@@ -1011,16 +1011,16 @@
         <div class="factor-tile">
           <div class="factor-tile-head">
             <span class="factor-name">12. PPG (Points Per Game)</span>
-            <span class="factor-edge-pill">Edge: ${escapeHtml(f.ppg?.edge || home.short)} (+${f.ppg?.gap?.toFixed(2) ?? "0.00"})</span>
+            <span class="factor-edge-pill">Edge: ${escapeHtml(f.ppg?.edge || home.name)} (+${f.ppg?.gap?.toFixed(2) ?? "0.00"})</span>
           </div>
           <div class="factor-vs-row">
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(home.short)} Overall &amp; Home PPG</div>
+              <div class="side-lbl">${escapeHtml(home.name)} Overall &amp; Home PPG</div>
               <div class="font-mono font-bold text-brand">${f.ppg ? f.ppg.homeOverall.toFixed(2) : "-"} PPG <span class="text-muted font-normal">(${f.ppg?.homePlayed ?? "-"} GP)</span></div>
               <div class="text-xs text-muted mt-1">At Home: <strong class="font-mono text-text">${f.ppg?.homeHomePpg !== null && f.ppg?.homeHomePpg !== undefined ? f.ppg.homeHomePpg.toFixed(2) : "-"} PPG</strong></div>
             </div>
             <div class="factor-side">
-              <div class="side-lbl">${escapeHtml(away.short)} Overall &amp; Away PPG</div>
+              <div class="side-lbl">${escapeHtml(away.name)} Overall &amp; Away PPG</div>
               <div class="font-mono font-bold text-brand">${f.ppg ? f.ppg.awayOverall.toFixed(2) : "-"} PPG <span class="text-muted font-normal">(${f.ppg?.awayPlayed ?? "-"} GP)</span></div>
               <div class="text-xs text-muted mt-1">Away Trips: <strong class="font-mono text-text">${f.ppg?.awayAwayPpg !== null && f.ppg?.awayAwayPpg !== undefined ? f.ppg.awayAwayPpg.toFixed(2) : "-"} PPG</strong></div>
             </div>
@@ -1198,8 +1198,8 @@
                       return `
                         <button type="button" class="sure-leg-mini" data-match-id="${leg.match.id}" data-open-analysis="1">
                           <div class="min-w-0">
-                            <div class="font-semibold truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)} <span style="color:#7CE8C4;">(🕒 ${escapeHtml(timeDisplay)})</span></div>
-                            <div class="truncate" style="font-size:11px;color:#A8C6BC;">${escapeHtml(leg.market.label)} ${fbId ? `· FB #${escapeHtml(String(fbId))}` : ""} ${ppgBadgeHtml}</div>
+                            <div class="font-semibold">${escapeHtml(h.name)} vs ${escapeHtml(a.name)} <span style="color:#7CE8C4;">(🕒 ${escapeHtml(timeDisplay)})</span></div>
+                            <div style="font-size:11px;color:#A8C6BC;">${escapeHtml(leg.market.label)} ${fbId ? `· FB #${escapeHtml(String(fbId))}` : ""} ${ppgBadgeHtml} ${leg.market.runinConfirmation ? `<span class="sure-mini-ppg-badge">${escapeHtml(leg.market.runinConfirmation.shortTag)}</span>` : ""}</div>
                           </div>
                           <span class="pick-badge">@ ${leg.market.odds.toFixed(2)}</span>
                         </button>
@@ -1360,8 +1360,9 @@
                             <span class="font-bold text-sm text-text">${escapeHtml(leg.market.label)}</span>
                             <span class="text-xs font-mono text-muted">· Model Conf ${conf}%</span>
                             ${leg.ppgStrength ? `<span class="strong-ppg-proof-badge">${leg.ppgStrength.trajectory === "GAIN_BLUE" ? "🔵" : "💎"} ${escapeHtml(leg.ppgStrength.badge)}: ${escapeHtml(leg.ppgStrength.text)}</span>` : ""}
+                            ${leg.market.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(leg.market.runinConfirmation.badge)}</span>` : ""}
                           </div>
-                          <div class="text-xs text-text-secondary mt-1">${escapeHtml(leg.market.reason)}</div>
+                          <div class="text-xs text-text-secondary mt-1">${escapeHtml(leg.market.reason)}${leg.market.runinConfirmation?.summary ? ` · Run-In Table: ${escapeHtml(leg.market.runinConfirmation.summary)}` : ""}</div>
                         </div>
                         <div class="flex items-center gap-2">
                           <span class="sure-odds-chip">@ ${leg.market.odds.toFixed(2)}</span>
@@ -1423,7 +1424,7 @@
     const riHome = m.analysis?.factors?.runInAnalysis?.homeStats;
     const riAway = m.analysis?.factors?.runInAnalysis?.awayStats;
     const runinBadgeHtml = (riHome && riAway && (riHome.isLiveSoccerStats || riAway.isLiveSoccerStats))
-      ? `<span class="ppg-chip" title="SoccerSTATS Run-In (Played vs Remaining %): ${escapeHtml(home.short)} ${escapeHtml(riHome.diffLabel)} | ${escapeHtml(away.short)} ${escapeHtml(riAway.diffLabel)}">📈 ${escapeHtml(riHome.diffLabel)}/${escapeHtml(riAway.diffLabel)}</span>`
+      ? `<span class="ppg-chip" title="SoccerSTATS Run-In (Played vs Remaining %): ${escapeHtml(home.name)} ${escapeHtml(riHome.diffLabel)} | ${escapeHtml(away.name)} ${escapeHtml(riAway.diffLabel)}${m.analysis?.bestPick?.runinConfirmation?.confirmed ? " · Run-In Table Confirmed" : ""}">📈 ${escapeHtml(riHome.diffLabel)}/${escapeHtml(riAway.diffLabel)}</span>`
       : "";
     const hasInjSusp = Boolean(
       m.analysis?.factors?.injuries?.home?.length ||
@@ -2069,7 +2070,7 @@
               const f = state.followedClubs.includes(k);
               return `<button type="button" class="club-chip${f ? " is-followed" : ""}" data-follow-club="${k}">
                 ${crestImg(t.logo, t.name, t.color, 14)}
-                <span>${escapeHtml(t.short)}</span>
+                <span>${escapeHtml(t.name)}</span>
               </button>`;
             })
             .join("")}
@@ -2157,7 +2158,7 @@
           <a class="intel-stat-tile" href="/dropping-odds" data-route="/dropping-odds">
             <span class="tile-kicker">BOOKMAKER STEAM</span>
             <span class="tile-val text-brand">${dropMatches.length} Dropping Odds</span>
-            <span class="tile-sub">${dropMatches[0] ? `Top ${dropMatches[0].status === "SCHEDULED" ? "Pre-Match" : "Live"}: ${getTeam(dropMatches[0].home).short}v${getTeam(dropMatches[0].away).short} ▼ -${dropMatches[0].droppingOdds.bestDrop.dropPct}%` : "Tracking open -> latest odds"}</span>
+            <span class="tile-sub">${dropMatches[0] ? `Top ${dropMatches[0].status === "SCHEDULED" ? "Pre-Match" : "Live"}: ${getTeam(dropMatches[0].home).name} vs ${getTeam(dropMatches[0].away).name} ▼ -${dropMatches[0].droppingOdds.bestDrop.dropPct}%` : "Tracking open -> latest odds"}</span>
           </a>
 
           <a class="intel-stat-tile" href="/dropping-odds?filter=HEAVY" data-route="/dropping-odds?filter=HEAVY">
@@ -2193,7 +2194,7 @@
                     return `
                       <button type="button" class="intel-drop-chip" data-match-id="${m.id}">
                         <div class="flex items-center justify-between gap-2 w-full">
-                          <span class="font-bold text-xs truncate">${escapeHtml(h.short)} vs ${escapeHtml(a.short)}</span>
+                          <span class="font-bold text-xs truncate">${escapeHtml(h.name)} vs ${escapeHtml(a.name)}</span>
                           <span class="drop-badge">▼ -${d.dropPct}%</span>
                         </div>
                         <div class="flex items-center justify-between gap-2 w-full text-xs mt-1">
@@ -2374,7 +2375,7 @@
             const h = getTeam(m.home, "Home");
             const a = getTeam(m.away, "Away");
             const lg = getLeagueInfo(m);
-            const ppg = m.analysis?.factors?.ppg || { homeOverall: 1.5, awayOverall: 1.3, homeHomePpg: 1.7, awayAwayPpg: 1.1, gap: 0.2, edge: h.short };
+            const ppg = m.analysis?.factors?.ppg || { homeOverall: 1.5, awayOverall: 1.3, homeHomePpg: 1.7, awayAwayPpg: 1.1, gap: 0.2, edge: h.name };
             const best = m.analysis?.bestPick;
             const factors = m.analysis?.factors;
             const formH = factors?.currentForm?.homePts ? `${factors.currentForm.homePts}/15 pts` : "Active";
@@ -2389,11 +2390,11 @@
               ? `${h.name} requires full 3 points to maintain title/top-4 chase; ${a.name} in danger zone.`
               : `${a.name} road powerhouse targeting 3 points; ${h.name} desperate to defend home ground.`;
             const drawImportance = ppg.homeOverall >= 1.8
-              ? `Draw is unacceptable for ${h.short} (drops 2 points); ${a.short} would celebrate 1 point.`
+              ? `Draw is unacceptable for ${h.name} (drops 2 points); ${a.name} would celebrate 1 point.`
               : `High draw risk moment — both sides could settle for 1 point if level at 70'.`;
             const lossImpact = ppg.homeOverall >= ppg.awayOverall
-              ? `A loss would drop ${h.short} down table standings and shatter home momentum.`
-              : `A loss puts ${h.short} closer to relegation threshold; points calculations critical.`;
+              ? `A loss would drop ${h.name} down table standings and shatter home momentum.`
+              : `A loss puts ${h.name} closer to relegation threshold; points calculations critical.`;
 
             return `
               <div class="intel-row-card" data-match-id="${m.id}" style="${isHighGap ? "border-left: 3px solid var(--brand);" : ""}">
@@ -2406,7 +2407,7 @@
                   <div class="flex items-center gap-1.5 flex-wrap">
                     ${hSos?.isDropRed || aSos?.isDropRed ? `<span class="ppg-sos-badge is-drop-red">🔴 DROP RISK</span>` : ""}
                     ${hSos?.isGainBlue || aSos?.isGainBlue ? `<span class="ppg-sos-badge is-gain-blue">🔵 GAIN POINTS</span>` : ""}
-                    <span class="factor-edge-pill font-bold">PPG Edge: ${escapeHtml(ppg.edge || h.short)} (+${fmtNum(ppg.gap, 2, "0.00")} PPG)</span>
+                    <span class="factor-edge-pill font-bold">PPG Edge: ${escapeHtml(ppg.edge || h.name)} (+${fmtNum(ppg.gap, 2, "0.00")} PPG)</span>
                   </div>
                 </div>
 
@@ -3405,7 +3406,7 @@
                     ${crestImg(x.team.logo, x.team.name, x.team.color, 20)}
                     <span class="font-bold text-sm truncate">${escapeHtml(x.team.name)}</span>
                   </div>
-                  <div class="text-xs text-text-secondary mt-1 truncate">${x.isHome ? "vs" : "@"} ${escapeHtml(x.opponent.short)} · ${escapeHtml(x.match.displayTime)}</div>
+                  <div class="text-xs text-text-secondary mt-1 truncate">${x.isHome ? "vs" : "@"} ${escapeHtml(x.opponent.name)} · ${escapeHtml(x.match.displayTime)}${x.runinConfirmation?.confirmed ? " · ✓ Run-In" : ""}</div>
                   <div class="text-xs text-muted mt-1 truncate">PPG ${x.criteria.ppg.overall.toFixed(2)} · Form ${x.criteria.form.pts}/15 · ${x.criteria.standing.rank ? `#${x.criteria.standing.rank}` : escapeHtml(x.criteria.form.record)}</div>
                 </a>
               `;
@@ -3872,8 +3873,8 @@
     const scoreVal = isStrong ? entry.strongScore : entry.worstScore;
     const scoreLbl = isStrong ? `Power ${scoreVal}/100` : `Risk ${scoreVal}/100`;
     const angleTxt = isStrong
-      ? `${entry.team.short} ${entry.isHome ? "Home Win (1)" : "Away Win / X2"} @ ${entry.winOdd.toFixed(2)} (${entry.winProbPct}%)`
-      : `Vulnerable ${entry.isHome ? "Home" : "Away"} Side · Opp ${entry.opponent.short} ${entry.loseProbPct}% win prob @ ${entry.oppOdd.toFixed(2)}`;
+      ? `${entry.team.name} ${entry.isHome ? "Home Win (1)" : "Away Win / X2"} @ ${entry.winOdd.toFixed(2)} (${entry.winProbPct}%)`
+      : `Vulnerable ${entry.isHome ? "Home" : "Away"} Side · Opp ${entry.opponent.name} ${entry.loseProbPct}% win prob @ ${entry.oppOdd.toFixed(2)}`;
 
     const formBadges = `<div class="form-dots">${(c.form.formArr || []).map((x) => `<span class="form-dot ${x}">${x}</span>`).join("")}</div>`;
 
@@ -3910,7 +3911,9 @@
           <div class="text-xs">
             <span class="font-bold ${isStrong ? "text-brand" : "text-live"} uppercase">${isStrong ? "Strong Signal:" : "Weakness Signal:"}</span>
             <strong class="ml-1">${escapeHtml(angleTxt)}</strong>
+            ${entry.runinConfirmation ? `<span class="strong-ppg-proof-badge ml-1" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(entry.runinConfirmation.badge)}</span>` : ""}
           </div>
+          ${entry.runinConfirmation?.summary ? `<div class="text-xs text-text-secondary mt-1">${escapeHtml(entry.runinConfirmation.summary)}</div>` : ""}
           <div class="text-xs font-mono text-text-secondary">${c.weather.ok ? `⛅ ${escapeHtml(c.weather.summary)}` : escapeHtml(c.weather.summary)}</div>
         </div>
 
@@ -4694,7 +4697,8 @@
 
           <!-- PPG STRENGTH OF SCHEDULE VERDICT -->
           <div class="flex items-center justify-between gap-2 flex-wrap mt-2 p-2 rounded" style="background:rgba(255,255,255,0.03); border:1px solid var(--line-soft);">
-            <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap min-w-0">
+              ${tip.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(tip.runinConfirmation.badge)}</span>` : ""}
               ${targetSos ? `<span class="ppg-sos-badge ${targetSos.trajectory === "GAIN_BLUE" ? "is-gain-blue" : targetSos.trajectory === "DROP_RED" ? "is-drop-red" : "is-neutral"}">${escapeHtml(targetSos.badge)}</span>` : ""}
               <span class="text-xs text-text-secondary truncate">${escapeHtml(targetSos?.reason || tip.tacticalReason)}</span>
             </div>
@@ -4923,10 +4927,14 @@
                   </div>
 
                   <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 8px;">
-                    <div class="flex items-center justify-between">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
                       <span class="font-semibold text-xs text-text">${escapeHtml(tip.marketLabel)}</span>
-                      <span class="ev-return-pill" style="background: ${is5Min ? '#06B6D4' : '#10B981'}; color: #042F2E;">${tip.expectedValuePct} EV</span>
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        ${tip.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(tip.runinConfirmation.badge)}</span>` : ""}
+                        <span class="ev-return-pill" style="background: ${is5Min ? '#06B6D4' : '#10B981'}; color: #042F2E;">${tip.expectedValuePct} EV</span>
+                      </div>
                     </div>
+                    ${tip.runinConfirmation?.summary ? `<div class="text-xs text-text-secondary mt-1">${escapeHtml(tip.runinConfirmation.summary)}</div>` : ""}
                   </div>
 
                   <div class="defense-metrics-strip">
@@ -5371,8 +5379,9 @@
                 <span class="font-bold text-sm text-text">${best ? escapeHtml(best.label) : "1X / Over 1.5"}</span>
                 ${best ? `<span class="text-xs font-mono text-muted">· ${Math.round(best.prob * 100)}% Prob · xG ${a.expectedGoals.home}-${a.expectedGoals.away}</span>` : ""}
                 ${best?.strongPpg ? `<span class="strong-ppg-proof-badge">${best.strongPpg.trajectory === "GAIN_BLUE" ? "🔵" : "💎"} ${escapeHtml(best.strongPpg.badgeText)}</span>` : ""}
+                ${best?.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(best.runinConfirmation.badge)}</span>` : ""}
               </div>
-              <div class="text-xs text-text-secondary mt-1">${best ? escapeHtml(best.reason) : ""}</div>
+              <div class="text-xs text-text-secondary mt-1">${best ? escapeHtml(best.reason) : ""}${best?.runinConfirmation?.summary ? ` · Run-In Table: ${escapeHtml(best.runinConfirmation.summary)}` : ""}</div>
             </div>
             ${best ? `<span class="sure-odds-chip">@ ${best.odds.toFixed(2)}</span>` : ""}
           </div>
@@ -5407,7 +5416,7 @@
                             <div class="text-sm font-semibold">${escapeHtml(ev.player)}</div>
                             ${ev.assist ? `<div class="text-xs text-muted">Assist: ${escapeHtml(ev.assist)}</div>` : ""}
                           </div>
-                          <span class="text-xs font-semibold text-text-secondary">${escapeHtml(isHome ? home.short : away.short)}</span>
+                          <span class="text-xs font-semibold text-text-secondary">${escapeHtml(isHome ? home.name : away.name)}</span>
                         </div>
                       `;
                     })
@@ -5417,9 +5426,9 @@
           <div class="mt-4 pt-3 border-t">
             <div class="text-xs font-bold uppercase tracking-wide text-muted mb-2">Market Odds (${escapeHtml(m.odds?.provider || "Real-Time")})</div>
             <div class="tips-btn-group predict-btn-group">
-              <div class="tips-choice-btn predict-choice-btn"><span>1 · ${escapeHtml(home.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.home)}</span></div>
+              <div class="tips-choice-btn predict-choice-btn"><span>1 · ${escapeHtml(home.name)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.home)}</span></div>
               <div class="tips-choice-btn predict-choice-btn"><span>X · Draw</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.draw)}</span></div>
-              <div class="tips-choice-btn predict-choice-btn"><span>2 · ${escapeHtml(away.short)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.away)}</span></div>
+              <div class="tips-choice-btn predict-choice-btn"><span>2 · ${escapeHtml(away.name)}</span><span class="font-mono text-xs text-brand">${formatOdds(m.odds?.away)}</span></div>
             </div>
           </div>
         </div>
@@ -5687,20 +5696,26 @@
         if (!DATA.TEAMS[homeKey]) {
           DATA.TEAMS[homeKey] = {
             name: homeName,
-            short: homeName.slice(0, 16),
+            short: homeName,
             country: g.country || sportName,
             logo: g.homeLogo || g.tournamentIcon || "",
             color: "#10B981"
           };
+        } else {
+          DATA.TEAMS[homeKey].name = homeName;
+          DATA.TEAMS[homeKey].short = homeName;
         }
         if (!DATA.TEAMS[awayKey]) {
           DATA.TEAMS[awayKey] = {
             name: awayName,
-            short: awayName.slice(0, 16),
+            short: awayName,
             country: g.country || sportName,
             logo: g.awayLogo || g.tournamentIcon || "",
             color: "#3B82F6"
           };
+        } else {
+          DATA.TEAMS[awayKey].name = awayName;
+          DATA.TEAMS[awayKey].short = awayName;
         }
       }
 
@@ -5752,6 +5767,7 @@
       const isPreMatch5h = Boolean(!isGameLive && (startTs - Date.now()) >= 5 * 3600000);
 
       let existing = existingById.get(matchId);
+      let matchedSwappedOrientation = false;
       if (!existing && RT?.matchTeamsSimilar) {
         const pool = bySportExisting.get(sport) || [];
         existing = pool.find((m) => {
@@ -5759,6 +5775,14 @@
           const mA = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
           return RT.matchTeamsSimilar(mH, homeName) && RT.matchTeamsSimilar(mA, awayName);
         });
+        if (!existing) {
+          existing = pool.find((m) => {
+            const mH = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "";
+            const mA = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "";
+            return RT.matchTeamsSimilar(mH, awayName) && RT.matchTeamsSimilar(mA, homeName);
+          });
+          if (existing) matchedSwappedOrientation = true;
+        }
       }
 
       const locResolved = RT?.resolveCanonicalLocation
@@ -5766,6 +5790,49 @@
         : { country: g.country || "International", league: g.onefootballLeague || g.league || `${sportName} Competition`, slug: `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}` };
 
       if (existing) {
+        // Lock canonical Home vs Away to Football.com / bookmaker fixture orientation so every site agrees
+        if (matchedSwappedOrientation) {
+          const prevHome = existing.home;
+          const prevAway = existing.away;
+          const prevHomeScore = existing.homeScore;
+          const prevAwayScore = existing.awayScore;
+          const prevHomeEspn = existing.homeEspnId;
+          const prevAwayEspn = existing.awayEspnId;
+          const prevHomeRed = existing.homeRed;
+          const prevAwayRed = existing.awayRed;
+          existing.home = prevAway;
+          existing.away = prevHome;
+          existing.homeScore = prevAwayScore;
+          existing.awayScore = prevHomeScore;
+          existing.homeEspnId = prevAwayEspn;
+          existing.awayEspnId = prevHomeEspn;
+          existing.homeRed = prevAwayRed;
+          existing.awayRed = prevHomeRed;
+          if (Array.isArray(existing.events)) {
+            existing.events = existing.events.map((ev) => ({
+              ...ev,
+              team: ev.team === "home" ? "away" : ev.team === "away" ? "home" : ev.team
+            }));
+          }
+          if (existing.odds) {
+            const oh = existing.odds.home;
+            existing.odds.home = existing.odds.away;
+            existing.odds.away = oh;
+          }
+          existing.enriched = false;
+        }
+        if (g.onFootballCom || matchedSwappedOrientation) {
+          if (DATA.TEAMS?.[existing.home]) {
+            DATA.TEAMS[existing.home].name = homeName;
+            DATA.TEAMS[existing.home].short = homeName;
+          }
+          if (DATA.TEAMS?.[existing.away]) {
+            DATA.TEAMS[existing.away].name = awayName;
+            DATA.TEAMS[existing.away].short = awayName;
+          }
+          existing.homeTeamName = homeName;
+          existing.awayTeamName = awayName;
+        }
         if (isGameLive) {
           existing.status = "LIVE";
           existing.homeScore = parsedHomeScore;
@@ -5910,17 +5977,46 @@
       if (sport === "football" && RT?.buildMatchAnalysis) {
         newMatch.analysis = RT.buildMatchAnalysis(newMatch, null);
       } else {
+        const hPpgVal = Number(g.homeStats?.ppg || 1.5);
+        const aPpgVal = Number(g.awayStats?.ppg || 1.3);
+        const hOddVal = Number(g.bestOdds?.home || 1.85);
+        const aOddVal = Number(g.bestOdds?.away || 1.95);
+        const pickHomeSide = hPpgVal > aPpgVal + 0.05 ? true : aPpgVal > hPpgVal + 0.05 ? false : hOddVal <= aOddVal;
+        const pickCode = pickHomeSide
+          ? (g.sport === "tennis" ? "WIN_1" : (g.bestOdds?.dc1X ? "1X" : "HOME"))
+          : (g.sport === "tennis" ? "WIN_2" : (g.bestOdds?.dcX2 ? "X2" : "AWAY"));
+        const pickOdd = pickHomeSide
+          ? (g.bestOdds?.dc1X || hOddVal)
+          : (g.bestOdds?.dcX2 || aOddVal);
+        const pickTarget = pickHomeSide ? homeName : awayName;
+        const runinConf = RT?.evaluateRuninTableConfirmation
+          ? RT.evaluateRuninTableConfirmation({
+              homeName,
+              awayName,
+              leagueSlug: newMatch.leagueSlug,
+              homePpg: hPpgVal,
+              awayPpg: aPpgVal,
+              homeDrop: g.ppgSchedule?.home?.trajectory === "DROP_RED",
+              awayDrop: g.ppgSchedule?.away?.trajectory === "DROP_RED",
+              marketCode: pickCode
+            })
+          : null;
         newMatch.analysis = {
-          confidencePct: 75,
+          confidencePct: runinConf?.confirmed ? 76 : 64,
           bestPick: {
-            code: g.sport === "tennis" ? "WIN_1" : (g.bestOdds?.dc1X ? "1X" : "HOME"),
-            odds: g.bestOdds?.home || 1.85
+            code: pickCode,
+            label: `${pickTarget} (${pickCode})`,
+            odds: pickOdd,
+            prob: pickOdd > 1 ? Math.min(0.88, Math.max(0.45, +(1 / pickOdd).toFixed(2))) : 0.65,
+            reason: runinConf?.summary || `${pickTarget} Run-In & odds edge (${hPpgVal.toFixed(2)} vs ${aPpgVal.toFixed(2)} PPG)`,
+            runinConfirmed: Boolean(runinConf?.confirmed),
+            runinConfirmation: runinConf
           },
           factors: {
             ppg: {
-              homeOverall: g.homeStats?.ppg || 1.5,
-              awayOverall: g.awayStats?.ppg || 1.3,
-              gap: Math.abs((g.homeStats?.ppg || 1.5) - (g.awayStats?.ppg || 1.3)),
+              homeOverall: hPpgVal,
+              awayOverall: aPpgVal,
+              gap: Math.abs(hPpgVal - aPpgVal),
               scheduleStrength: {
                 home: {
                   isDropRed: g.ppgSchedule?.home?.trajectory === "DROP_RED",
@@ -5958,8 +6054,8 @@
       const hKey = `bk-${(cg.homeUid || hNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
       const aKey = `bk-${(cg.awayUid || aNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
       if (DATA?.TEAMS) {
-        if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hNm, short: hNm.slice(0, 16), country: cg.country || spNm, logo: cg.homeLogo || cg.tournamentIcon || "", color: "#10B981" };
-        if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aNm, short: aNm.slice(0, 16), country: cg.country || spNm, logo: cg.awayLogo || cg.tournamentIcon || "", color: "#3B82F6" };
+        if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hNm, short: hNm, country: cg.country || spNm, logo: cg.homeLogo || cg.tournamentIcon || "", color: "#10B981" };
+        if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aNm, short: aNm, country: cg.country || spNm, logo: cg.awayLogo || cg.tournamentIcon || "", color: "#3B82F6" };
       }
       const ts = Number(cg.estimateStartTime) || Date.now();
       const kp = formatKickoffCompact({ timestamp: ts, kickoffUtc: cg.kickoffUtc, isoDate: cg.isoDate });

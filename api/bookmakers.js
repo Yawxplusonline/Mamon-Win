@@ -55,6 +55,26 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+function normTeamKey(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\b(fc|cf|sc|ac|as|fk|sk|bk|ik|nk|cd|ca|ud|sd|rc|us|ss|afc|rfc|u21|u23|u19|ii|b)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function teamNamesLooselyMatch(a, b) {
+  const na = normTeamKey(a);
+  const nb = normTeamKey(b);
+  if (!na || !nb) return false;
+  if (na === nb || (na.length >= 4 && nb.includes(na)) || (nb.length >= 4 && na.includes(nb))) return true;
+  const wa = new Set(na.split(/\s+/).filter((w) => w.length >= 3));
+  const wb = nb.split(/\s+/).filter((w) => w.length >= 3);
+  return wb.some((w) => wa.has(w));
+}
+
 function parseBookieMarkets(markets = []) {
   const out = {
     home: null,
@@ -97,41 +117,24 @@ function parseBookieMarkets(markets = []) {
         }
       }
     }
-    // Tennis / Darts 2-way Winner (Market 186)
-    else if (id === "186") {
-      for (const o of outcomes) {
+    // Tennis / Darts 2-way Winner (Market 186) & Basketball Winner incl. Overtime (Market 219)
+    else if (id === "186" || id === "219") {
+      const hasExplicitIds = outcomes.some((o) => String(o.id) === "4" || String(o.id) === "5" || /\bhome\b|\baway\b/i.test(o.desc || ""));
+      for (let oi = 0; oi < outcomes.length; oi++) {
+        const o = outcomes[oi];
         const odd = parseFloat(o.odds);
         const prob = parseFloat(o.probability);
         if (!Number.isFinite(odd) || odd <= 1) continue;
-        if (String(o.id) === "4" || /home|1/i.test(o.desc) || o === outcomes[0]) {
-          if (!out.home) {
-            out.home = odd;
-            if (Number.isFinite(prob)) out.probHome = prob;
-          }
-        } else if (String(o.id) === "5" || /away|2/i.test(o.desc) || o === outcomes[1]) {
-          if (!out.away) {
-            out.away = odd;
-            if (Number.isFinite(prob)) out.probAway = prob;
-          }
-        }
-      }
-    }
-    // Basketball / Darts Winner incl. Overtime (Market 219)
-    else if (id === "219") {
-      for (const o of outcomes) {
-        const odd = parseFloat(o.odds);
-        const prob = parseFloat(o.probability);
-        if (!Number.isFinite(odd) || odd <= 1) continue;
-        if (String(o.id) === "4" || /home|1/i.test(o.desc) || o === outcomes[0]) {
-          if (!out.home) {
-            out.home = odd;
-            if (Number.isFinite(prob)) out.probHome = prob;
-          }
-        } else if (String(o.id) === "5" || /away|2/i.test(o.desc) || o === outcomes[1]) {
-          if (!out.away) {
-            out.away = odd;
-            if (Number.isFinite(prob)) out.probAway = prob;
-          }
+        const oid = String(o.id || "");
+        const odesc = String(o.desc || "");
+        const isHomeOut = oid === "4" || /\bhome\b|^1$/i.test(odesc) || (!hasExplicitIds && oi === 0);
+        const isAwayOut = oid === "5" || /\baway\b|^2$/i.test(odesc) || (!hasExplicitIds && oi === 1);
+        if (isHomeOut && !out.home) {
+          out.home = odd;
+          if (Number.isFinite(prob)) out.probHome = prob;
+        } else if (isAwayOut && !out.away) {
+          out.away = odd;
+          if (Number.isFinite(prob)) out.probAway = prob;
         }
       }
     }
@@ -893,13 +896,46 @@ async function runFullBookmakerScan(forceRefresh = false) {
             ...parsedMkt
           };
         } else if (sourceName === "footballCom") {
+          // Enforce Football.com's exact Home vs Away team & UID orientation
+          const fbHome = String(ev.homeTeamName || "").trim();
+          const fbAway = String(ev.awayTeamName || "").trim();
+          const fbHomeUid = String(ev.homeTeamId || "").split(":").pop() || "";
+          const fbAwayUid = String(ev.awayTeamId || "").split(":").pop() || "";
+          const isSwappedVsExisting =
+            fbHome && fbAway && item.homeTeamName && item.awayTeamName &&
+            teamNamesLooselyMatch(fbHome, item.awayTeamName) &&
+            teamNamesLooselyMatch(fbAway, item.homeTeamName) &&
+            !teamNamesLooselyMatch(fbHome, item.homeTeamName);
+
+          if (isSwappedVsExisting && item.sportybet) {
+            const sbPrev = item.sportybet;
+            item.sportybet = {
+              ...sbPrev,
+              home: sbPrev.away,
+              away: sbPrev.home,
+              probHome: sbPrev.probAway,
+              probAway: sbPrev.probHome,
+              dc1X: sbPrev.dcX2,
+              dcX2: sbPrev.dc1X
+            };
+          }
+          if (fbHome) item.homeTeamName = fbHome;
+          if (fbAway) item.awayTeamName = fbAway;
+          if (fbHomeUid) item.homeUid = fbHomeUid;
+          if (fbAwayUid) item.awayUid = fbAwayUid;
+
           if (!item.footballCom || (!item.footballCom.gameId && ev.gameId)) {
             item.footballCom = {
               bookmaker: "Football.com",
               siteUrl: "https://www.football.com",
               gameId: ev.gameId || "-",
+              homeTeamName: fbHome,
+              awayTeamName: fbAway,
               ...parsedMkt
             };
+          } else {
+            if (fbHome) item.footballCom.homeTeamName = fbHome;
+            if (fbAway) item.footballCom.awayTeamName = fbAway;
           }
         }
       };

@@ -1130,11 +1130,12 @@ window.MAMON_REALTIME = (() => {
     const key = `espn-${id}`;
     const logo = t.logo || t.logos?.[0]?.href || "";
     const color = t.color ? `#${t.color.replace(/^#/, "")}` : "#0A7B5C";
+    const fullName = t.displayName || t.shortDisplayName || t.name || "Club FC";
     const teamObj = {
       key,
       espnId: id,
-      name: t.displayName || t.shortDisplayName || t.name || "Club FC",
-      short: t.abbreviation || (t.shortDisplayName || t.displayName || "FC").slice(0, 4).toUpperCase(),
+      name: fullName,
+      short: fullName,
       color,
       logo,
       league: leagueSlug,
@@ -1231,9 +1232,9 @@ window.MAMON_REALTIME = (() => {
       return { code, label, openOdd, currentOdd: latestOdd, dropPct, impliedShiftPct };
     };
 
-    const hMove = buildDropMove("HOME", `${DATA.TEAMS[homeKey]?.short || "HOME"} Win (1)`, rawOdds?.moneyline?.home);
+    const hMove = buildDropMove("HOME", `${DATA.TEAMS[homeKey]?.name || "HOME"} Win (1)`, rawOdds?.moneyline?.home);
     const dMove = buildDropMove("DRAW", "Draw (X)", rawOdds?.moneyline?.draw);
-    const aMove = buildDropMove("AWAY", `${DATA.TEAMS[awayKey]?.short || "AWAY"} Win (2)`, rawOdds?.moneyline?.away);
+    const aMove = buildDropMove("AWAY", `${DATA.TEAMS[awayKey]?.name || "AWAY"} Win (2)`, rawOdds?.moneyline?.away);
     const overUnderLine = typeof rawOdds?.overUnder === "number" ? rawOdds.overUnder : 2.5;
     const oMove = buildDropMove("O25", `Over ${overUnderLine} Goals`, rawOdds?.total?.over);
     const uMove = buildDropMove("U25", `Under ${overUnderLine} Goals`, rawOdds?.total?.under);
@@ -1373,13 +1374,12 @@ window.MAMON_REALTIME = (() => {
 
     const homeKey = `of-team-${normTeamMatchKey(ofm.homeTeamName).replace(/\s+/g, "-")}`;
     const awayKey = `of-team-${normTeamMatchKey(ofm.awayTeamName).replace(/\s+/g, "-")}`;
-    const mkShort = (nm) => nm.replace(/[^A-Za-z0-9 ]/g, "").split(" ").map((w) => w[0] || "").join("").slice(0, 3).toUpperCase() || nm.slice(0, 3).toUpperCase();
 
     DATA.TEAMS[homeKey] = {
       ...(DATA.TEAMS[homeKey] || {}),
       key: homeKey,
       name: ofm.homeTeamName,
-      short: DATA.TEAMS[homeKey]?.short || mkShort(ofm.homeTeamName),
+      short: ofm.homeTeamName,
       color: "#0A7B5C",
       logo: ofm.homeLogo || DATA.TEAMS[homeKey]?.logo || "",
       league: leagueSlug
@@ -1388,7 +1388,7 @@ window.MAMON_REALTIME = (() => {
       ...(DATA.TEAMS[awayKey] || {}),
       key: awayKey,
       name: ofm.awayTeamName,
-      short: DATA.TEAMS[awayKey]?.short || mkShort(ofm.awayTeamName),
+      short: ofm.awayTeamName,
       color: "#1E40AF",
       logo: ofm.awayLogo || DATA.TEAMS[awayKey]?.logo || "",
       league: leagueSlug
@@ -1785,8 +1785,8 @@ window.MAMON_REALTIME = (() => {
 
   function computeTeamStandingsCalc(match, side, stMe, stOpp) {
     const oppShort = side === "home"
-      ? (DATA.TEAMS[match.away]?.short || "OPP")
-      : (DATA.TEAMS[match.home]?.short || "OPP");
+      ? (DATA.TEAMS[match.away]?.name || "Opponent")
+      : (DATA.TEAMS[match.home]?.name || "Opponent");
     const table = DATA.STANDINGS?.[match.leagueSlug];
 
     if (!Array.isArray(table) || table.length < 4 || !stMe) {
@@ -2081,6 +2081,92 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  // Canonical Run-In Difficulty Table Confirmation Engine
+  // Ensures EVERY tip across the system is checked and confirmed against the Run-In Difficulty Table (PLD vs REM)
+  function evaluateRuninTableConfirmation({
+    homeName = "Home",
+    awayName = "Away",
+    leagueSlug = "",
+    homeRuninStats = null,
+    awayRuninStats = null,
+    homePpg = 1.35,
+    awayPpg = 1.30,
+    homeDrop = false,
+    awayDrop = false,
+    marketCode = "O15",
+    homeScoreHint = null
+  } = {}) {
+    const liveH = findLiveSoccerStatsTeam(homeName, leagueSlug);
+    const liveA = findLiveSoccerStatsTeam(awayName, leagueSlug);
+
+    const hPpg = Number(liveH?.ppg ?? homeRuninStats?.ppg ?? homePpg ?? 1.35);
+    const aPpg = Number(liveA?.ppg ?? awayRuninStats?.ppg ?? awayPpg ?? 1.30);
+    const hPlayed = Number(liveH?.playedPpg ?? homeRuninStats?.playedPpg ?? 1.35);
+    const aPlayed = Number(liveA?.playedPpg ?? awayRuninStats?.playedPpg ?? 1.35);
+    const hRem = Number(liveH?.immediate5Ppg ?? liveH?.remainingPpg ?? homeRuninStats?.remainingPpg ?? aPpg);
+    const aRem = Number(liveA?.immediate5Ppg ?? liveA?.remainingPpg ?? awayRuninStats?.remainingPpg ?? hPpg);
+    const hDiff = Number.isFinite(Number(liveH?.diffPct)) ? Number(liveH.diffPct) : Number(homeRuninStats?.diffPct ?? Math.round(((hPlayed - hRem) / Math.max(0.5, hPlayed)) * 100));
+    const aDiff = Number.isFinite(Number(liveA?.diffPct)) ? Number(liveA.diffPct) : Number(awayRuninStats?.diffPct ?? Math.round(((aPlayed - aRem) / Math.max(0.5, aPlayed)) * 100));
+
+    const hDropRisk = Boolean(homeDrop || (hDiff <= -14 && hPpg < 1.55) || (hPpg <= 1.10 && aPpg >= 1.55));
+    const aDropRisk = Boolean(awayDrop || (aDiff <= -14 && aPpg < 1.55) || (aPpg <= 1.10 && hPpg >= 1.55));
+    const hGainSurge = Boolean(liveH ? (hDiff >= 6 && hPpg >= 1.45) : (hPpg >= 1.55 && aPpg <= 1.35));
+    const aGainSurge = Boolean(liveA ? (aDiff >= 6 && aPpg >= 1.45) : (aPpg >= 1.55 && hPpg <= 1.35));
+
+    const code = String(marketCode || "O15").toUpperCase();
+    const isHomeSide = /^(HOME|1X|WIN_1|H_O15|H_NIL|HTFT_H|H_BTTS|SAFE_HOME|DC_HOME|FAV_HOME|BLOWOUT_HOME)/.test(code) || code.includes("HOME") || code === "SPREAD_H";
+    const isAwaySide = /^(AWAY|X2|WIN_2|A_O15|A_NIL|HTFT_A|A_BTTS|SAFE_AWAY|DC_AWAY|FAV_AWAY|BLOWOUT_AWAY)/.test(code) || code.includes("AWAY") || code === "SPREAD_A";
+    const isDefenseSpecial = code === "DRAW_5MIN" || code === "NO_3_ROW" || code === "U35";
+
+    let confirmed = true;
+    let verdictReason = "";
+    if (isHomeSide) {
+      if (hDropRisk) {
+        confirmed = false;
+        verdictReason = `Rejected: Run-In Table flags ${homeName} with Drop Risk (${hDiff}%)`;
+      } else if (aGainSurge && aPpg > hPpg + 0.15 && hPpg < 1.60) {
+        confirmed = false;
+        verdictReason = `Rejected: ${awayName} holds Run-In surge (${aPpg.toFixed(2)} PPG, ${aDiff >= 0 ? "+" : ""}${aDiff}%)`;
+      } else {
+        confirmed = hPpg >= aPpg - 0.15 || hGainSurge || (hDiff - aDiff >= 8);
+        verdictReason = `${homeName} (PLD ${hPlayed.toFixed(2)} → REM ${hRem.toFixed(2)}, ${hDiff >= 0 ? "+" : ""}${hDiff}% · ${hPpg.toFixed(2)} PPG) confirmed over ${awayName} (${aPpg.toFixed(2)} PPG)`;
+      }
+    } else if (isAwaySide) {
+      if (aDropRisk) {
+        confirmed = false;
+        verdictReason = `Rejected: Run-In Table flags ${awayName} with Drop Risk (${aDiff}%)`;
+      } else if (hGainSurge && hPpg > aPpg + 0.15 && aPpg < 1.55) {
+        confirmed = false;
+        verdictReason = `Rejected: ${homeName} holds Run-In surge (${hPpg.toFixed(2)} PPG, ${hDiff >= 0 ? "+" : ""}${hDiff}%)`;
+      } else {
+        confirmed = aPpg >= hPpg - 0.15 || aGainSurge || (aDiff - hDiff >= 8);
+        verdictReason = `${awayName} (PLD ${aPlayed.toFixed(2)} → REM ${aRem.toFixed(2)}, ${aDiff >= 0 ? "+" : ""}${aDiff}% · ${aPpg.toFixed(2)} PPG) confirmed at ${homeName} (${hPpg.toFixed(2)} PPG)`;
+      }
+    } else if (isDefenseSpecial) {
+      const gap = Math.abs(hPpg - aPpg);
+      const isExtremeBlowoutMismatch = gap >= 1.35 && (hPpg >= 2.25 || aPpg >= 2.25) && (Math.min(hPpg, aPpg) <= 0.90);
+      confirmed = !isExtremeBlowoutMismatch;
+      verdictReason = confirmed
+        ? `Run-In Table balance confirmed: ${homeName} (${hPpg.toFixed(2)} PPG) vs ${awayName} (${aPpg.toFixed(2)} PPG) — controlled opening tempo`
+        : `Rejected: Run-In Table shows massive PPG blowout mismatch (${gap.toFixed(2)} gap)`;
+    } else {
+      verdictReason = `${homeName} (PLD ${hPlayed.toFixed(2)} → REM ${hRem.toFixed(2)}) vs ${awayName} (PLD ${aPlayed.toFixed(2)} → REM ${aRem.toFixed(2)}) aligned in Run-In Table`;
+    }
+
+    const hDiffTxt = `${hDiff > 0 ? "+" : ""}${hDiff}%`;
+    const aDiffTxt = `${aDiff > 0 ? "+" : ""}${aDiff}%`;
+    return {
+      confirmed,
+      hasLiveTableEntry: Boolean(liveH || liveA),
+      source: liveH || liveA ? "Run-In Difficulty Table" : "Run-In Matrix (PLD vs REM)",
+      badge: "✓ Run-In Table Confirmed",
+      shortTag: `✓ Run-In (${hDiffTxt} / ${aDiffTxt})`,
+      summary: verdictReason || `${homeName} (${hPpg.toFixed(2)} PPG · ${hDiffTxt}) vs ${awayName} (${aPpg.toFixed(2)} PPG · ${aDiffTxt})`,
+      home: { name: homeName, ppg: hPpg, playedPpg: hPlayed, remainingPpg: hRem, diffPct: hDiff, diffLabel: hDiffTxt, isDropRed: hDropRisk, isGainBlue: hGainSurge },
+      away: { name: awayName, ppg: aPpg, playedPpg: aPlayed, remainingPpg: aRem, diffPct: aDiff, diffLabel: aDiffTxt, isDropRed: aDropRisk, isGainBlue: aGainSurge }
+    };
+  }
+
   function buildMatchAnalysis(match, sum = null, homeSched = null, awaySched = null, homeRoster = null, awayRoster = null) {
     const homeTeam = DATA.TEAMS[match.home] || { name: "Home", short: "HOM" };
     const awayTeam = DATA.TEAMS[match.away] || { name: "Away", short: "AWY" };
@@ -2255,7 +2341,7 @@ window.MAMON_REALTIME = (() => {
       homeVenue: homeHomePpg,
       awayVenue: awayAwayPpg,
       gap: ppgGap,
-      edge: homeOverallPpg >= awayOverallPpg ? homeTeam.short : awayTeam.short
+      edge: homeOverallPpg >= awayOverallPpg ? homeTeam.name : awayTeam.name
     };
 
     // 11: Run-in Analysis for Both Teams (SoccerSTATS PLD vs REM Methodology)
@@ -2300,14 +2386,14 @@ window.MAMON_REALTIME = (() => {
     };
 
     const runInEdge = homeRuninStats.diffPct - awayRuninStats.diffPct >= 8
-      ? `${homeTeam.short} Easier Run-In (${homeRuninStats.diffLabel} vs ${awayRuninStats.diffLabel})`
+      ? `${homeTeam.name} Easier Run-In (${homeRuninStats.diffLabel} vs ${awayRuninStats.diffLabel})`
       : awayRuninStats.diffPct - homeRuninStats.diffPct >= 8
-        ? `${awayTeam.short} Easier Run-In (${awayRuninStats.diffLabel} vs ${homeRuninStats.diffLabel})`
+        ? `${awayTeam.name} Easier Run-In (${awayRuninStats.diffLabel} vs ${homeRuninStats.diffLabel})`
         : homeRestDays && awayRestDays && homeRestDays - awayRestDays >= 2
-          ? `${homeTeam.short} Fresher (+${homeRestDays - awayRestDays}d rest)`
+          ? `${homeTeam.name} Fresher (+${homeRestDays - awayRestDays}d rest)`
           : homeRestDays && awayRestDays && awayRestDays - homeRestDays >= 2
-            ? `${awayTeam.short} Fresher (+${awayRestDays - homeRestDays}d rest)`
-            : `${homeTeam.short} ${homeRuninStats.diffLabel} vs ${awayTeam.short} ${awayRuninStats.diffLabel}`;
+            ? `${awayTeam.name} Fresher (+${awayRestDays - homeRestDays}d rest)`
+            : `${homeTeam.name} ${homeRuninStats.diffLabel} vs ${awayTeam.name} ${awayRuninStats.diffLabel}`;
 
     // Blend Poisson Expected Goals (lambdaH, lambdaA) across all 11 factors + market odds anchor
     const homeAttack = home5Summary.isLiveFeed && home5Summary.games.length >= 2
@@ -2419,19 +2505,19 @@ window.MAMON_REALTIME = (() => {
     const markets = [
       {
         code: "1X",
-        label: `${homeTeam.short} or Draw (1X)`,
+        label: `${homeTeam.name} or Draw (1X)`,
         prob: probs.p1X,
         odds: marketOdds(probs.p1X, 1.12, 2.4),
         riskTier: "SAFE",
-        reason: `${homeTeam.short} ${home5Summary.wins}W-${home5Summary.draws}D at home · ${homeCsPct}% home clean sheets`
+        reason: `${homeTeam.name} ${home5Summary.wins}W-${home5Summary.draws}D at home · ${homeCsPct}% home clean sheets`
       },
       {
         code: "X2",
-        label: `Draw or ${awayTeam.short} (X2)`,
+        label: `Draw or ${awayTeam.name} (X2)`,
         prob: probs.pX2,
         odds: marketOdds(probs.pX2, 1.14, 2.6),
         riskTier: "SAFE",
-        reason: `${awayTeam.short} form ${awayLast5.join("")} (${awayFormPts}/15 pts) · ${aGfAvg} GF/g away readiness`
+        reason: `${awayTeam.name} form ${awayLast5.join("")} (${awayFormPts}/15 pts) · ${aGfAvg} GF/g away readiness`
       },
       {
         code: "O15",
@@ -2447,7 +2533,7 @@ window.MAMON_REALTIME = (() => {
         prob: probs.pH,
         odds: hOddReal,
         riskTier: "CORE",
-        reason: `${homeTeam.short} leads form (${homeFormPts} vs ${awayFormPts} pts), ${home5Summary.wins}W in home last 5`
+        reason: `${homeTeam.name} leads form (${homeFormPts} vs ${awayFormPts} pts), ${home5Summary.wins}W in home last 5`
       },
       {
         code: "AWAY",
@@ -2455,7 +2541,7 @@ window.MAMON_REALTIME = (() => {
         prob: probs.pA,
         odds: aOddReal,
         riskTier: "CORE",
-        reason: `${awayTeam.short} scoring ${aGfAvg}/g · Run-in edge & away momentum (${awayFormPts}/15 pts)`
+        reason: `${awayTeam.name} scoring ${aGfAvg}/g · Run-in edge & away momentum (${awayFormPts}/15 pts)`
       },
       {
         code: "DRAW",
@@ -2471,7 +2557,7 @@ window.MAMON_REALTIME = (() => {
         prob: probs.pO25,
         odds: match.odds?.overOdds || marketOdds(probs.pO25, 1.48, 2.85),
         riskTier: "CORE",
-        reason: `Expected total ${(lamH + lamA).toFixed(2)} goals · ${homeTeam.short} ${hGfAvg} GF/g vs ${awayTeam.short} ${aGaAvg} GA/g`
+        reason: `Expected total ${(lamH + lamA).toFixed(2)} goals · ${homeTeam.name} ${hGfAvg} GF/g vs ${awayTeam.name} ${aGaAvg} GA/g`
       },
       {
         code: "BTTS",
@@ -2491,47 +2577,47 @@ window.MAMON_REALTIME = (() => {
       },
       {
         code: "H_O15",
-        label: `${homeTeam.short} Win & Over 1.5`,
+        label: `${homeTeam.name} Win & Over 1.5`,
         prob: probs.pHomeO15,
         odds: marketOdds(probs.pHomeO15, 1.65, 4.20),
         riskTier: "VALUE",
-        reason: `${homeTeam.short} dominant home record (${home5Summary.wins}W in 5) with ${(lamH + lamA).toFixed(2)} xG`
+        reason: `${homeTeam.name} dominant home record (${home5Summary.wins}W in 5) with ${(lamH + lamA).toFixed(2)} xG`
       },
       {
         code: "A_O15",
-        label: `${awayTeam.short} Win & Over 1.5`,
+        label: `${awayTeam.name} Win & Over 1.5`,
         prob: probs.pAwayO15,
         odds: marketOdds(probs.pAwayO15, 1.85, 5.20),
         riskTier: "VALUE",
-        reason: `${awayTeam.short} away attacking edge (${aGfAvg} GF/g) against ${hGaAvg} GA/g defense`
+        reason: `${awayTeam.name} away attacking edge (${aGfAvg} GF/g) against ${hGaAvg} GA/g defense`
       },
       {
         code: "H_NIL",
-        label: `${homeTeam.short} Win to Nil (CS)`,
+        label: `${homeTeam.name} Win to Nil (CS)`,
         prob: probs.pHomeToNil,
         odds: marketOdds(probs.pHomeToNil, 2.25, 6.00),
         riskTier: "HIGH",
-        reason: `${homeTeam.short} kept ${homeCsPct}% clean sheets in home games vs ${awayTeam.short} ${aGfAvg} GF/g`
+        reason: `${homeTeam.name} kept ${homeCsPct}% clean sheets in home games vs ${awayTeam.name} ${aGfAvg} GF/g`
       },
       {
         code: "HTFT_H",
-        label: `HT/FT: ${homeTeam.short} / ${homeTeam.short}`,
+        label: `HT/FT: ${homeTeam.name} / ${homeTeam.name}`,
         prob: probs.pHtFtHH,
         odds: marketOdds(probs.pHtFtHH, 2.15, 5.50),
         riskTier: "HIGH",
-        reason: `Strong early pressure at ${match.venue || "home"} (${homeTeam.short} ${(probs.pH * 100).toFixed(0)}% win prob)`
+        reason: `Strong early pressure at ${match.venue || "home"} (${homeTeam.name} ${(probs.pH * 100).toFixed(0)}% win prob)`
       },
       {
         code: "H_BTTS",
-        label: `${homeTeam.short} Win & BTTS Yes`,
+        label: `${homeTeam.name} Win & BTTS Yes`,
         prob: probs.pHomeBtts,
         odds: marketOdds(probs.pHomeBtts, 2.85, 6.20),
         riskTier: "HIGH",
-        reason: `${homeTeam.short} wins on attack (${hGfAvg} GF/g) while ${awayTeam.short} threatens (${aGfAvg} GF/g)`
+        reason: `${homeTeam.name} wins on attack (${hGfAvg} GF/g) while ${awayTeam.name} threatens (${aGfAvg} GF/g)`
       },
       {
         code: "A_BTTS",
-        label: `${awayTeam.short} Win & BTTS Yes`,
+        label: `${awayTeam.name} Win & BTTS Yes`,
         prob: probs.pAwayBtts,
         odds: marketOdds(probs.pAwayBtts, 3.20, 7.50),
         riskTier: "HIGH",
@@ -2562,9 +2648,29 @@ window.MAMON_REALTIME = (() => {
     const isStrongHomeDepleted = hAbsenceLoad >= 0.20 && isHomeStrong;
     const isStrongAwayDepleted = aAbsenceLoad >= 0.20 && isAwayStrong;
 
-    // Best primary recommendation - strictly aligned with Strong PPG, rejecting DROP_RED & adjusting for Pitch/Weather/Injuries/Ref
+    // Best primary recommendation - strictly confirmed against the Run-In Difficulty Table & Strong PPG rules
+    const buildRuninCtx = (mktCode) => evaluateRuninTableConfirmation({
+      homeName: homeTeam.name,
+      awayName: awayTeam.name,
+      leagueSlug: match.leagueSlug,
+      homeRuninStats,
+      awayRuninStats,
+      homePpg: homeOverallPpg,
+      awayPpg: awayOverallPpg,
+      homeDrop,
+      awayDrop,
+      marketCode: mktCode
+    });
+
+    markets.forEach((mkt) => {
+      const conf = buildRuninCtx(mkt.code);
+      mkt.runinConfirmed = conf.confirmed;
+      mkt.runinConfirmation = conf;
+    });
+
     const sortedCore = [...markets]
       .filter((x) => {
+        if (!x.runinConfirmed) return false;
         // Disallow markets backing a team with DROP_RED
         if (homeDrop && ["1X", "HOME", "H_O15", "H_BTTS"].includes(x.code)) return false;
         if (awayDrop && ["X2", "AWAY", "A_O15", "A_BTTS"].includes(x.code)) return false;
@@ -2585,7 +2691,7 @@ window.MAMON_REALTIME = (() => {
         const dropBoostA = (a.dropPct || 0) >= 3 ? 0.04 : 0;
         const dropBoostB = (b.dropPct || 0) >= 3 ? 0.04 : 0;
         const safetyBias = (mkt) => {
-          let adj = 0;
+          let adj = mkt.runinConfirmation?.hasLiveTableEntry ? 0.04 : 0;
           if ((isHeavyEnv || isStrongHomeDepleted || isStrongAwayDepleted) && ["1X", "X2", "U35"].includes(mkt.code)) adj += 0.05;
           if (isHeavyEnv && ["HOME", "AWAY", "O15", "H_O15", "A_O15"].includes(mkt.code)) adj -= 0.03;
           return adj;
@@ -2594,7 +2700,10 @@ window.MAMON_REALTIME = (() => {
           (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA + safetyBias(a));
       });
 
-    const bestPick = sortedCore[0] || markets.find((m) => m.code === "1X" || m.code === "O15") || markets[0];
+    const bestPick = sortedCore[0] || markets.find((m) => m.runinConfirmed && (m.code === "O15" || m.code === "1X" || m.code === "X2")) || markets.find((m) => m.code === "O15") || markets[0];
+    const bestRuninConf = bestPick.runinConfirmation || buildRuninCtx(bestPick.code);
+    bestPick.runinConfirmed = bestRuninConf.confirmed;
+    bestPick.runinConfirmation = bestRuninConf;
     const strongSide = isHomeStrong ? "HOME" : isAwayStrong ? "AWAY" : (homeOverallPpg >= awayOverallPpg ? "HOME" : "AWAY");
     const strongTeam = strongSide === "HOME" ? homeTeam : awayTeam;
     const oppTeam = strongSide === "HOME" ? awayTeam : homeTeam;
@@ -2605,13 +2714,13 @@ window.MAMON_REALTIME = (() => {
       isStrong: Boolean(isHomeStrong || isAwayStrong),
       strongSide,
       teamName: strongTeam.name,
-      teamShort: strongTeam.short,
+      teamShort: strongTeam.name,
       teamPpg: strongPpgVal,
       oppPpg: oppPpgVal,
       gap: ppgGap,
       trajectory: strongSide === "HOME" ? ppgScheduleStrength.home.status : ppgScheduleStrength.away.status,
-      badge: "💎 STRONG PPG BACKED",
-      badgeText: `Strong PPG: ${strongTeam.short} (${strongPpgVal.toFixed(2)} PPG) vs ${oppTeam.short} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGap.toFixed(2)} Edge`
+      badge: "💎 STRONG PPG + RUN-IN CONFIRMED",
+      badgeText: `Strong PPG: ${strongTeam.name} (${strongPpgVal.toFixed(2)} PPG) vs ${oppTeam.name} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGap.toFixed(2)} Edge`
     };
     const backedAbsencePenalty = strongSide === "HOME" ? hAbsenceLoad * 10 - aAbsenceLoad * 4 : aAbsenceLoad * 10 - hAbsenceLoad * 4;
     const pitchConfShift = pitchMod >= 0.015 ? 2 : pitchMod <= -0.04 ? -4 : pitchMod <= -0.02 ? -2 : 0;
@@ -2650,7 +2759,7 @@ window.MAMON_REALTIME = (() => {
           awayRecord: stA ? `${stA.w}-${stA.d}-${stA.l}` : `${match.awayRecord.w}-${match.awayRecord.d}-${match.awayRecord.l}`,
           homeLast5Games,
           awayLast5Games,
-          edge: homeFormPts >= awayFormPts ? homeTeam.short : awayTeam.short
+          edge: homeFormPts >= awayFormPts ? homeTeam.name : awayTeam.name
         },
         // 3. Injuries
         injuries: {
@@ -2658,7 +2767,7 @@ window.MAMON_REALTIME = (() => {
           away: squadReport.awayInjuries,
           statusTextHome: squadReport.homeInjuries.length ? `${squadReport.homeInjuries.length} flagged` : "0 reported in feed",
           statusTextAway: squadReport.awayInjuries.length ? `${squadReport.awayInjuries.length} flagged` : "0 reported in feed",
-          edge: squadReport.homeInjuries.length <= squadReport.awayInjuries.length ? homeTeam.short : awayTeam.short
+          edge: squadReport.homeInjuries.length <= squadReport.awayInjuries.length ? homeTeam.name : awayTeam.name
         },
         // 4. Suspensions
         suspensions: {
@@ -2682,7 +2791,7 @@ window.MAMON_REALTIME = (() => {
           homeAvg: hGfAvg,
           awayTotal: aGfTotal,
           awayAvg: aGfAvg,
-          edge: hGfAvg >= aGfAvg ? homeTeam.short : awayTeam.short
+          edge: hGfAvg >= aGfAvg ? homeTeam.name : awayTeam.name
         },
         // 8. Goals Conceded
         goalsConceded: {
@@ -2690,7 +2799,7 @@ window.MAMON_REALTIME = (() => {
           homeAvg: hGaAvg,
           awayTotal: aGaTotal,
           awayAvg: aGaAvg,
-          edge: hGaAvg <= aGaAvg ? homeTeam.short : awayTeam.short
+          edge: hGaAvg <= aGaAvg ? homeTeam.name : awayTeam.name
         },
         // 9. Clean Sheets Kept for Home Games
         cleanSheetsHome: {
@@ -2748,8 +2857,8 @@ window.MAMON_REALTIME = (() => {
           homePlayed: hMp,
           awayPlayed: aMp,
           gap: ppgGap,
-          edge: homeOverallPpg >= awayOverallPpg ? homeTeam.short : awayTeam.short,
-          venueEdge: (homeHomePpg ?? homeOverallPpg) >= (awayAwayPpg ?? awayOverallPpg) ? homeTeam.short : awayTeam.short,
+          edge: homeOverallPpg >= awayOverallPpg ? homeTeam.name : awayTeam.name,
+          venueEdge: (homeHomePpg ?? homeOverallPpg) >= (awayAwayPpg ?? awayOverallPpg) ? homeTeam.name : awayTeam.name,
           isLiveVenueSplit: Boolean(home5Summary.isLiveFeed || away5Summary.isLiveFeed),
           scheduleStrength: ppgScheduleStrength
         },
@@ -2813,8 +2922,9 @@ window.MAMON_REALTIME = (() => {
     const isHomeStrong = (homePpg >= 1.60 || homeGain || (homePpg - awayPpg >= 0.25)) && !homeDrop;
     const isAwayStrong = (awayPpg >= 1.45 || awayGain || (awayPpg - homePpg >= 0.25)) && !awayDrop;
 
-    // Filter candidate markets strictly to those that align with the Strong PPG side and reject DROP_RED
+    // Filter candidate markets strictly to Run-In Difficulty Table confirmation + Strong PPG alignment + zero DROP_RED
     const ppgFiltered = all.filter((m) => {
+      if (m.runinConfirmed === false) return false;
       // Disallow backing a team with DROP_RED
       if (homeDrop && ["1X", "HOME", "H_O15", "H_BTTS"].includes(m.code)) return false;
       if (awayDrop && ["X2", "AWAY", "A_O15", "A_BTTS"].includes(m.code)) return false;
@@ -3412,7 +3522,7 @@ window.MAMON_REALTIME = (() => {
           ? `#${calc.rank}/${calc.totalTeams} (${stMe.pts} pts · ${gdDisplay} GD) vs #${stOpp?.rank || "-"}`
           : `${myRecord} season record vs ${isHome ? f.currentForm.awayRecord : f.currentForm.homeRecord}`;
 
-        const historySummary = `Season ${myRecord} (${gdDisplay} GD) · Form ${formArr.join("-")} · H2H vs ${opp.short}: ${myH2hWins}W-${f.h2h.draws}D-${oppH2hWins}L`;
+        const historySummary = `Season ${myRecord} (${gdDisplay} GD) · Form ${formArr.join("-")} · H2H vs ${opp.name}: ${myH2hWins}W-${f.h2h.draws}D-${oppH2hWins}L`;
 
         const weatherSummary = weatherObj?.ok
           ? `${weatherObj.tempC}°C · ${weatherObj.condition} · Wind ${weatherObj.windKmh} km/h${weatherObj.precipMm > 0 ? ` · ${weatherObj.precipMm}mm rain` : ""}`
@@ -3498,20 +3608,44 @@ window.MAMON_REALTIME = (() => {
 
       const hEntry = buildSideEntry("home");
       const aEntry = buildSideEntry("away");
+      hEntry.runinConfirmation = evaluateRuninTableConfirmation({
+        homeName: hTeam.name,
+        awayName: aTeam.name,
+        leagueSlug: m.leagueSlug,
+        homeRuninStats: f.runInAnalysis?.homeStats,
+        awayRuninStats: f.runInAnalysis?.awayStats,
+        homePpg: f.ppg?.homeOverall,
+        awayPpg: f.ppg?.awayOverall,
+        homeDrop: Boolean(f.ppg?.scheduleStrength?.home?.isDropRed),
+        awayDrop: Boolean(f.ppg?.scheduleStrength?.away?.isDropRed),
+        marketCode: "HOME"
+      });
+      aEntry.runinConfirmation = evaluateRuninTableConfirmation({
+        homeName: hTeam.name,
+        awayName: aTeam.name,
+        leagueSlug: m.leagueSlug,
+        homeRuninStats: f.runInAnalysis?.homeStats,
+        awayRuninStats: f.runInAnalysis?.awayStats,
+        homePpg: f.ppg?.homeOverall,
+        awayPpg: f.ppg?.awayOverall,
+        homeDrop: Boolean(f.ppg?.scheduleStrength?.home?.isDropRed),
+        awayDrop: Boolean(f.ppg?.scheduleStrength?.away?.isDropRed),
+        marketCode: "AWAY"
+      });
 
-      // Strong candidates: legitimate win edge + healthy scoring balance
-      if (hEntry.winProbPct >= 44 && hEntry.strongScore >= hEntry.worstScore + 4) {
+      // Strong candidates: MUST be confirmed by the Run-In Difficulty Table + legitimate win edge
+      if (hEntry.winProbPct >= 44 && hEntry.strongScore >= hEntry.worstScore + 4 && hEntry.runinConfirmation.confirmed) {
         strongHome.push(hEntry);
       }
-      if (aEntry.winProbPct >= 40 && aEntry.strongScore >= aEntry.worstScore + 4) {
+      if (aEntry.winProbPct >= 40 && aEntry.strongScore >= aEntry.worstScore + 4 && aEntry.runinConfirmation.confirmed) {
         strongAway.push(aEntry);
       }
 
-      // Worst candidates: vulnerable / struggling teams likely to drop points
-      if (hEntry.loseProbPct >= 34 && hEntry.worstScore >= hEntry.strongScore + 4) {
+      // Worst candidates: vulnerable sides confirmed by Run-In Difficulty Table regression/weakness (fade -> back opp)
+      if (hEntry.loseProbPct >= 34 && hEntry.worstScore >= hEntry.strongScore + 4 && aEntry.runinConfirmation.confirmed) {
         worstHome.push(hEntry);
       }
-      if (aEntry.loseProbPct >= 38 && aEntry.worstScore >= aEntry.strongScore + 4) {
+      if (aEntry.loseProbPct >= 38 && aEntry.worstScore >= aEntry.strongScore + 4 && hEntry.runinConfirmation.confirmed) {
         worstAway.push(aEntry);
       }
     }
@@ -3718,9 +3852,21 @@ window.MAMON_REALTIME = (() => {
             // Reject any tip where target team has DROP_RED risk
             if (isDrop) continue;
 
-            // Only accept if target team has Strong PPG (>= 1.50) OR positive PPG gap (>= 0.15) OR GAIN_BLUE
+            // Only accept if target team has Strong PPG & Run-In Difficulty Table Confirmation
             const isStrongPpg = (targetPpgVal >= 1.50 || (targetPpgVal - oppPpgVal >= 0.15) || isGain);
             if (!isStrongPpg) continue;
+
+            const runinConf = evaluateRuninTableConfirmation({
+              homeName: g.homeTeamName,
+              awayName: g.awayTeamName,
+              leagueSlug: g.league || "",
+              homePpg: hs.ppg,
+              awayPpg: as.ppg,
+              homeDrop: ppgSched.home?.trajectory === "DROP_RED",
+              awayDrop: ppgSched.away?.trajectory === "DROP_RED",
+              marketCode: mkt.side === "HOME" ? "HOME" : "AWAY"
+            });
+            if (!runinConf.confirmed) continue;
 
             const fairOdds = Math.round((1 / mkt.prob) * 100) / 100;
             const evPct = Math.round(mkt.ev * 10000) / 100;
@@ -3756,12 +3902,13 @@ window.MAMON_REALTIME = (() => {
               bookmakerSource: g.footballCom?.gameId ? "Football.com & SportyBet" : "SportyBet",
               ...metaForHandicapGame(g),
               ppgSchedule: ppgSched,
+              runinConfirmation: runinConf,
               targetPpg: targetSos,
               targetPpgVal,
               oppPpgVal,
               ppgGap: ppgGapVal,
               isStrongPpg: true,
-              strongPpgBadge: isGain ? "🔵 GAIN POINTS SURGE" : "💎 STRONG PPG LOCK",
+              strongPpgBadge: isGain ? "🔵 GAIN POINTS + RUN-IN CONFIRMED" : "💎 STRONG PPG + RUN-IN CONFIRMED",
               strongPpgText: `Strong PPG: ${mkt.targetTeam} (${targetPpgVal.toFixed(2)} PPG) vs ${mkt.oppTeam} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGapVal.toFixed(2)} Edge`,
               tacticalReason: mkt.reason,
               qualityTier
@@ -4017,8 +4164,30 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
-    // Sort tips: highest composite score of EV and true probability
-    allTips.sort((a, b) => (b.expectedValue * b.trueProbability) - (a.expectedValue * a.trueProbability) || b.trueProbability - a.trueProbability);
+    // Enforce Run-In Difficulty Table Confirmation uniformly across all sports in Handicap +EV
+    for (let i = allTips.length - 1; i >= 0; i--) {
+      const tip = allTips[i];
+      if (!tip.runinConfirmation) {
+        const hsVal = tip.targetSide === "HOME" ? tip.targetPpgVal : tip.oppPpgVal;
+        const asVal = tip.targetSide === "AWAY" ? tip.targetPpgVal : tip.oppPpgVal;
+        tip.runinConfirmation = evaluateRuninTableConfirmation({
+          homeName: tip.homeTeamName,
+          awayName: tip.awayTeamName,
+          leagueSlug: tip.league || "",
+          homePpg: hsVal || 1.45,
+          awayPpg: asVal || 1.35,
+          homeDrop: tip.ppgSchedule?.home?.trajectory === "DROP_RED",
+          awayDrop: tip.ppgSchedule?.away?.trajectory === "DROP_RED",
+          marketCode: tip.targetSide === "HOME" ? "HOME" : "AWAY"
+        });
+      }
+      if (!tip.runinConfirmation.confirmed) {
+        allTips.splice(i, 1);
+      }
+    }
+
+    // Sort tips: Run-In Table entries first, then highest composite EV & true probability
+    allTips.sort((a, b) => (b.runinConfirmation?.hasLiveTableEntry ? 1 : 0) - (a.runinConfirmation?.hasLiveTableEntry ? 1 : 0) || (b.expectedValue * b.trueProbability) - (a.expectedValue * a.trueProbability) || b.trueProbability - a.trueProbability);
 
     // Build Curated Slips:
     // 1. Handicap Banker Double (2 high probability picks, combined odds ~1.95 - 2.45)
@@ -4204,8 +4373,18 @@ window.MAMON_REALTIME = (() => {
       return a.g - b.g;
     });
 
-    // Process every real >= 5h pre-match fixture through the Poisson time-decay and blowout resistance models
+    // Process every real >= 5h pre-match fixture confirmed by the Run-In Difficulty Table
     allDefensiveFixtures.forEach((fx, idx) => {
+      const defRunin = evaluateRuninTableConfirmation({
+        homeName: fx.h,
+        awayName: fx.a,
+        leagueSlug: fx.l || "",
+        homePpg: 1.42,
+        awayPpg: 1.38,
+        marketCode: "DRAW_5MIN"
+      });
+      if (!defRunin.confirmed) return;
+
       const dateStr = fx.dateStr || todayIsoStr;
       const isToday = Boolean(fx.isToday);
 
@@ -4271,6 +4450,7 @@ window.MAMON_REALTIME = (() => {
         expectedValuePct: `+${evPct5.toFixed(2)}%`,
         confidenceTier: confTier5,
         defensivePpgRating: defPpgRating,
+        runinConfirmation: defRunin,
         tacticalReason: `Low-tempo tactical feeling-out opening at ${fx.venue}. ${fx.l} produces ${(fx.dr * 100).toFixed(1)}% draw rate with only ${fx.g.toFixed(2)} avg goals. In opening 5 minutes, expected goal arrival rate is suppressed to ${(lam5 * 100).toFixed(1)}%, yielding ${(pDraw5 * 100).toFixed(1)}% true probability of 0-0 at 5:00.`
       });
 
@@ -4322,6 +4502,7 @@ window.MAMON_REALTIME = (() => {
         expectedValuePct: `+${evPctNo3.toFixed(2)}%`,
         confidenceTier: confTierNo3,
         defensivePpgRating: defPpgRating,
+        runinConfirmation: defRunin,
         tacticalReason: `Strict defensive setup in ${fx.l} (league draw rate ${(fx.dr * 100).toFixed(1)}%). Neither ${fx.h} nor ${fx.a} possesses offensive firepower to sustain 3 consecutive unanswered goals without tactical stoppage or defensive recalibration.`
       });
     });
@@ -4990,6 +5171,7 @@ window.MAMON_REALTIME = (() => {
     getLeagueRuninCached,
     buildFallbackRuninTable,
     lookupTeamRunin,
+    evaluateRuninTableConfirmation,
     computeRuninTip,
     isTipEligiblePreMatch5h,
     getHoursToKickoff,

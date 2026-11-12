@@ -5273,9 +5273,9 @@ ul {
   max-width: 100%;
 }
 .runin-mini-chip strong {
-  max-width: 118px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 .runin-score-tag {

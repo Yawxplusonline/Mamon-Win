@@ -5,9 +5,50 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 const teamStatsCache = new Map(); // uid -> { data, expiresAt }
 const h2hCache = new Map(); // "hUid:aUid" -> { data, expiresAt }
+const openOddsTracker = new Map(); // eventKey -> { home, draw, away, over25, recordedAt }
 let cachedScan = null;
 let cachedScanExpiresAt = 0;
 let scanInFlight = null;
+
+function trackLiveLineMovement(eventKey, bH, bD, bA, bO25, homeName, awayName) {
+  if (!eventKey) return { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] };
+  if (openOddsTracker.size > 4000) {
+    const oldest = openOddsTracker.keys().next().value;
+    if (oldest) openOddsTracker.delete(oldest);
+  }
+  const baseline = openOddsTracker.get(eventKey);
+  if (!baseline) {
+    openOddsTracker.set(eventKey, {
+      home: bH?.odd || null,
+      draw: bD?.odd || null,
+      away: bA?.odd || null,
+      over25: bO25?.odd || null,
+      recordedAt: Date.now()
+    });
+    return { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] };
+  }
+
+  const candidates = [
+    { code: "HOME", label: `${homeName || "Home"} Win (1)`, openOdd: baseline.home, currentOdd: bH?.odd },
+    { code: "DRAW", label: "Draw (X)", openOdd: baseline.draw, currentOdd: bD?.odd },
+    { code: "AWAY", label: `${awayName || "Away"} Win (2)`, openOdd: baseline.away, currentOdd: bA?.odd },
+    { code: "O25", label: "Over 2.5 Goals", openOdd: baseline.over25, currentOdd: bO25?.odd }
+  ];
+  const allMoves = [];
+  for (const c of candidates) {
+    if (!Number.isFinite(c.openOdd) || !Number.isFinite(c.currentOdd) || c.openOdd <= 1 || c.currentOdd <= 1) continue;
+    const dropPct = Math.round(((c.openOdd - c.currentOdd) / c.openOdd) * 1000) / 10;
+    allMoves.push({ ...c, dropPct });
+  }
+  const significantDrops = allMoves.filter((m) => m.dropPct >= 1.5).sort((a, b) => b.dropPct - a.dropPct);
+  return {
+    hasData: allMoves.length > 0,
+    hasDrop: significantDrops.length > 0,
+    provider: "SportyBet & Football.com Live",
+    bestDrop: significantDrops[0] || null,
+    allMoves: allMoves.sort((a, b) => Math.abs(b.dropPct) - Math.abs(a.dropPct))
+  };
+}
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -896,6 +937,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
           g.sport || "football"
         );
 
+        const moveKey = String(fbGameId || sbGameId || g.eventId || `${g.sport}:${g.homeNorm}:${g.awayNorm}`);
+        const droppingOdds = trackLiveLineMovement(moveKey, bH, bD, bA, bO25, g.homeTeamName, g.awayTeamName);
+
         return {
           ...g,
           country: mergedLoc.country,
@@ -910,6 +954,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           onefootballCountry: ofMatch?.country || null,
           homeLogo: ofMatch?.homeLogo || "",
           awayLogo: ofMatch?.awayLogo || "",
+          droppingOdds,
           bestOdds: {
             home: bH.odd,
             homeBookie: bH.bookie,
@@ -1252,6 +1297,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         totalGamesScraped: evaluated.length,
         preMatch5hCount: preMatch5hPool.length,
         verifiedTeamsCount: evaluated.filter((x) => x.hasVerifiedStats).length,
+        dropsTrackedCount: games.filter((x) => x.droppingOdds?.hasDrop).length,
         strongHomeMismatch: strongHomeMismatch.slice(0, 20),
         strongAwayMismatch: strongAwayMismatch.slice(0, 20),
         worstHomeMismatch: worstHomeMismatch.slice(0, 20),
@@ -1261,7 +1307,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
       };
 
       cachedScan = payload;
-      cachedScanExpiresAt = Date.now() + (evaluated.length >= 40 ? 300000 : 15000);
+      cachedScanExpiresAt = Date.now() + (evaluated.length >= 40 ? 90000 : 15000);
       return payload;
     } finally {
       scanInFlight = null;

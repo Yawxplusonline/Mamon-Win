@@ -5711,6 +5711,9 @@
           existing.odds.away = g.bestOdds.away;
           existing.odds.provider = g.bestOdds.homeBookie || "Football.com & SportyBet";
         }
+        if (g.droppingOdds?.hasData && (!existing.droppingOdds?.hasData || g.droppingOdds.hasDrop)) {
+          existing.droppingOdds = g.droppingOdds;
+        }
         if (g.homeStats?.ppg && g.awayStats?.ppg) {
           existing.ppgSummary = {
             homeOverall: g.homeStats.ppg,
@@ -5767,16 +5770,16 @@
         awayScore: parsedAwayScore,
         homeRed: 0,
         awayRed: 0,
-        homeForm: g.homeStats?.form || ["W", "D", "W"],
-        awayForm: g.awayStats?.form || ["L", "W", "D"],
-        homeRecord: { w: g.homeStats?.w || 3, d: g.homeStats?.d || 1, l: g.homeStats?.l || 1, mp: g.homeStats?.mp || 5 },
-        awayRecord: { w: g.awayStats?.w || 2, d: g.awayStats?.d || 2, l: g.awayStats?.l || 1, mp: g.awayStats?.mp || 5 },
+        homeForm: Array.isArray(g.homeStats?.form) ? g.homeStats.form : [],
+        awayForm: Array.isArray(g.awayStats?.form) ? g.awayStats.form : [],
+        homeRecord: { w: g.homeStats?.w || 0, d: g.homeStats?.d || 0, l: g.homeStats?.l || 0, mp: g.homeStats?.mp || 0 },
+        awayRecord: { w: g.awayStats?.w || 0, d: g.awayStats?.d || 0, l: g.awayStats?.l || 0, mp: g.awayStats?.mp || 0 },
         venue: g.venue || `${homeName} Arena`,
         venueCity: "",
         venueCountry: g.country || "",
         weather: null,
         hasBookOdds: true,
-        droppingOdds: null,
+        droppingOdds: g.droppingOdds?.hasData ? g.droppingOdds : null,
         odds: {
           home: g.bestOdds?.home || 1.85,
           draw: g.bestOdds?.draw || null,
@@ -6484,7 +6487,132 @@
     }
   });
 
-  // Move elapsed matches into Complete Matches of the Day every 30s & refresh live scores every 45s
+  // ============ AUTONOMOUS MISSION SYSTEM CONTROL ENGINE (SSE + WATCHDOG + REAL-TIME SYNC) ============
+  let missionTelemetry = null;
+  let sseConnected = false;
+  let missionLastPullMs = 0;
+  let missionStream = null;
+  let missionDayKey = new Date().toISOString().slice(0, 10);
+
+  function renderMissionHud() {
+    const hudEl = document.getElementById("missionLiveHud");
+    if (!hudEl) return;
+    const labelEl = hudEl.querySelector(".mission-hud-label");
+    if (!labelEl) return;
+    const syncRefMs = missionLastPullMs || (lastSyncIso ? Date.parse(lastSyncIso) : 0);
+    const ageSec = syncRefMs ? Math.max(0, Math.round((Date.now() - syncRefMs) / 1000)) : null;
+    const ageText = ageSec === null ? "WARMING" : ageSec < 5 ? "JUST NOW" : ageSec < 60 ? `${ageSec}s AGO` : `${Math.floor(ageSec / 60)}m AGO`;
+    const srcs = missionTelemetry?.sources || {};
+    const ofOk = srcs.onefootball?.status === "ONLINE" ? "✓" : "…";
+    const bkOk = srcs.bookmakers?.status === "ONLINE" ? "✓" : "…";
+    const riOk = srcs.runin?.status === "ONLINE" ? "✓" : "…";
+    hudEl.classList.toggle("is-reconnecting", !sseConnected);
+    const linkLabel = sseConnected ? "LIVE STREAM" : "AUTO-SYNC";
+    labelEl.textContent = `${linkLabel} · ${ageText} · OF${ofOk} FB/SB${bkOk} RI${riOk}`;
+    hudEl.title = `Mission Engine ${missionTelemetry?.mode || "ONLINE"} | Uptime: ${missionTelemetry?.uptimeSec ?? 0}s | SSE: ${sseConnected ? "Connected" : "Polling"} | Click for immediate full refresh`;
+  }
+
+  function refreshDynamicDatesIfNeeded() {
+    const curDayKey = new Date().toISOString().slice(0, 10);
+    if (curDayKey === missionDayKey) return false;
+    missionDayKey = curDayKey;
+    const nextDates = [{ id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" }];
+    for (let offset = 0; offset < 3; offset++) {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      const iso = `${y}-${m}-${day}`;
+      const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const lbl = offset === 0 ? `Today · ${monDay}` : offset === 1 ? `Tomorrow · ${monDay}` : `${d.toLocaleDateString("en-US", { weekday: "short" })}, ${monDay}`;
+      nextDates.push({ id: iso, label: lbl, short: offset === 0 ? "Today" : offset === 1 ? "Tomorrow" : monDay });
+    }
+    DATA.DATES = nextDates;
+    return true;
+  }
+
+  let sseRefreshTimers = { onefootball: null, bookmakers: null };
+  function connectMissionStream() {
+    if (typeof EventSource === "undefined") return;
+    try {
+      if (missionStream) missionStream.close();
+      missionStream = new EventSource("/api/stream");
+      missionStream.onopen = () => {
+        sseConnected = true;
+        renderMissionHud();
+      };
+      missionStream.addEventListener("telemetry", (ev) => {
+        try {
+          missionTelemetry = JSON.parse(ev.data);
+          sseConnected = true;
+          renderMissionHud();
+        } catch {}
+      });
+      missionStream.addEventListener("heartbeat", () => {
+        sseConnected = true;
+        renderMissionHud();
+      });
+      missionStream.addEventListener("feed_update", (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.telemetry) missionTelemetry = msg.telemetry;
+          sseConnected = true;
+          missionLastPullMs = Date.now();
+          renderMissionHud();
+          if (msg.source === "onefootball") {
+            clearTimeout(sseRefreshTimers.onefootball);
+            sseRefreshTimers.onefootball = setTimeout(() => { syncRealtimeFeed(false); }, 600);
+          } else if (msg.source === "bookmakers") {
+            clearTimeout(sseRefreshTimers.bookmakers);
+            sseRefreshTimers.bookmakers = setTimeout(() => { syncBookmakerMismatchFeed(false, false); }, 600);
+          } else if (msg.source === "runin") {
+            if (state.route === "/run-in") {
+              loadRuninLeague(state.activeRuninLeague || "england");
+            }
+          }
+        } catch {}
+      });
+      missionStream.onerror = () => {
+        sseConnected = false;
+        renderMissionHud();
+      };
+    } catch {
+      sseConnected = false;
+    }
+  }
+
+  async function pollMissionHealth() {
+    try {
+      const res = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        missionTelemetry = await res.json();
+        renderMissionHud();
+      }
+    } catch {}
+  }
+
+  document.getElementById("missionLiveHud")?.addEventListener("click", () => {
+    missionLastPullMs = Date.now();
+    renderMissionHud();
+    showToast("Running full Mission System real-time sync...");
+    syncRealtimeFeed(true);
+    syncBookmakerMismatchFeed(true, false);
+    if (state.route === "/run-in") {
+      loadRuninLeague(state.activeRuninLeague || "england");
+    }
+  });
+
+  // Autonomous Mission Intervals: 10s HUD + Date Rollover | 30s Played-Time Reconciliation | 45s Live + OF | 90s Bookmakers
+  setInterval(() => {
+    const rolled = refreshDynamicDatesIfNeeded();
+    renderMissionHud();
+    if (rolled) {
+      syncRealtimeFeed(false);
+      renderAll();
+    }
+  }, 10000);
+
   setInterval(() => {
     if (RT?.reconcilePlayedMatchesByTime && liveMatches.length > 0) {
       const prevLen = liveMatches.length;
@@ -6500,8 +6628,29 @@
 
   setInterval(() => {
     if (!state.liveTicker) return;
+    missionLastPullMs = Date.now();
     syncRealtimeFeed(false);
   }, 45000);
+
+  setInterval(() => {
+    if (!state.liveTicker) return;
+    syncBookmakerMismatchFeed(false, false);
+  }, 90000);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      refreshDynamicDatesIfNeeded();
+      pollMissionHealth();
+      syncRealtimeFeed(false);
+      syncBookmakerMismatchFeed(false, false);
+    }
+  });
+
+  window.addEventListener("online", () => {
+    connectMissionStream();
+    syncRealtimeFeed(false);
+    syncBookmakerMismatchFeed(false, false);
+  });
 
   if (window.location.hash) {
     state.route = getRouteFromHash();
@@ -6530,6 +6679,10 @@
     loadRuninLeague(state.activeRuninLeague || "england");
   }
   renderAll();
+  connectMissionStream();
+  pollMissionHealth();
+  missionLastPullMs = Date.now();
+  renderMissionHud();
   syncRealtimeFeed(false);
   syncBookmakerMismatchFeed(false, false);
 })();

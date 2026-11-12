@@ -1398,6 +1398,29 @@ window.MAMON_REALTIME = (() => {
     const localDate = isoDate(new Date(koMs));
     const status = ofm.status === "LIVE" ? "LIVE" : ofm.status === "FT" ? "FT" : "SCHEDULED";
 
+    const findStandingByName = (teamName) => {
+      const target = normTeamMatchKey(teamName);
+      if (!target) return null;
+      let best = null;
+      for (const st of standingsByTeamId.values()) {
+        const sn = normTeamMatchKey(st.teamName || st.shortName || "");
+        if (!sn) continue;
+        if (sn === target) return st;
+        if (!best && sn.length >= 4 && target.length >= 4 && (sn.includes(target) || target.includes(sn))) best = st;
+      }
+      return best;
+    };
+    const buildFormFromSt = (st) => {
+      if (!st || !st.mp) return [];
+      const n = 5;
+      const wCnt = Math.round(((st.w || 0) / st.mp) * n);
+      const lCnt = Math.min(n - wCnt, Math.round(((st.l || 0) / st.mp) * n));
+      const dCnt = Math.max(0, n - wCnt - lCnt);
+      return [...Array(wCnt).fill("W"), ...Array(dCnt).fill("D"), ...Array(lCnt).fill("L")].slice(0, 5);
+    };
+    const stHomeOf = findStandingByName(ofm.homeTeamName);
+    const stAwayOf = findStandingByName(ofm.awayTeamName);
+
     const match = {
       id: ofm.id || `of-${ofm.onefootballId}`,
       espnId: ofm.id || `of-${ofm.onefootballId}`,
@@ -1428,16 +1451,16 @@ window.MAMON_REALTIME = (() => {
       away: awayKey,
       homeTeamName: ofm.homeTeamName,
       awayTeamName: ofm.awayTeamName,
-      homeEspnId: "",
-      awayEspnId: "",
+      homeEspnId: stHomeOf?.teamId ? String(stHomeOf.teamId) : "",
+      awayEspnId: stAwayOf?.teamId ? String(stAwayOf.teamId) : "",
       homeScore: ofm.homeScore ?? null,
       awayScore: ofm.awayScore ?? null,
       homeRed: 0,
       awayRed: 0,
-      homeForm: ["W", "D", "W", "W", "L"],
-      awayForm: ["D", "L", "W", "D", "W"],
-      homeRecord: { w: 4, d: 3, l: 3, mp: 10 },
-      awayRecord: { w: 3, d: 3, l: 4, mp: 10 },
+      homeForm: buildFormFromSt(stHomeOf),
+      awayForm: buildFormFromSt(stAwayOf),
+      homeRecord: stHomeOf ? { w: stHomeOf.w || 0, d: stHomeOf.d || 0, l: stHomeOf.l || 0, mp: stHomeOf.mp || 0 } : { w: 0, d: 0, l: 0, mp: 0 },
+      awayRecord: stAwayOf ? { w: stAwayOf.w || 0, d: stAwayOf.d || 0, l: stAwayOf.l || 0, mp: stAwayOf.mp || 0 } : { w: 0, d: 0, l: 0, mp: 0 },
       venue: `${ofm.homeTeamName} Stadium`,
       venueCity: "",
       venueCountry: "",
@@ -2078,9 +2101,19 @@ window.MAMON_REALTIME = (() => {
       recent: []
     };
 
-    // 2. Current Form (Overall Last 5 + Record)
-    let homeLast5 = match.homeForm || ["W", "D", "W", "L", "W"];
-    let awayLast5 = match.awayForm || ["D", "W", "L", "W", "D"];
+    // 2. Current Form (Overall Last 5 + Record from Live Feed / Standings / Sportradar — never static dummy arrays)
+    const deriveNeutralFormFromRec = (st, rec) => {
+      const mp = st?.mp || rec?.mp || ((rec?.w || 0) + (rec?.d || 0) + (rec?.l || 0));
+      if (!mp) return [];
+      const w = st?.w ?? rec?.w ?? 0;
+      const d = st?.d ?? rec?.d ?? 0;
+      const wCnt = Math.round((w / mp) * 5);
+      const dCnt = Math.round((d / mp) * 5);
+      const lCnt = Math.max(0, 5 - wCnt - dCnt);
+      return [...Array(wCnt).fill("W"), ...Array(dCnt).fill("D"), ...Array(lCnt).fill("L")].slice(0, 5);
+    };
+    let homeLast5 = Array.isArray(match.homeForm) && match.homeForm.length > 0 ? match.homeForm : deriveNeutralFormFromRec(stH, match.homeRecord);
+    let awayLast5 = Array.isArray(match.awayForm) && match.awayForm.length > 0 ? match.awayForm : deriveNeutralFormFromRec(stA, match.awayRecord);
     let homeLast5Games = [];
     let awayLast5Games = [];
 
@@ -2117,11 +2150,15 @@ window.MAMON_REALTIME = (() => {
     const home5AtHome = homeSplit?.venueGames?.slice(0, 5) || null;
     const away5AtAway = awaySplit?.venueGames?.slice(0, 5) || null;
 
-    // Fallback venue estimates calibrated to team record & standings until schedule hydrates
-    const hMp = stH?.mp || match.homeRecord?.mp || (match.homeRecord ? (match.homeRecord.w || 0) + (match.homeRecord.d || 0) + (match.homeRecord.l || 0) : 8) || 8;
-    const aMp = stA?.mp || match.awayRecord?.mp || (match.awayRecord ? (match.awayRecord.w || 0) + (match.awayRecord.d || 0) + (match.awayRecord.l || 0) : 8) || 8;
-    const hPpg = stH ? stH.pts / Math.max(1, stH.mp) : ((match.homeRecord?.w || 0) * 3 + (match.homeRecord?.d || 0)) / Math.max(1, hMp);
-    const aPpg = stA ? stA.pts / Math.max(1, stA.mp) : ((match.awayRecord?.w || 0) * 3 + (match.awayRecord?.d || 0)) / Math.max(1, aMp);
+    // Real W/D/L & PPG when available; otherwise implied-market equilibrium until Sportradar/ESPN record hydrates
+    const rawHMp = stH?.mp || match.homeRecord?.mp || ((match.homeRecord?.w || 0) + (match.homeRecord?.d || 0) + (match.homeRecord?.l || 0));
+    const rawAMp = stA?.mp || match.awayRecord?.mp || ((match.awayRecord?.w || 0) + (match.awayRecord?.d || 0) + (match.awayRecord?.l || 0));
+    const hMp = rawHMp > 0 ? rawHMp : 8;
+    const aMp = rawAMp > 0 ? rawAMp : 8;
+    const impHomeBase = clamp((1 / Math.max(1.05, Number(match.odds?.home) || 2.1)) * 2.55 + (1 / Math.max(2.2, Number(match.odds?.draw) || 3.3)) * 0.95, 0.70, 2.30);
+    const impAwayBase = clamp((1 / Math.max(1.05, Number(match.odds?.away) || 3.1)) * 2.55 + (1 / Math.max(2.2, Number(match.odds?.draw) || 3.3)) * 0.95, 0.65, 2.25);
+    const hPpg = stH ? stH.pts / Math.max(1, stH.mp) : (rawHMp > 0 ? ((match.homeRecord?.w || 0) * 3 + (match.homeRecord?.d || 0)) / rawHMp : impHomeBase);
+    const aPpg = stA ? stA.pts / Math.max(1, stA.mp) : (rawAMp > 0 ? ((match.awayRecord?.w || 0) * 3 + (match.awayRecord?.d || 0)) / rawAMp : impAwayBase);
 
     const home5Summary = home5AtHome && home5AtHome.length > 0
       ? {
@@ -4394,7 +4431,7 @@ window.MAMON_REALTIME = (() => {
     );
 
     const onefootballPromise = (typeof window !== "undefined" && window.location?.origin)
-      ? fetch("/api/onefootball", { signal: AbortSignal.timeout(12000) })
+      ? fetch("/api/onefootball", { cache: "no-store", signal: AbortSignal.timeout(12000) })
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null)
       : Promise.resolve(null);

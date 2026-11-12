@@ -269,6 +269,8 @@
   const runinLoadingCodes = new Set();
   let runinCatalogClient = [];
   let expandedRuninTeam = null;
+  const runinDrawerBuilders = new Map();
+  let lastNavigatedHash = null;
   let lastModalInteractionMs = 0;
   let modalCleanupRaf = null;
   let isSyncingRealtime = false;
@@ -508,14 +510,37 @@
     if (route === "/worst-teams-today") route = "/worst-teams";
     state.route = route;
     if (push) {
-      window.location.hash = "#" + route;
+      const targetHash = "#" + route;
+      if (window.location.hash !== targetHash) {
+        lastNavigatedHash = targetHash;
+        window.location.hash = targetHash;
+        setTimeout(() => {
+          if (lastNavigatedHash === targetHash) lastNavigatedHash = null;
+        }, 100);
+      }
     }
     saveState();
+    renderHeaderState();
+    renderSubnav();
     if (route === "/run-in") {
       loadRuninLeague(state.activeRuninLeague || "england");
     }
-    renderAll();
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const isHeavyRoute = route === "/" || route === "/upcoming" || route === "/live" || route === "/odds-mismatch" || route === "/run-in";
+    if (isHeavyRoute) {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          renderMainContent();
+          renderLeftRail();
+          renderFooterPopular();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }, 0);
+      });
+    } else {
+      renderMainContent();
+      renderLeftRail();
+      renderFooterPopular();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   }
 
   function getTeam(key, fallbackName = "Club") {
@@ -1579,12 +1604,13 @@
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
 
     const isLiveSection = forcedSection === "LIVE" || (!forcedSection && state.route === "/live");
+    const isScopedList = !showToolbar || forcedSection === "COMPETITION";
 
-    // Source pool filtered strictly by active sport and excluding NCAA/women
-    const sourcePool = liveMatches
+    // Source pool: respect explicit scoped lists (Competition / Search) instead of rebuilding all 700+ matches
+    const sourcePool = (isScopedList ? (matchesList || []) : liveMatches)
       .filter((m) => !isNcaaOrWomenMatch(m))
       .filter((m) => {
-        if (activeSportKey === "all") return true;
+        if (isScopedList || activeSportKey === "all") return true;
         return (m.sport || "football").toLowerCase() === activeSportKey;
       });
 
@@ -1749,6 +1775,8 @@
           ${[1, 2, 3, 4, 5].map(() => `<div data-skeleton style="height:52px;"><div data-skeleton-band></div></div>`).join("")}
         </div>
       `;
+    } else if (isScopedList) {
+      groupsHtml = renderCountryGroupedLeagues(sortMatchesInOrder(sourcePool), false);
     } else if (activeSportKey !== "all") {
       // SINGLE SPORT ACTIVE: Non-football sports render the Run-In Difficulty Table format for Live & Upcoming, or Completed list for FT
       if (nonFootballSports.includes(activeSportKey) && state.matchFilter !== "FT") {
@@ -2983,7 +3011,7 @@
       const playedCount = row.playedOpponents?.length || row.playedCount || (Array.isArray(row.formFallback) ? row.formFallback.length : 0);
       const remCount = row.remainingOpponents?.length || row.remainingCount || 0;
 
-      const drawerHtml = clickRoute || !isExpanded ? "" : `
+      const buildDrawerRow = () => `
         <tr class="runin-drawer-row">
           <td colspan="12">
             <div class="runin-tip-banner">
@@ -3012,10 +3040,15 @@
           </td>
         </tr>
       `;
+      if (!clickRoute) {
+        runinDrawerBuilders.set(expandId, buildDrawerRow);
+      }
+
+      const drawerHtml = clickRoute || !isExpanded ? "" : buildDrawerRow();
 
       const rowAttr = clickRoute
         ? `data-route="${escapeHtml(clickRoute)}"`
-        : `data-toggle-runin-team="${escapeHtml(expandId)}"`;
+        : `data-toggle-runin-team="${escapeHtml(expandId)}"${isExpanded ? ` data-runin-expanded="1"` : ""}`;
 
       return `
         <tr class="runin-row" ${rowAttr} title="Click to inspect all Played Scorelines, Upcoming Fixtures &amp; Strong PPG Tips">
@@ -3025,7 +3058,7 @@
               <strong class="text-text">${escapeHtml(row.team)}</strong>
               ${isStrongPpg ? `<span title="Strong PPG (>= 1.60)">💎</span>` : ""}
               ${row.hasLiveMatch ? `<span class="live-dot" title="Currently Live In-Play"></span>` : ""}
-              ${clickRoute ? "" : `<span class="text-xs text-muted font-mono">${isExpanded ? "▲" : "▼"}</span>`}
+              ${clickRoute ? "" : `<span class="text-xs text-muted font-mono" data-runin-arrow="1">${isExpanded ? "▲" : "▼"}</span>`}
             </div>
             ${row.sport && row.sport !== "football" && row.leagueName ? `<div class="text-muted" style="font-size:10.5px;">${escapeHtml(row.leagueName)}</div>` : ""}
           </td>
@@ -6188,8 +6221,26 @@
     const runinTeamRow = e.target.closest("[data-toggle-runin-team]");
     if (runinTeamRow) {
       const teamKey = runinTeamRow.getAttribute("data-toggle-runin-team");
-      expandedRuninTeam = expandedRuninTeam === teamKey ? null : teamKey;
-      renderMainContent();
+      const wasOpen = expandedRuninTeam === teamKey;
+      expandedRuninTeam = wasOpen ? null : teamKey;
+      // Surgical DOM drawer toggle (< 2ms INP — avoid rebuilding 900+ rows)
+      document.querySelectorAll("tr.runin-drawer-row").forEach((el) => el.remove());
+      document.querySelectorAll("tr[data-runin-expanded='1']").forEach((el) => {
+        el.removeAttribute("data-runin-expanded");
+        const arr = el.querySelector("[data-runin-arrow]");
+        if (arr) arr.textContent = "▼";
+      });
+      if (!wasOpen) {
+        const builder = runinDrawerBuilders.get(teamKey);
+        if (typeof builder === "function") {
+          runinTeamRow.setAttribute("data-runin-expanded", "1");
+          const arr = runinTeamRow.querySelector("[data-runin-arrow]");
+          if (arr) arr.textContent = "▲";
+          runinTeamRow.insertAdjacentHTML("afterend", builder());
+          return;
+        }
+        renderMainContent();
+      }
       return;
     }
 
@@ -6550,6 +6601,11 @@
   });
 
   window.addEventListener("hashchange", () => {
+    if (lastNavigatedHash && window.location.hash === lastNavigatedHash) {
+      lastNavigatedHash = null;
+      return;
+    }
+    lastNavigatedHash = null;
     state.route = getRouteFromHash();
     if (state.route === "/run-in") {
       loadRuninLeague(state.activeRuninLeague || "england");

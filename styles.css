@@ -5395,3 +5395,122 @@ ul {
   font-weight: 700;
   white-space: nowrap;
 }
+
+/* ============ COUNTRY -> LEAGUE HIERARCHY & UI POLISH ============ */
+.country-group-card {
+  margin: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+}
+.country-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  background: linear-gradient(90deg, rgba(10, 123, 92, 0.12) 0%, rgba(10, 123, 92, 0.03) 65%, transparent 100%);
+  border-bottom: 1px solid var(--line);
+}
+.country-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-headline);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.country-flag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+.country-flag-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.country-flag-img {
+  width: 22px;
+  height: 15px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  display: inline-block;
+}
+.country-flag-img.is-sm {
+  width: 17px;
+  height: 12px;
+  border-radius: 2px;
+}
+.country-iso-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  background: rgba(10, 123, 92, 0.14);
+  color: #047857;
+  border: 1px solid rgba(10, 123, 92, 0.28);
+}
+.country-iso-badge.is-sm {
+  min-width: 22px;
+  height: 14px;
+  font-size: 9px;
+  padding: 0 4px;
+}
+.country-group-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.country-meta-pill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 9999px;
+  background: var(--ground-subtle);
+  border: 1px solid var(--line-soft);
+  color: var(--text-secondary);
+}
+.country-meta-pill.is-count {
+  background: rgba(10, 123, 92, 0.12);
+  border-color: rgba(10, 123, 92, 0.28);
+  color: #047857;
+}
+.country-league-block {
+  border-bottom: 1px solid var(--line-soft);
+}
+.country-league-block:last-child {
+  border-bottom: none;
+}
+.country-league-block .match-league-header {
+  background: rgba(248, 250, 252, 0.85);
+  padding: 8px 16px;
+}
+[data-theme="dark"] .country-league-block .match-league-header {
+  background: rgba(255, 255, 255, 0.03);
+}
+.runin-select-wrap {
+  min-width: 265px;
+}
+.runin-fixtures-td .runin-inline-fixtures {
+  max-width: 440px;
+}

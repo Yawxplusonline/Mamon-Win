@@ -1,5 +1,6 @@
 // Real-Time Bookmaker Scraper & Odds Mismatch Engine for SportyBet (sportybet.com) & Football.com (football.com)
 const onefootballApi = require("./onefootball");
+const { canonicalizeLeagueAndCountry, isGenericStageName } = require("./leagueCatalog");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 const teamStatsCache = new Map(); // uid -> { data, expiresAt }
@@ -168,16 +169,20 @@ function extractEventsFromFactCenter(json, sportKey = "football", sportLabel = "
   for (const t of tList) {
     const tIcon = t.tournamentIcon || "";
     const tName = t.name || "";
+    const tCategory = t.categoryName || "";
     if (isExcludedTournamentOrEvent(tName)) continue;
     for (const ev of t.events || []) {
       if (ev.ai || ev.banned) continue;
-      const combinedName = `${ev.homeTeamName || ""} ${ev.awayTeamName || ""} ${ev.sport?.category?.name || ""} ${ev.sport?.category?.tournament?.name || tName}`;
+      const evCatName = ev.sport?.category?.name || tCategory || "";
+      const evTourneyName = ev.sport?.category?.tournament?.name || tName || "";
+      const combinedName = `${ev.homeTeamName || ""} ${ev.awayTeamName || ""} ${evCatName} ${evTourneyName}`;
       if (/esoccer|e-soccer|virtual|simulated|cyber|srl/i.test(combinedName)) continue;
       if (isExcludedTournamentOrEvent(combinedName)) continue;
       out.push({
         ...ev,
         _tournamentIcon: tIcon,
-        _tournamentName: tName,
+        _tournamentName: evTourneyName,
+        _countryName: evCatName,
         sport: sportKey,
         sportName: sportLabel
       });
@@ -776,6 +781,11 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const dt = new Date(startTs);
           const isTimeElapsed = !evIsLive && startTs <= nowMs - sportDurMs;
           const isCompleted = isExplicitCompleted || isTimeElapsed;
+          const loc = canonicalizeLeagueAndCountry(
+            ev._countryName || ev.sport?.category?.name || "",
+            ev._tournamentName || ev.sport?.category?.tournament?.name || "",
+            ev.sport || "football"
+          );
           item = {
             eventId,
             matchId: eventId.split(":").pop() || eventId,
@@ -785,8 +795,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
             awayTeamName: ev.awayTeamName || "Away",
             homeUid,
             awayUid,
-            country: ev.sport?.category?.name || "International",
-            league: ev.sport?.category?.tournament?.name || ev._tournamentName || "League",
+            country: loc.country,
+            league: loc.league,
             tournamentIcon: ev._tournamentIcon || "",
             venue: ev.fixtureVenue?.name || "",
             estimateStartTime: startTs,
@@ -880,8 +890,16 @@ async function runFullBookmakerScan(forceRefresh = false) {
         const fbGameId = fb?.gameId && fb.gameId !== "-" ? String(fb.gameId) : null;
         const sbGameId = sb?.gameId && sb.gameId !== "-" ? String(sb.gameId) : null;
 
+        const mergedLoc = canonicalizeLeagueAndCountry(
+          (g.country && g.country !== "International") ? g.country : (ofMatch?.country || g.country || ""),
+          (!isGenericStageName(g.league) && g.league) ? g.league : (ofMatch?.leagueName || g.league),
+          g.sport || "football"
+        );
+
         return {
           ...g,
+          country: mergedLoc.country,
+          league: mergedLoc.league,
           onFootballCom: Boolean(fbGameId),
           footballComGameId: fbGameId,
           sportybetGameId: sbGameId,
@@ -889,6 +907,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
           onefootballId: ofMatch?.onefootballId || null,
           onefootballUrl: ofMatch?.onefootballUrl || null,
           onefootballLeague: ofMatch?.leagueName || null,
+          onefootballCountry: ofMatch?.country || null,
           homeLogo: ofMatch?.homeLogo || "",
           awayLogo: ofMatch?.awayLogo || "",
           bestOdds: {

@@ -6,29 +6,29 @@ window.MAMON_REALTIME = (() => {
 
   // ESPN League Code <-> MAMON League Slug map
   const ESPN_LEAGUES = [
-    { code: "eng.1", slug: "england-premier-league", name: "Premier League", country: "England", priority: 1 },
-    { code: "esp.1", slug: "spain-la-liga", name: "La Liga", country: "Spain", priority: 2 },
-    { code: "ita.1", slug: "italy-serie-a", name: "Serie A", country: "Italy", priority: 3 },
-    { code: "ger.1", slug: "germany-bundesliga", name: "Bundesliga", country: "Germany", priority: 4 },
-    { code: "fra.1", slug: "france-ligue-1", name: "Ligue 1", country: "France", priority: 5 },
+    { code: "eng.1", slug: "england-premier-league", name: "English Premier League", country: "England", priority: 1 },
+    { code: "esp.1", slug: "spain-la-liga", name: "Spanish La Liga", country: "Spain", priority: 2 },
+    { code: "ita.1", slug: "italy-serie-a", name: "Italian Serie A", country: "Italy", priority: 3 },
+    { code: "ger.1", slug: "germany-bundesliga", name: "German Bundesliga", country: "Germany", priority: 4 },
+    { code: "fra.1", slug: "france-ligue-1", name: "French Ligue 1", country: "France", priority: 5 },
     { code: "uefa.champions", slug: "uefa-champions-league", name: "UEFA Champions League", country: "Europe", priority: 6 },
     { code: "uefa.europa", slug: "uefa-europa-league", name: "UEFA Europa League", country: "Europe", priority: 7 },
     { code: "uefa.europa.conf", slug: "uefa-conference-league", name: "UEFA Conference League", country: "Europe", priority: 8 },
-    { code: "ned.1", slug: "netherlands-eredivisie", name: "Eredivisie", country: "Netherlands", priority: 9 },
-    { code: "por.1", slug: "portugal-primeira-liga", name: "Primeira Liga", country: "Portugal", priority: 10 },
-    { code: "tur.1", slug: "turkey-super-lig", name: "Süper Lig", country: "Turkey", priority: 11 },
+    { code: "ned.1", slug: "netherlands-eredivisie", name: "Dutch Eredivisie", country: "Netherlands", priority: 9 },
+    { code: "por.1", slug: "portugal-primeira-liga", name: "Portuguese Primeira Liga", country: "Portugal", priority: 10 },
+    { code: "tur.1", slug: "turkey-super-lig", name: "Turkish Süper Lig", country: "Turkey", priority: 11 },
     { code: "bel.1", slug: "belgium-first-division-a", name: "Belgian Pro League", country: "Belgium", priority: 12 },
     { code: "sco.1", slug: "scotland-premiership", name: "Scottish Premiership", country: "Scotland", priority: 13 },
-    { code: "eng.2", slug: "england-championship", name: "Championship", country: "England", priority: 14 },
-    { code: "ger.2", slug: "germany-2-bundesliga", name: "2. Bundesliga", country: "Germany", priority: 15 },
-    { code: "esp.2", slug: "spain-segunda-division", name: "LaLiga 2", country: "Spain", priority: 16 },
-    { code: "ita.2", slug: "italy-serie-b", name: "Serie B", country: "Italy", priority: 17 },
-    { code: "fra.2", slug: "france-ligue-2", name: "Ligue 2", country: "France", priority: 18 },
+    { code: "eng.2", slug: "england-championship", name: "English Championship", country: "England", priority: 14 },
+    { code: "ger.2", slug: "germany-2-bundesliga", name: "German 2. Bundesliga", country: "Germany", priority: 15 },
+    { code: "esp.2", slug: "spain-segunda-division", name: "Spanish LaLiga 2", country: "Spain", priority: 16 },
+    { code: "ita.2", slug: "italy-serie-b", name: "Italian Serie B", country: "Italy", priority: 17 },
+    { code: "fra.2", slug: "france-ligue-2", name: "French Ligue 2", country: "France", priority: 18 },
     { code: "sau.1", slug: "saudi-pro-league", name: "Saudi Pro League", country: "Saudi Arabia", priority: 19 },
-    { code: "usa.1", slug: "usa-mls", name: "MLS", country: "United States", priority: 20 },
-    { code: "mex.1", slug: "mexico-liga-mx", name: "Liga MX", country: "Mexico", priority: 21 },
-    { code: "bra.1", slug: "brazil-serie-a", name: "Brazil Serie A", country: "Brazil", priority: 22 },
-    { code: "arg.1", slug: "argentina-liga-profesional", name: "Liga Profesional", country: "Argentina", priority: 23 },
+    { code: "usa.1", slug: "usa-mls", name: "USA MLS", country: "USA", priority: 20 },
+    { code: "mex.1", slug: "mexico-liga-mx", name: "Mexican Liga MX", country: "Mexico", priority: 21 },
+    { code: "bra.1", slug: "brazil-serie-a", name: "Brazilian Serie A", country: "Brazil", priority: 22 },
+    { code: "arg.1", slug: "argentina-liga-profesional", name: "Argentine Liga Profesional", country: "Argentina", priority: 23 },
     { code: "rus.1", slug: "russia-premier-league", name: "Russian Premier League", country: "Russia", priority: 24 },
     { code: "chn.1", slug: "china-super-league", name: "Chinese Super League", country: "China", priority: 25 }
   ];
@@ -864,6 +864,147 @@ window.MAMON_REALTIME = (() => {
     return "all";
   }
 
+  const COUNTRY_FLAGS_MAP = {
+    England: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", Spain: "🇪🇸", Germany: "🇩🇪", Italy: "🇮🇹", France: "🇫🇷",
+    Netherlands: "🇳🇱", Portugal: "🇵🇹", Turkey: "🇹🇷", Belgium: "🇧🇪", Scotland: "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+    Europe: "🇪🇺", Africa: "🌍", CONCACAF: "🌎", "South America": "🌎", Asia: "🌏",
+    Ukraine: "🇺🇦", Colombia: "🇨🇴", "El Salvador": "🇸🇻", Brazil: "🇧🇷", Argentina: "🇦🇷",
+    Chile: "🇨🇱", Mexico: "🇲🇽", USA: "🇺🇸", "Saudi Arabia": "🇸🇦", Russia: "🇷🇺",
+    Sweden: "🇸🇪", Australia: "🇦🇺", Slovakia: "🇸🇰", Greece: "🇬🇷", Poland: "🇵🇱",
+    Austria: "🇦🇹", Switzerland: "🇨🇭", Denmark: "🇩🇰", Norway: "🇳🇴", Romania: "🇷🇴",
+    Croatia: "🇭🇷", Serbia: "🇷🇸", "Czech Republic": "🇨🇿", Japan: "🇯🇵", "South Korea": "🇰🇷",
+    China: "🇨🇳", "ATP Tour": "🎾", "ATP Challenger": "🎾", "ITF Tour": "🎾", International: "🌐"
+  };
+
+  function getCountryFlag(country) {
+    return COUNTRY_FLAGS_MAP[country] || "🏳️";
+  }
+
+  function isGenericStageName(str) {
+    return /^(group stage|league phase|knockout|quarterfinals?|semifinals?|final|round of \d+|prelims?|regular season|play-?offs?|opening round|league|international football|club football|global football|all)$/i.test(String(str || "").trim());
+  }
+
+  function resolveCanonicalLocation(rawCountry, rawLeague, sport = "football") {
+    const cleanC = String(rawCountry || "").trim();
+    const cleanL = String(rawLeague || "").trim();
+    const sp = String(sport || "football").toLowerCase();
+    const cAlias = {
+      uk: "England", "great britain": "England", eng: "England",
+      esp: "Spain", ger: "Germany", deu: "Germany", ita: "Italy", fra: "France",
+      ned: "Netherlands", holland: "Netherlands", por: "Portugal",
+      tur: "Turkey", turkiye: "Turkey", "türkiye": "Turkey",
+      bel: "Belgium", sco: "Scotland", ukr: "Ukraine", col: "Colombia",
+      slv: "El Salvador", bra: "Brazil", arg: "Argentina", chi: "Chile",
+      mex: "Mexico", "united states": "USA", usa: "USA", sau: "Saudi Arabia", ksa: "Saudi Arabia",
+      rus: "Russia", swe: "Sweden", aus: "Australia", svk: "Slovakia",
+      czechia: "Czech Republic", cze: "Czech Republic", uefa: "Europe", europe: "Europe",
+      caf: "Africa", africa: "Africa", concacaf: "CONCACAF", conmebol: "South America",
+      international: "International"
+    }[cleanC.toLowerCase()] || cleanC;
+
+    let country = cAlias;
+    let league = isGenericStageName(cleanL) ? "" : cleanL;
+
+    const rules = [
+      { re: /champions league/i, country: "Europe", league: "UEFA Champions League" },
+      { re: /europa league/i, country: "Europe", league: "UEFA Europa League" },
+      { re: /conference league/i, country: "Europe", league: "UEFA Conference League" },
+      { re: /uefa nations league|nations league/i, country: "Europe", league: "UEFA Nations League", ex: /concacaf/i },
+      { re: /concacaf nations league/i, country: "CONCACAF", league: "CONCACAF Nations League" },
+      { re: /gold cup/i, country: "CONCACAF", league: "CONCACAF Gold Cup" },
+      { re: /africa cup|afcon/i, country: "Africa", league: "Africa Cup of Nations Qualification" },
+      { re: /copa libertadores/i, country: "South America", league: "Copa Libertadores" },
+      { re: /copa sudamericana/i, country: "South America", league: "Copa Sudamericana" },
+      { re: /club friendl/i, country: "International", league: "Club Friendly Games" },
+      { re: /int\.?\s*friendl|international friendl/i, country: "International", league: "International Friendlies" },
+      { re: /world cup qual/i, country: "International", league: "FIFA World Cup Qualifiers" },
+      { re: /^(english\s+)?premier league$/i, country: "England", league: "English Premier League" },
+      { re: /^(efl\s+|english\s+)?championship$/i, country: "England", league: "English Championship" },
+      { re: /^(efl\s+|english\s+)?league one$/i, country: "England", league: "English League One" },
+      { re: /^(efl\s+|english\s+)?league two$/i, country: "England", league: "English League Two" },
+      { re: /^(english\s+)?national league$/i, country: "England", league: "English National League" },
+      { re: /\bfa cup\b/i, country: "England", league: "English FA Cup" },
+      { re: /\befl trophy\b|football league trophy/i, country: "England", league: "English EFL Trophy" },
+      { re: /\befl cup\b|carabao cup/i, country: "England", league: "English EFL Cup" },
+      { re: /^(spanish\s+)?la\s*liga$/i, country: "Spain", league: "Spanish La Liga" },
+      { re: /^(spanish\s+)?la\s*liga\s*2$|segunda divisi[oó]n/i, country: "Spain", league: "Spanish LaLiga 2" },
+      { re: /copa del rey/i, country: "Spain", league: "Spanish Copa del Rey" },
+      { re: /^(german\s+)?bundesliga$/i, country: "Germany", league: "German Bundesliga", ex: /2\.|austria/i },
+      { re: /^(german\s+)?2\.\s*bundesliga$/i, country: "Germany", league: "German 2. Bundesliga" },
+      { re: /^(german\s+)?3\.\s*liga$/i, country: "Germany", league: "German 3. Liga" },
+      { re: /dfb[\s-]*pokal/i, country: "Germany", league: "German DFB-Pokal" },
+      { re: /^(italian\s+)?serie a$/i, country: "Italy", league: "Italian Serie A", ex: /brazil|brasileir/i },
+      { re: /^(italian\s+)?serie b$/i, country: "Italy", league: "Italian Serie B" },
+      { re: /coppa italia/i, country: "Italy", league: "Italian Coppa Italia" },
+      { re: /^(french\s+)?ligue 1$/i, country: "France", league: "French Ligue 1" },
+      { re: /^(french\s+)?ligue 2$/i, country: "France", league: "French Ligue 2" },
+      { re: /coupe de france/i, country: "France", league: "French Coupe de France" },
+      { re: /^(dutch\s+)?eredivisie$/i, country: "Netherlands", league: "Dutch Eredivisie" },
+      { re: /primeira liga|liga portugal/i, country: "Portugal", league: "Portuguese Primeira Liga" },
+      { re: /belgian pro league|first division a|jupiler/i, country: "Belgium", league: "Belgian Pro League" },
+      { re: /scottish premiership|^premiership$/i, country: "Scotland", league: "Scottish Premiership" },
+      { re: /s[uü]per lig/i, country: "Turkey", league: "Turkish Süper Lig" },
+      { re: /^1\.\s*lig$/i, country: "Turkey", league: "Turkish 1. Lig" },
+      { re: /^2\.\s*lig$/i, country: "Turkey", league: "Turkish 2. Lig" },
+      { re: /^3\.\s*lig$/i, country: "Turkey", league: "Turkish 3. Lig" },
+      { re: /t[uü]rkiye kupas|turkish cup/i, country: "Turkey", league: "Turkish Cup" },
+      { re: /persha liha/i, country: "Ukraine", league: "Ukrainian Persha Liha" },
+      { re: /copa colombia/i, country: "Colombia", league: "Colombian Copa Colombia" },
+      { re: /primera divisi[oó]n de el salvador/i, country: "El Salvador", league: "El Salvador Primera Division" },
+      { re: /saudi pro league/i, country: "Saudi Arabia", league: "Saudi Pro League" },
+      { re: /\bmls\b|major league soccer/i, country: "USA", league: "USA MLS" },
+      { re: /liga mx/i, country: "Mexico", league: "Mexican Liga MX" },
+      { re: /brasileir|brazilian serie a/i, country: "Brazil", league: "Brazilian Serie A" },
+      { re: /russian premier/i, country: "Russia", league: "Russian Premier League" }
+    ];
+
+    if (league) {
+      for (const r of rules) {
+        if (r.ex && r.ex.test(league)) continue;
+        if (r.re.test(league)) {
+          if (!country || country === "International" || country === r.country) {
+            country = r.country;
+            league = r.league;
+          } else if (country === "Russia" && /premier league/i.test(league)) {
+            country = "Russia";
+            league = "Russian Premier League";
+          } else if (r.country === country) {
+            league = r.league;
+          }
+          break;
+        }
+      }
+    }
+
+    if (sp === "tennis" && league) {
+      if (/^atp challenger/i.test(league) && (!country || country === "International")) country = "ATP Challenger";
+      else if (/^atp/i.test(league) && (!country || country === "International")) country = "ATP Tour";
+      else if (/^itf/i.test(league) && (!country || country === "International")) country = "ITF Tour";
+    }
+    if (!country) country = "International";
+
+    const dem = {
+      England: "English", Spain: "Spanish", Germany: "German", Italy: "Italian", France: "French",
+      Netherlands: "Dutch", Portugal: "Portuguese", Turkey: "Turkish", Belgium: "Belgian", Scotland: "Scottish",
+      Ukraine: "Ukrainian", Colombia: "Colombian", Brazil: "Brazilian", Argentina: "Argentine",
+      Chile: "Chilean", Mexico: "Mexican", Russia: "Russian", Sweden: "Swedish", Australia: "Australian",
+      Slovakia: "Slovakian", Greece: "Greek", Poland: "Polish"
+    }[country];
+    if (
+      league &&
+      dem &&
+      !league.toLowerCase().includes(country.toLowerCase()) &&
+      !league.toLowerCase().includes(dem.toLowerCase()) &&
+      /^(premier league|championship|league one|league two|national league|cup|fa cup|1\. lig|2\. lig|3\. lig|serie [abc]|ligue [12]|super league|primera division|primera b|first division)$/i.test(league)
+    ) {
+      league = `${dem} ${league}`;
+    }
+
+    const finalLeague = league || (country !== "International" ? `${country} Competition` : (sp === "football" ? "International Football" : `${sp.toUpperCase()} Competition`));
+    const slug = `${country}-${finalLeague}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    return { country, league: finalLeague, slug, flag: getCountryFlag(country) };
+  }
+
   function mapLeagueMeta(espnCode, ev, scoreboardLeague = null) {
     const known = codeToMeta.get(espnCode);
     if (known) {
@@ -871,31 +1012,43 @@ window.MAMON_REALTIME = (() => {
       return {
         leagueSlug: known.slug,
         espnLeagueCode: espnCode,
-        leagueName: staticLg?.name || scoreboardLeague?.name || known.name,
-        leagueCountry: staticLg?.country || known.country,
+        leagueName: known.name || staticLg?.name || scoreboardLeague?.name,
+        leagueCountry: known.country || staticLg?.country,
         leagueLogo: scoreboardLeague?.logos?.[0]?.href || staticLg?.logo || "",
-        priority: known.priority
+        priority: known.priority,
+        needsLeagueResolution: false
       };
     }
 
     const rawSlug = ev.season?.slug || "";
-    const cleanedName = rawSlug
+    const cleanedSlugText = rawSlug
       .replace(/^\d{4}-\d{2}-/, "")
       .replace(/^\d{4}-/, "")
       .replace(/---/g, " ")
       .replace(/-/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim() || scoreboardLeague?.name || "Global Football";
+      .trim();
 
-    const slugGuess = rawSlug.replace(/^\d{4}-\d{2}-/, "").replace(/^\d{4}-/, "") || `espn-${espnCode}`;
-    const staticMatch = leagueBySlug.get(slugGuess);
+    const sbName = String(scoreboardLeague?.name || "").trim();
+    const candidateName = (!isGenericStageName(sbName) && sbName)
+      ? sbName
+      : (!isGenericStageName(cleanedSlugText) && cleanedSlugText)
+      ? cleanedSlugText
+      : (/gold-cup/i.test(rawSlug) ? "CONCACAF Gold Cup" : "");
+
+    const loc = resolveCanonicalLocation("", candidateName, "football");
+    const slugGuess = rawSlug.replace(/^\d{4}-\d{2}-/, "").replace(/^\d{4}-/, "");
+    const staticMatch = slugGuess && !isGenericStageName(cleanedSlugText) ? leagueBySlug.get(slugGuess) : null;
+    const isUnresolved = !candidateName || espnCode === "all";
+
     return {
-      leagueSlug: staticMatch ? staticMatch.slug : slugGuess,
+      leagueSlug: staticMatch ? staticMatch.slug : loc.slug,
       espnLeagueCode: espnCode,
-      leagueName: staticMatch?.name || scoreboardLeague?.name || cleanedName,
-      leagueCountry: staticMatch?.country || "International",
+      leagueName: staticMatch?.name || loc.league,
+      leagueCountry: staticMatch?.country || loc.country,
       leagueLogo: scoreboardLeague?.logos?.[0]?.href || staticMatch?.logo || "",
-      priority: 40
+      priority: 40,
+      needsLeagueResolution: isUnresolved
     };
   }
 
@@ -959,12 +1112,7 @@ window.MAMON_REALTIME = (() => {
     if (localDate < todayStr && rawState !== "in") return null;
 
     const espnCode = inferEspnCode(ev, forcedCode);
-    const homeCompPre = comp.competitors.find((c) => c.homeAway === "home") || comp.competitors[0];
-    const awayCompPre = comp.competitors.find((c) => c.homeAway === "away") || comp.competitors[1];
-    const stHomePre = standingsByTeamId.get(String(homeCompPre?.team?.id));
-    const stAwayPre = standingsByTeamId.get(String(awayCompPre?.team?.id));
-    const resolvedCode = espnCode !== "all" ? espnCode : (stHomePre?.espnCode || stAwayPre?.espnCode || "all");
-    const leagueMeta = mapLeagueMeta(resolvedCode, ev, scoreboardLeague);
+    const leagueMeta = mapLeagueMeta(espnCode, ev, scoreboardLeague);
 
     const homeComp = comp.competitors.find((c) => c.homeAway === "home") || comp.competitors[0];
     const awayComp = comp.competitors.find((c) => c.homeAway === "away") || comp.competitors[1];
@@ -1091,6 +1239,8 @@ window.MAMON_REALTIME = (() => {
       leagueSlug: leagueMeta.leagueSlug,
       leagueName: leagueMeta.leagueName,
       leagueCountry: leagueMeta.leagueCountry,
+      needsLeagueResolution: Boolean(leagueMeta.needsLeagueResolution),
+      leagueCountry: leagueMeta.leagueCountry,
       leagueLogo: leagueMeta.leagueLogo,
       priority: leagueMeta.priority,
       date: localDate,
@@ -1153,10 +1303,10 @@ window.MAMON_REALTIME = (() => {
     if (!ofm || !ofm.homeTeamName || !ofm.awayTeamName) return null;
     if (isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
 
-    const leagueName = ofm.leagueName || "International Football";
-    const leagueSlugGuess = leagueName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "international-football";
-    const staticLg = leagueBySlug.get(leagueSlugGuess) || LEAGUES.find((l) => l.name && leagueName.toLowerCase().includes(l.name.toLowerCase()));
-    const leagueSlug = staticLg?.slug || leagueSlugGuess;
+    const loc = resolveCanonicalLocation(ofm.country || "", ofm.leagueName || "International Football", "football");
+    const staticLg = leagueBySlug.get(loc.slug) || LEAGUES.find((l) => l.name && loc.league.toLowerCase().includes(l.name.toLowerCase()) && l.country === loc.country);
+    const leagueSlug = staticLg?.slug || loc.slug;
+    const leagueName = loc.league || staticLg?.name || ofm.leagueName || "International Football";
     const espnCode = slugToEspnCode.get(leagueSlug) || "all";
 
     const homeKey = `of-team-${normTeamMatchKey(ofm.homeTeamName).replace(/\s+/g, "-")}`;
@@ -1196,9 +1346,10 @@ window.MAMON_REALTIME = (() => {
       sportName: "Football",
       espnLeagueCode: espnCode,
       leagueSlug,
-      leagueName: staticLg?.name || leagueName,
-      leagueCountry: staticLg?.country || "International",
+      leagueName: loc.league || staticLg?.name,
+      leagueCountry: loc.country || staticLg?.country || "International",
       leagueLogo: staticLg?.logo || "",
+      needsLeagueResolution: false,
       priority: staticLg ? 8 : 22,
       date: localDate,
       isoDateTime: ofm.kickoffIso || new Date(koMs).toISOString(),
@@ -4114,7 +4265,9 @@ window.MAMON_REALTIME = (() => {
       const existingValues = Array.from(activeMap.values());
       for (const ofm of onefootballJson.matches) {
         if (ofm.status === "FT") {
-          if (ofm.isoDate === datesToFetch[0].iso && !finishedTodayMap.has(ofm.id)) {
+          const todayUtcIso = new Date().toISOString().slice(0, 10);
+          const isRecentFt = ofm.isoDate === datesToFetch[0].iso || ofm.isoDate === todayUtcIso || (Number(ofm.kickoffMs) >= Date.now() - 24 * 3600000);
+          if (isRecentFt && !finishedTodayMap.has(ofm.id)) {
             const ftObj = parseOneFootballMatch(ofm);
             if (ftObj) finishedTodayMap.set(ftObj.id, ftObj);
           }
@@ -4135,6 +4288,22 @@ window.MAMON_REALTIME = (() => {
           matchExisting.date = ofm.isoDate || matchExisting.date;
           matchExisting.hoursToKickoff = ofm.hoursToKickoff;
           matchExisting.isPreMatch5h = ofm.status === "SCHEDULED" && (ofm.kickoffMs - Date.now()) >= MIN_PREMATCH_LEAD_MS;
+          if (ofm.leagueName && !isGenericStageName(ofm.leagueName)) {
+            const shouldRelocate =
+              matchExisting.needsLeagueResolution ||
+              matchExisting.espnLeagueCode === "all" ||
+              isGenericStageName(matchExisting.leagueName) ||
+              !matchExisting.leagueCountry ||
+              matchExisting.leagueCountry === "International";
+            if (shouldRelocate) {
+              const ofLoc = resolveCanonicalLocation(ofm.country || matchExisting.leagueCountry, ofm.leagueName, "football");
+              const staticLg = leagueBySlug.get(ofLoc.slug);
+              matchExisting.leagueCountry = ofLoc.country;
+              matchExisting.leagueName = staticLg?.name || ofLoc.league;
+              matchExisting.leagueSlug = staticLg?.slug || ofLoc.slug;
+              matchExisting.needsLeagueResolution = false;
+            }
+          }
           if (ofm.status === "LIVE" && matchExisting.status !== "LIVE") {
             matchExisting.status = "LIVE";
             matchExisting.liveClock = ofm.displayTime || "LIVE";
@@ -4255,17 +4424,11 @@ window.MAMON_REALTIME = (() => {
   function computeRuninTip(row) {
     if (row?.tip?.badge) return row.tip;
     const ppg = Number(row?.ppg) || 0;
+    const playedPpg = Number(row?.playedPpg) || 1.35;
     const diffPct = Number(row?.diffPct) || 0;
     const remPpg = Number(row?.remainingPpg) || 0;
     const sport = String(row?.sport || "football").toLowerCase();
     const isTwoWay = sport === "tennis" || sport === "basketball" || sport === "darts";
-    const nextOpp = Array.isArray(row?.remainingOpponents) && row.remainingOpponents.length > 0 ? row.remainingOpponents[0] : null;
-    const oppV = nextOpp?.oppVenuePpg;
-    const hasWeakNext = typeof oppV === "number" && oppV <= 1.25;
-    const hasModNext = typeof oppV === "number" && oppV <= 1.45;
-    const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : `Next ${sport} match`;
-    const oppTxt = typeof oppV === "number" ? oppV.toFixed(2) : remPpg.toFixed(2);
-    const oddsTag = nextOpp?.odds ? ` @ ${Number(nextOpp.odds).toFixed(2)}` : "";
 
     if (Array.isArray(row?.remainingOpponents)) {
       row.remainingOpponents = row.remainingOpponents.map((op) => {
@@ -4301,10 +4464,40 @@ window.MAMON_REALTIME = (() => {
       });
     }
 
+    const immediate5 = Array.isArray(row?.remainingOpponents) ? row.remainingOpponents.slice(0, 5) : [];
+    const imm5Vals = immediate5.map((op) => op.oppVenuePpg).filter((v) => Number.isFinite(v));
+    const immediate5Ppg = imm5Vals.length > 0
+      ? Math.round((imm5Vals.reduce((s, v) => s + v, 0) / imm5Vals.length) * 100) / 100
+      : remPpg;
+    const immediate5DiffPct = playedPpg > 0 ? Math.round(((playedPpg - immediate5Ppg) / playedPpg) * 100) : diffPct;
+    const immediate5StrongCount = immediate5.filter((op) => op.tipClass === "is-strong").length;
+    if (row) {
+      row.immediate5Ppg = immediate5Ppg;
+      row.immediate5DiffPct = immediate5DiffPct;
+      row.immediate5StrongCount = immediate5StrongCount;
+      row.next5Verdict = immediate5DiffPct >= 5 ? "EASY_NEXT_5" : immediate5DiffPct <= -5 ? "TOUGH_NEXT_5" : "BALANCED_NEXT_5";
+    }
+
+    const nextOpp = immediate5.length > 0 ? immediate5[0] : null;
+    const oppV = nextOpp?.oppVenuePpg;
+    const hasWeakNext = typeof oppV === "number" && oppV <= 1.25;
+    const hasModNext = typeof oppV === "number" && oppV <= 1.45;
+    const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : `Next ${sport} match`;
+    const oppTxt = typeof oppV === "number" ? oppV.toFixed(2) : immediate5Ppg.toFixed(2);
+    const oddsTag = nextOpp?.odds ? ` @ ${Number(nextOpp.odds).toFixed(2)}` : "";
+
+    const immMeta = {
+      immediate5Ppg,
+      immediate5DiffPct,
+      immediate5StrongCount,
+      next5Verdict: immediate5DiffPct >= 5 ? "EASY_NEXT_5" : immediate5DiffPct <= -5 ? "TOUGH_NEXT_5" : "BALANCED_NEXT_5"
+    };
+
     if (ppg >= 1.85) {
       if (isTwoWay) {
         const market = nextOpp?.venue === "A" ? "Match Winner (2)" : "Match Winner (1)";
         return {
+          ...immMeta,
           isStrongPpg: true,
           tier: "STRONG_LOCK",
           badge: `💎 BACK WINNER (${nextOpp?.venue === "A" ? "2" : "1"})${oddsTag}`,
@@ -4316,6 +4509,7 @@ window.MAMON_REALTIME = (() => {
       if (hasModNext || diffPct >= 0) {
         const market = nextOpp?.venue === "A" ? "Away Win (2) / X2" : "Home Win (1)";
         return {
+          ...immMeta,
           isStrongPpg: true,
           tier: "STRONG_LOCK",
           badge: nextOpp?.venue === "A" ? "💎 BACK AWAY WIN (2) / X2" : "💎 BACK HOME WIN (1)",
@@ -4326,6 +4520,7 @@ window.MAMON_REALTIME = (() => {
       }
       const market = nextOpp?.venue === "A" ? "X2 / Draw No Bet" : "1X / Draw No Bet";
       return {
+        ...immMeta,
         isStrongPpg: true,
         tier: "STRONG_SAFE",
         badge: `🛡️ STRONG PPG · ${market.toUpperCase()}`,
@@ -4340,6 +4535,7 @@ window.MAMON_REALTIME = (() => {
         const favorWin = diffPct >= 0 || hasWeakNext;
         const market = favorWin ? `Winner (${nextOpp?.venue === "A" ? "2" : "1"})` : "+1.5 Handicap Safe";
         return {
+          ...immMeta,
           isStrongPpg: true,
           tier: favorWin ? "STRONG_EDGE" : "STRONG_CAUTION",
           badge: favorWin ? `💎 STRONG PPG · WIN (${nextOpp?.venue === "A" ? "2" : "1"})${oddsTag}` : `🛡️ STRONG PPG · SAFE HCAP`,
@@ -4351,6 +4547,7 @@ window.MAMON_REALTIME = (() => {
       if (diffPct >= 0 || hasWeakNext) {
         const market = nextOpp?.venue === "A" ? "Away or Draw (X2)" : "Home Win (1) / 1X";
         return {
+          ...immMeta,
           isStrongPpg: true,
           tier: "STRONG_EDGE",
           badge: nextOpp?.venue === "A" ? "💎 STRONG PPG · X2 / OVER 1.5" : "💎 STRONG PPG · HOME (1 / 1X)",
@@ -4361,6 +4558,7 @@ window.MAMON_REALTIME = (() => {
       }
       const market = nextOpp?.venue === "A" ? "Away +0.5 AH / X2" : "Home +0.5 AH / 1X";
       return {
+        ...immMeta,
         isStrongPpg: true,
         tier: "STRONG_CAUTION",
         badge: `🛡️ STRONG PPG · ${nextOpp?.venue === "A" ? "X2" : "1X"} SAFE`,
@@ -4372,6 +4570,7 @@ window.MAMON_REALTIME = (() => {
 
     if (ppg < 1.20) {
       return {
+        ...immMeta,
         isStrongPpg: false,
         tier: "WEAK_AVOID",
         badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
@@ -4382,6 +4581,7 @@ window.MAMON_REALTIME = (() => {
     }
 
     return {
+      ...immMeta,
       isStrongPpg: false,
       tier: "MID_SKIP",
       badge: "⏭️ SKIP WIN (<1.60 PPG)",
@@ -4569,6 +4769,9 @@ window.MAMON_REALTIME = (() => {
     hasMatchPlayedByTime,
     reconcilePlayedMatchesByTime,
     resolveKickoffMs,
+    resolveCanonicalLocation,
+    getCountryFlag,
+    isGenericStageName,
     matchTeamsSimilar,
     getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),
     slugToEspnCode

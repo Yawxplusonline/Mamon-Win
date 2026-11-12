@@ -1,4 +1,5 @@
 // Real-Time OneFootball (https://onefootball.com/en/matches) Schedule & Match Proxy for MAMON WIN
+const { isGenericStageName, canonicalizeLeagueAndCountry } = require("./leagueCatalog");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const CACHE_TTL_MS = 90 * 1000;
@@ -117,19 +118,27 @@ function parseOneFootballPage(html, fallbackDateIso) {
 
     if (node.sectionHeader?.title) {
       const t = String(node.sectionHeader.title || "").trim();
-      if (t && !/^all of .*(matches|football)/i.test(t) && !/^live matches$/i.test(t)) {
+      if (t && !/^all of .*(matches|football)/i.test(t) && !/^live matches$/i.test(t) && !isGenericStageName(t)) {
         currentCompHint = t;
       }
     }
 
-    const nextComp = node.competitionName || node.competition?.name || node.header?.title || localComp || currentCompHint;
+    const candComp = [node.competitionName, node.competition?.name, node.header?.title].find(
+      (x) => x && !isGenericStageName(String(x).trim())
+    );
+    const nextComp = candComp || (!isGenericStageName(localComp) ? localComp : currentCompHint);
 
     if (node.homeTeam && node.awayTeam && (node.kickoff || node.link || node.id)) {
       const te = (Array.isArray(node.trackingEvents) ? node.trackingEvents : []).find((x) => x?.typedServerParameter)?.typedServerParameter || {};
       const matchId = String(te.match_id?.value || node.id || (node.link || "").split("/").pop() || "").trim();
       const homeName = String(node.homeTeam?.name || "").trim();
       const awayName = String(node.awayTeam?.name || "").trim();
-      const compName = String(te.competition?.value || nextComp || "International Football").trim();
+      const teComp = String(te.competition?.value || "").trim();
+      const rawCompName = (!isGenericStageName(teComp) && teComp) ? teComp : (nextComp || "International Football");
+      const rawCountry = String(te.country?.value || node.competition?.country?.name || "").trim();
+      const canonicalLoc = canonicalizeLeagueAndCountry(rawCountry, rawCompName, "football");
+      const compName = canonicalLoc.league;
+      const countryName = canonicalLoc.country;
       const compId = String(te.competition_id?.value || "").trim();
 
       if (matchId && homeName && awayName && !isChaosOrWomen(compName, homeName, awayName)) {
@@ -169,6 +178,7 @@ function parseOneFootballPage(html, fallbackDateIso) {
             awayNorm: normTeamKey(awayName),
             homeLogo: node.homeTeam?.imageObject?.path || "",
             awayLogo: node.awayTeam?.imageObject?.path || "",
+            country: countryName,
             leagueName: compName,
             competitionId: compId,
             kickoffIso: new Date(koMs).toISOString(),

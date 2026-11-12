@@ -1,33 +1,40 @@
-// Public SoccerSTATS.com Run-In Analysis Proxy & Parser for MAMON WIN
-// Uses public Run-In Analysis tables (no logins/memberships):
-// Opponents Played (PLD PPG), Remaining Opponents (REM PPG), Played vs Remaining (% diff)
+// Public SoccerSTATS.com & Real-Time ESPN/OneFootball Big-Data Run-In Engine for MAMON WIN
+// Uses Run-In Analysis tables (no logins/memberships):
+// Opponents Played (PLD PPG), Immediate 5 & Remaining Opponents (REM PPG), Played vs Remaining (% diff)
 
+const { canonicalizeLeagueAndCountry } = require("./leagueCatalog");
+let onefootballApi = null;
+try {
+  onefootballApi = require("./onefootball");
+} catch {
+  onefootballApi = null;
+}
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const SOCCERSTATS_LEAGUES = [
-  { code: "england", espnCode: "eng.1", mamonSlug: "england-premier-league", name: "Premier League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/premier-league/england", priority: 1 },
-  { code: "spain", espnCode: "esp.1", mamonSlug: "spain-la-liga", name: "La Liga", country: "Spain", flag: "🇪🇸", path: "spain/laliga/spain", priority: 2 },
-  { code: "italy", espnCode: "ita.1", mamonSlug: "italy-serie-a", name: "Serie A", country: "Italy", flag: "🇮🇹", path: "italy/serie-a/italy", priority: 3 },
-  { code: "germany", espnCode: "ger.1", mamonSlug: "germany-bundesliga", name: "Bundesliga", country: "Germany", flag: "🇩🇪", path: "germany/bundesliga/germany", priority: 4 },
-  { code: "france", espnCode: "fra.1", mamonSlug: "france-ligue-1", name: "Ligue 1", country: "France", flag: "🇫🇷", path: "france/ligue-1/france", priority: 5 },
+  { code: "england", espnCode: "eng.1", mamonSlug: "england-premier-league", name: "English Premier League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/premier-league/england", priority: 1 },
+  { code: "spain", espnCode: "esp.1", mamonSlug: "spain-la-liga", name: "Spanish La Liga", country: "Spain", flag: "🇪🇸", path: "spain/laliga/spain", priority: 2 },
+  { code: "italy", espnCode: "ita.1", mamonSlug: "italy-serie-a", name: "Italian Serie A", country: "Italy", flag: "🇮🇹", path: "italy/serie-a/italy", priority: 3 },
+  { code: "germany", espnCode: "ger.1", mamonSlug: "germany-bundesliga", name: "German Bundesliga", country: "Germany", flag: "🇩🇪", path: "germany/bundesliga/germany", priority: 4 },
+  { code: "france", espnCode: "fra.1", mamonSlug: "france-ligue-1", name: "French Ligue 1", country: "France", flag: "🇫🇷", path: "france/ligue-1/france", priority: 5 },
   { code: "cleague", espnCode: "uefa.champions", mamonSlug: "uefa-champions-league", name: "UEFA Champions League", country: "Europe", flag: "🇪🇺", path: "uefa/champions-league/cleague", priority: 6 },
   { code: "eleague", espnCode: "uefa.europa", mamonSlug: "uefa-europa-league", name: "UEFA Europa League", country: "Europe", flag: "🇪🇺", path: "uefa/europa-league/eleague", priority: 7 },
   { code: "cfleague", espnCode: "uefa.europa.conf", mamonSlug: "uefa-conference-league", name: "UEFA Conference League", country: "Europe", flag: "🇪🇺", path: "uefa/conference-league/cfleague", priority: 8 },
-  { code: "netherlands", espnCode: "ned.1", mamonSlug: "netherlands-eredivisie", name: "Eredivisie", country: "Netherlands", flag: "🇳🇱", path: "netherlands/eredivisie/netherlands", priority: 9 },
-  { code: "portugal", espnCode: "por.1", mamonSlug: "portugal-primeira-liga", name: "Liga Portugal", country: "Portugal", flag: "🇵🇹", path: "portugal/liga-portugal/portugal", priority: 10 },
-  { code: "turkey", espnCode: "tur.1", mamonSlug: "turkey-super-lig", name: "Süper Lig", country: "Turkey", flag: "🇹🇷", path: "turkey/super-lig/turkey", priority: 11 },
-  { code: "belgium", espnCode: "bel.1", mamonSlug: "belgium-first-division-a", name: "Pro League", country: "Belgium", flag: "🇧🇪", path: "belgium/pro-league/belgium", priority: 12 },
+  { code: "netherlands", espnCode: "ned.1", mamonSlug: "netherlands-eredivisie", name: "Dutch Eredivisie", country: "Netherlands", flag: "🇳🇱", path: "netherlands/eredivisie/netherlands", priority: 9 },
+  { code: "portugal", espnCode: "por.1", mamonSlug: "portugal-primeira-liga", name: "Portuguese Primeira Liga", country: "Portugal", flag: "🇵🇹", path: "portugal/liga-portugal/portugal", priority: 10 },
+  { code: "turkey", espnCode: "tur.1", mamonSlug: "turkey-super-lig", name: "Turkish Süper Lig", country: "Turkey", flag: "🇹🇷", path: "turkey/super-lig/turkey", priority: 11 },
+  { code: "belgium", espnCode: "bel.1", mamonSlug: "belgium-first-division-a", name: "Belgian Pro League", country: "Belgium", flag: "🇧🇪", path: "belgium/pro-league/belgium", priority: 12 },
   { code: "scotland", espnCode: "sco.1", mamonSlug: "scotland-premiership", name: "Scottish Premiership", country: "Scotland", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", path: "scotland/premiership/scotland", priority: 13 },
-  { code: "england2", espnCode: "eng.2", mamonSlug: "england-championship", name: "Championship", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/championship/england2", priority: 14 },
-  { code: "germany2", espnCode: "ger.2", mamonSlug: "germany-2-bundesliga", name: "2. Bundesliga", country: "Germany", flag: "🇩🇪", path: "germany/2-bundesliga/germany2", priority: 15 },
-  { code: "spain2", espnCode: "esp.2", mamonSlug: "spain-segunda-division", name: "LaLiga 2", country: "Spain", flag: "🇪🇸", path: "spain/laliga2/spain2", priority: 16 },
-  { code: "italy2", espnCode: "ita.2", mamonSlug: "italy-serie-b", name: "Serie B", country: "Italy", flag: "🇮🇹", path: "italy/serie-b/italy2", priority: 17 },
-  { code: "france2", espnCode: "fra.2", mamonSlug: "france-ligue-2", name: "Ligue 2", country: "France", flag: "🇫🇷", path: "france/ligue-2/france2", priority: 18 },
-  { code: "brazil", espnCode: "bra.1", mamonSlug: "brazil-serie-a", name: "Brazil Serie A", country: "Brazil", flag: "🇧🇷", path: "brazil/serie-a/brazil", priority: 19 },
-  { code: "argentina", espnCode: "arg.1", mamonSlug: "argentina-liga-profesional", name: "Liga Profesional", country: "Argentina", flag: "🇦🇷", path: "argentina/liga-profesional/argentina", priority: 20 },
-  { code: "england3", espnCode: "eng.3", mamonSlug: "england-league-one", name: "League One", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/league-one/england3", priority: 21 },
-  { code: "england4", espnCode: "eng.4", mamonSlug: "england-league-two", name: "League Two", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/league-two/england4", priority: 22 },
-  { code: "england5", espnCode: "eng.5", mamonSlug: "england-national-league", name: "National League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/national-league/england5", priority: 23 },
+  { code: "england2", espnCode: "eng.2", mamonSlug: "england-championship", name: "English Championship", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/championship/england2", priority: 14 },
+  { code: "germany2", espnCode: "ger.2", mamonSlug: "germany-2-bundesliga", name: "German 2. Bundesliga", country: "Germany", flag: "🇩🇪", path: "germany/2-bundesliga/germany2", priority: 15 },
+  { code: "spain2", espnCode: "esp.2", mamonSlug: "spain-segunda-division", name: "Spanish LaLiga 2", country: "Spain", flag: "🇪🇸", path: "spain/laliga2/spain2", priority: 16 },
+  { code: "italy2", espnCode: "ita.2", mamonSlug: "italy-serie-b", name: "Italian Serie B", country: "Italy", flag: "🇮🇹", path: "italy/serie-b/italy2", priority: 17 },
+  { code: "france2", espnCode: "fra.2", mamonSlug: "france-ligue-2", name: "French Ligue 2", country: "France", flag: "🇫🇷", path: "france/ligue-2/france2", priority: 18 },
+  { code: "brazil", espnCode: "bra.1", mamonSlug: "brazil-serie-a", name: "Brazilian Serie A", country: "Brazil", flag: "🇧🇷", path: "brazil/serie-a/brazil", priority: 19 },
+  { code: "argentina", espnCode: "arg.1", mamonSlug: "argentina-liga-profesional", name: "Argentine Liga Profesional", country: "Argentina", flag: "🇦🇷", path: "argentina/liga-profesional/argentina", priority: 20 },
+  { code: "england3", espnCode: "eng.3", mamonSlug: "england-league-one", name: "English League One", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/league-one/england3", priority: 21 },
+  { code: "england4", espnCode: "eng.4", mamonSlug: "england-league-two", name: "English League Two", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/league-two/england4", priority: 22 },
+  { code: "england5", espnCode: "eng.5", mamonSlug: "england-national-league", name: "English National League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", path: "england/national-league/england5", priority: 23 },
   { code: "netherlands2", espnCode: "ned.2", mamonSlug: "netherlands-eerste-divisie", name: "Eerste Divisie", country: "Netherlands", flag: "🇳🇱", path: "netherlands/eerste-divisie/netherlands2", priority: 24 },
   { code: "portugal2", espnCode: "por.2", mamonSlug: "portugal-liga-2", name: "Liga Portugal 2", country: "Portugal", flag: "🇵🇹", path: "portugal/liga-portugal-2/portugal2", priority: 25 },
   { code: "scotland2", espnCode: "sco.2", mamonSlug: "scotland-championship", name: "Scottish Championship", country: "Scotland", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿", path: "scotland/championship/scotland2", priority: 26 },
@@ -244,24 +251,86 @@ function parseRuninHtml(html, leagueMeta) {
   };
 }
 
+const RUNIN_MONTH_MAP = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+function parseRuninFixtureTimestamp(op, nowMs = Date.now()) {
+  if (!op) return NaN;
+  if (Number.isFinite(op.timestamp) && op.timestamp > 1e12) return op.timestamp;
+  if (Number.isFinite(op.kickoffMs) && op.kickoffMs > 1e12) return op.kickoffMs;
+  const raw = String(op.date || "").trim();
+  if (!raw || raw === "undefined" || raw === "null") return NaN;
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+    const isoTs = Date.parse(raw.replace(" · ", "T"));
+    if (Number.isFinite(isoTs)) return isoTs;
+  }
+
+  let day = NaN;
+  let monIdx = NaN;
+  let year = NaN;
+  let hh = 15;
+  let mm = 0;
+
+  let m = raw.match(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)?\s*,?\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:\s+(\d{4}))?(?:\s+(\d{1,2}):(\d{2}))?/i);
+  if (m) {
+    day = parseInt(m[1], 10);
+    monIdx = RUNIN_MONTH_MAP[m[2].slice(0, 3).toLowerCase()];
+    year = m[3] ? parseInt(m[3], 10) : NaN;
+    if (m[4]) hh = parseInt(m[4], 10);
+    if (m[5]) mm = parseInt(m[5], 10);
+  } else {
+    m = raw.match(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)?\s*,?\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2})(?:,?\s*(\d{4}))?(?:\s+(\d{1,2}):(\d{2}))?/i);
+    if (m) {
+      monIdx = RUNIN_MONTH_MAP[m[1].slice(0, 3).toLowerCase()];
+      day = parseInt(m[2], 10);
+      year = m[3] ? parseInt(m[3], 10) : NaN;
+      if (m[4]) hh = parseInt(m[4], 10);
+      if (m[5]) mm = parseInt(m[5], 10);
+    }
+  }
+
+  if (Number.isFinite(day) && Number.isFinite(monIdx)) {
+    if (Number.isFinite(year)) {
+      return Date.UTC(year, monIdx, day, hh, mm);
+    }
+    const curYear = new Date(nowMs).getUTCFullYear();
+    let candidate = Date.UTC(curYear, monIdx, day, hh, mm);
+    if (candidate < nowMs - 14 * 86400000) {
+      candidate = Date.UTC(curYear + 1, monIdx, day, hh, mm);
+    }
+    return candidate;
+  }
+
+  const fallbackTs = Date.parse(raw.replace(" · ", "T"));
+  return Number.isFinite(fallbackTs) && fallbackTs > 1e12 ? fallbackTs : NaN;
+}
+
+function sortRemainingChronologically(remList) {
+  if (!Array.isArray(remList) || remList.length === 0) return remList || [];
+  const nowMs = Date.now();
+  const stamped = remList.map((op) => {
+    const ts = parseRuninFixtureTimestamp(op, nowMs);
+    return Number.isFinite(ts) ? { ...op, timestamp: ts } : op;
+  });
+  return stamped.sort((a, b) => {
+    const ta = Number.isFinite(a.timestamp) ? a.timestamp : NaN;
+    const tb = Number.isFinite(b.timestamp) ? b.timestamp : NaN;
+    const va = Number.isFinite(ta);
+    const vb = Number.isFinite(tb);
+    if (va && vb) return ta - tb;
+    if (va !== vb) return va ? -1 : 1;
+    return 0;
+  });
+}
+
 function computeRuninTip(row) {
   const ppg = Number(row.ppg) || 0;
+  const playedPpg = Number(row.playedPpg) || 1.35;
   const diffPct = Number(row.diffPct) || 0;
   const remPpg = Number(row.remainingPpg) || 0;
-  const nextOpp = Array.isArray(row.remainingOpponents) && row.remainingOpponents.length > 0
-    ? row.remainingOpponents[0]
-    : null;
 
-  const isStrongPpg = ppg >= 1.60;
-  const oppV = nextOpp?.oppVenuePpg;
-  const hasWeakNextOpp = typeof oppV === "number" && oppV <= 1.25;
-  const hasModerateNextOpp = typeof oppV === "number" && oppV <= 1.45;
-  const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent} (${nextOpp.venue})` : "Next league match";
-  const nextOppPpgTxt = typeof oppV === "number" ? oppV.toFixed(2) : remPpg.toFixed(2);
-
-  // Enrich next 5 upcoming opponents with fixture-level Strong PPG tips
-  if (Array.isArray(row.remainingOpponents)) {
-    row.remainingOpponents = row.remainingOpponents.map((op) => {
+  if (Array.isArray(row.remainingOpponents) && row.remainingOpponents.length > 0) {
+    row.remainingOpponents = sortRemainingChronologically(row.remainingOpponents).map((op) => {
       const ov = typeof op.oppVenuePpg === "number" ? op.oppVenuePpg : remPpg;
       const gap = ppg - ov;
       let matchTip = "⏭️ Skip (<1.60 PPG)";
@@ -285,70 +354,105 @@ function computeRuninTip(row) {
     });
   }
 
+  // Real-time Big-Data Assessment across the team's IMMEDIATE 5 upcoming matches
+  const immediate5 = Array.isArray(row.remainingOpponents) ? row.remainingOpponents.slice(0, 5) : [];
+  const imm5Vals = immediate5.map((op) => op.oppVenuePpg).filter((v) => Number.isFinite(v));
+  const immediate5Ppg = imm5Vals.length > 0
+    ? Math.round((imm5Vals.reduce((s, v) => s + v, 0) / imm5Vals.length) * 100) / 100
+    : remPpg;
+  const immediate5DiffPct = playedPpg > 0 ? Math.round(((playedPpg - immediate5Ppg) / playedPpg) * 100) : diffPct;
+  const immediate5StrongCount = immediate5.filter((op) => op.tipClass === "is-strong").length;
+  row.immediate5Ppg = immediate5Ppg;
+  row.immediate5DiffPct = immediate5DiffPct;
+  row.immediate5StrongCount = immediate5StrongCount;
+  row.next5Verdict = immediate5DiffPct >= 5 ? "EASY_NEXT_5" : immediate5DiffPct <= -5 ? "TOUGH_NEXT_5" : "BALANCED_NEXT_5";
+
+  const nextOpp = immediate5.length > 0 ? immediate5[0] : null;
+  const oppV = nextOpp?.oppVenuePpg;
+  const hasWeakNextOpp = typeof oppV === "number" && oppV <= 1.25;
+  const hasModerateNextOpp = typeof oppV === "number" && oppV <= 1.45;
+  const nextWhen = nextOpp?.date ? ` (${nextOpp.date})` : "";
+  const nextLabel = nextOpp ? `${nextOpp.venue === "H" ? "vs" : "@"} ${nextOpp.opponent}${nextWhen}` : "Next league match";
+  const nextOppPpgTxt = typeof oppV === "number" ? oppV.toFixed(2) : immediate5Ppg.toFixed(2);
+  const next5Tag = immediate5.length > 0 ? ` · Next 5: ${immediate5StrongCount}/${immediate5.length} strong (Avg ${immediate5Ppg.toFixed(2)})` : "";
+
+  const immMeta = {
+    immediate5Ppg,
+    immediate5DiffPct,
+    immediate5StrongCount,
+    next5Verdict: row.next5Verdict
+  };
+
   if (ppg >= 1.85) {
-    if (hasModerateNextOpp || diffPct >= 0) {
+    if (hasModerateNextOpp || immediate5DiffPct >= 0 || diffPct >= 0) {
       const market = nextOpp?.venue === "A" ? "Away Win (2) / X2" : "Home Win (1)";
       return {
+        ...immMeta,
         isStrongPpg: true,
         tier: "STRONG_LOCK",
         badge: nextOpp?.venue === "A" ? "💎 BACK AWAY WIN (2) / X2" : "💎 BACK HOME WIN (1)",
         market,
         nextFixtureTip: `${nextLabel} → Back ${market}`,
-        reason: `Strong ${ppg.toFixed(2)} PPG (${row.diffLabel} run-in) vs opp ${nextOppPpgTxt} venue PPG.`
+        reason: `Strong ${ppg.toFixed(2)} PPG vs opp ${nextOppPpgTxt} venue PPG${next5Tag}.`
       };
     }
     const market = nextOpp?.venue === "A" ? "X2 / Draw No Bet" : "1X / Draw No Bet";
     return {
+      ...immMeta,
       isStrongPpg: true,
       tier: "STRONG_SAFE",
       badge: `🛡️ STRONG PPG · ${market.toUpperCase()}`,
       market,
       nextFixtureTip: `${nextLabel} → Safe ${market}`,
-      reason: `Elite ${ppg.toFixed(2)} PPG facing tough ${nextOppPpgTxt} venue opponent (${row.diffLabel} REM).`
+      reason: `Elite ${ppg.toFixed(2)} PPG vs tough ${nextOppPpgTxt} venue opponent${next5Tag}.`
     };
   }
 
   if (ppg >= 1.60) {
-    if (diffPct >= 0 || hasWeakNextOpp) {
+    if (immediate5DiffPct >= 0 || diffPct >= 0 || hasWeakNextOpp) {
       const market = nextOpp?.venue === "A" ? "Away or Draw (X2)" : "Home Win (1) / 1X";
       return {
+        ...immMeta,
         isStrongPpg: true,
         tier: "STRONG_EDGE",
         badge: nextOpp?.venue === "A" ? "💎 STRONG PPG · X2 / OVER 1.5" : "💎 STRONG PPG · HOME (1 / 1X)",
         market,
         nextFixtureTip: `${nextLabel} → ${market}`,
-        reason: `Strong ${ppg.toFixed(2)} PPG with ${diffPct >= 0 ? "favorable" : "manageable"} upcoming fixture (${nextOppPpgTxt} opp PPG).`
+        reason: `Strong ${ppg.toFixed(2)} PPG with ${immediate5DiffPct >= 0 ? "favorable" : "manageable"} immediate 5 (${nextOppPpgTxt} opp PPG)${next5Tag}.`
       };
     }
     const market = nextOpp?.venue === "A" ? "Away +0.5 AH / X2" : "Home +0.5 AH / 1X";
     return {
+      ...immMeta,
       isStrongPpg: true,
       tier: "STRONG_CAUTION",
       badge: `🛡️ STRONG PPG · ${nextOpp?.venue === "A" ? "X2" : "1X"} SAFE`,
       market,
       nextFixtureTip: `${nextLabel} → Safe ${market}`,
-      reason: `Strong ${ppg.toFixed(2)} PPG, but remaining fixtures are tougher (${row.diffLabel}).`
+      reason: `Strong ${ppg.toFixed(2)} PPG, tougher immediate 5 (${immediate5DiffPct}%)${next5Tag}.`
     };
   }
 
   if (ppg < 1.20) {
     return {
+      ...immMeta,
       isStrongPpg: false,
       tier: "WEAK_AVOID",
       badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
       market: "Avoid Backing (Lay)",
       nextFixtureTip: `${nextLabel} → Avoid backing ${row.team}`,
-      reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60). Only back >=1.60 PPG opponents.`
+      reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60)${next5Tag}.`
     };
   }
 
   return {
+    ...immMeta,
     isStrongPpg: false,
     tier: "MID_SKIP",
     badge: `⏭️ SKIP WIN (<1.60 PPG)`,
     market: "No Strong PPG Edge",
     nextFixtureTip: `${nextLabel} → Skip straight win`,
-    reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold.`
+    reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold${next5Tag}.`
   };
 }
 
@@ -539,11 +643,19 @@ function mergeScorelinesAndTipsIntoRows(rows, scoreRecords) {
       }
 
       if (Array.isArray(row.remainingOpponents) && teamUpcoming.length > 0) {
+        const usedUpcomingIdx = new Set();
         row.remainingOpponents = row.remainingOpponents.map((op) => {
           const opNorm = normalizeTeamKey(op.opponent);
-          const found = teamUpcoming.find((u) => u.venue === op.venue && teamNamesLooselyMatch(u.oppNorm, opNorm))
-            || teamUpcoming.find((u) => teamNamesLooselyMatch(u.oppNorm, opNorm));
-          return found?.date ? { ...op, date: found.date } : op;
+          let matchIdx = teamUpcoming.findIndex((u, idx) => !usedUpcomingIdx.has(idx) && u.venue === op.venue && teamNamesLooselyMatch(u.oppNorm, opNorm));
+          if (matchIdx === -1 && !op.venue) {
+            matchIdx = teamUpcoming.findIndex((u, idx) => !usedUpcomingIdx.has(idx) && teamNamesLooselyMatch(u.oppNorm, opNorm));
+          }
+          if (matchIdx !== -1) {
+            usedUpcomingIdx.add(matchIdx);
+            const found = teamUpcoming[matchIdx];
+            if (found?.date) return { ...op, date: found.date };
+          }
+          return op;
         });
       }
     }
@@ -719,60 +831,131 @@ async function fetchEspnRuninFallback(meta, options = {}) {
     } catch {
       // Scoreboard enrichment is optional
     }
+  }
 
-    // Gentle 10-team alternating schedule fetch (2 small batches of 5) for completed scorelines on single-league fallback
-    const sampleTeams = teamsList.filter((_, idx) => idx % 2 === 0).slice(0, 10);
-    const seenMatchIds = new Set();
-    for (let i = 0; i < sampleTeams.length; i += 5) {
-      const slice = sampleTeams.slice(i, i + 5);
-      const resBatch = await Promise.allSettled(
-        slice.map((t) => fetchJsonWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/soccer/${meta.espnCode}/teams/${t.id}/schedule`, 3200))
+  // Real-time Big-Data Schedule Assessment: fetch BOTH completed history + future chronological schedules (?fixture=true) across league teams
+  const seenPastIds = new Set();
+  const seenFutIds = new Set();
+  const teamIdsNeedingSchedule = teamsList.filter((_, idx) => idx % 2 === 0 || idx === teamsList.length - 1).slice(0, fastMatrixOnly ? 10 : 14);
+
+  const ingestTeamScheduleBatch = async (teamBatch, includePast = true) => {
+    const reqs = [];
+    for (const t of teamBatch) {
+      reqs.push(
+        fetchJsonWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/soccer/${meta.espnCode}/teams/${t.id}/schedule?fixture=true`, 3600)
+          .then((j) => ({ kind: "FUT", j }))
+          .catch(() => ({ kind: "FUT", j: null }))
       );
-      for (const r of resBatch) {
-        if (r.status !== "fulfilled" || !Array.isArray(r.value?.events)) continue;
-        for (const ev of r.value.events) {
-          const evId = String(ev.id || "");
-          if (evId && seenMatchIds.has(evId)) continue;
-          const evSlug = String(ev?.league?.slug || "").toLowerCase();
-          if (evSlug && evSlug !== meta.espnCode.toLowerCase()) continue;
-          const comp = ev?.competitions?.[0];
-          if (!comp || !(comp.status?.type?.completed || comp.status?.type?.state === "post")) continue;
-          const comps = comp.competitors || [];
-          if (comps.length < 2) continue;
-          const c0 = comps[0];
-          const c1 = comps[1];
-          const id0 = String(c0.id || c0.team?.id || "");
-          const id1 = String(c1.id || c1.team?.id || "");
-          if (!teamMap.has(id0) || !teamMap.has(id1)) continue;
-          if (evId) seenMatchIds.add(evId);
-          const n0 = String(c0.team?.displayName || c0.team?.name || teamMap.get(id0)?.team || "").trim();
-          const n1 = String(c1.team?.displayName || c1.team?.name || teamMap.get(id1)?.team || "").trim();
-          const v0 = String(c0.homeAway || "").toLowerCase() === "away" ? "A" : "H";
-          const v1 = v0 === "H" ? "A" : "H";
+      if (includePast) {
+        reqs.push(
+          fetchJsonWithTimeout(`https://site.api.espn.com/apis/site/v2/sports/soccer/${meta.espnCode}/teams/${t.id}/schedule`, 3600)
+            .then((j) => ({ kind: "PAST", j }))
+            .catch(() => ({ kind: "PAST", j: null }))
+        );
+      }
+    }
+    const resBatch = await Promise.all(reqs);
+    const nowMs = Date.now();
+
+    for (const { kind, j } of resBatch) {
+      if (!j || !Array.isArray(j.events)) continue;
+      for (const ev of j.events) {
+        const evId = String(ev.id || "");
+        const evSlug = String(ev?.league?.slug || "").toLowerCase();
+        if (evSlug && evSlug !== meta.espnCode.toLowerCase()) continue;
+        const comp = ev?.competitions?.[0];
+        const comps = comp?.competitors || [];
+        if (comps.length < 2) continue;
+        const c0 = comps[0];
+        const c1 = comps[1];
+        const id0 = String(c0.id || c0.team?.id || "");
+        const id1 = String(c1.id || c1.team?.id || "");
+        if (!teamMap.has(id0) || !teamMap.has(id1)) continue;
+        const n0 = String(c0.team?.displayName || c0.team?.name || teamMap.get(id0)?.team || "").trim();
+        const n1 = String(c1.team?.displayName || c1.team?.name || teamMap.get(id1)?.team || "").trim();
+        const v0 = String(c0.homeAway || "").toLowerCase() === "away" ? "A" : "H";
+        const v1 = v0 === "H" ? "A" : "H";
+        const isDone = Boolean(comp.status?.type?.completed || comp.status?.type?.state === "post");
+        const koMs = Date.parse(ev.date || "");
+        const dateTimeLabel = Number.isFinite(koMs)
+          ? `${new Date(koMs).toISOString().slice(0, 10)} ${new Date(koMs).toISOString().slice(11, 16)}`
+          : String(ev.date || "").slice(0, 10);
+
+        if (kind === "PAST" && isDone) {
+          if (evId && seenPastIds.has(evId)) continue;
           const s0 = Number(c0.score?.value ?? c0.score ?? NaN);
           const s1 = Number(c1.score?.value ?? c1.score ?? NaN);
           if (!Number.isFinite(s0) || !Number.isFinite(s1)) continue;
+          if (evId) seenPastIds.add(evId);
           const dateStr = String(ev.date || "").slice(0, 10);
-
           if (!playedByTeam.has(id0)) playedByTeam.set(id0, []);
           playedByTeam.get(id0).push({
-            venue: v0, oppId: id1, oppName: n1, date: dateStr,
+            venue: v0, oppId: id1, oppName: n1, date: dateStr, timestamp: Number.isFinite(koMs) ? koMs : 0,
             teamGoals: s0, oppGoals: s1, score: `${s0}-${s1}`, result: s0 > s1 ? "W" : s0 === s1 ? "D" : "L"
           });
           if (!playedByTeam.has(id1)) playedByTeam.set(id1, []);
           playedByTeam.get(id1).push({
-            venue: v1, oppId: id0, oppName: n0, date: dateStr,
+            venue: v1, oppId: id0, oppName: n0, date: dateStr, timestamp: Number.isFinite(koMs) ? koMs : 0,
             teamGoals: s1, oppGoals: s0, score: `${s1}-${s0}`, result: s1 > s0 ? "W" : s1 === s0 ? "D" : "L"
+          });
+        } else if (!isDone && (!Number.isFinite(koMs) || koMs >= nowMs - 110 * 60000)) {
+          if (evId && seenFutIds.has(evId)) continue;
+          if (evId) seenFutIds.add(evId);
+          if (!futureByTeam.has(id0)) futureByTeam.set(id0, []);
+          futureByTeam.get(id0).push({
+            venue: v0, oppId: id1, oppName: n1, date: dateTimeLabel, timestamp: Number.isFinite(koMs) ? koMs : 0
+          });
+          if (!futureByTeam.has(id1)) futureByTeam.set(id1, []);
+          futureByTeam.get(id1).push({
+            venue: v1, oppId: id0, oppName: n0, date: dateTimeLabel, timestamp: Number.isFinite(koMs) ? koMs : 0
           });
         }
       }
+    }
+  };
+
+  for (let i = 0; i < teamIdsNeedingSchedule.length; i += 6) {
+    await ingestTeamScheduleBatch(teamIdsNeedingSchedule.slice(i, i + 6), !fastMatrixOnly);
+  }
+
+  // Cover any remaining teams still missing >= 5 real upcoming matches cleanly
+  const uncoveredTeams = teamsList.filter((t) => (futureByTeam.get(t.id)?.length || 0) < 5);
+  for (let i = 0; i < uncoveredTeams.length; i += 6) {
+    await ingestTeamScheduleBatch(uncoveredTeams.slice(i, i + 6), false);
+  }
+
+  // Merge live OneFootball schedule entries into futureByTeam when kicking off soon
+  if (onefootballApi?.fetchOneFootballSchedule) {
+    try {
+      const ofSched = await onefootballApi.fetchOneFootballSchedule(false);
+      const ofLeagueMatches = (ofSched?.matches || []).filter(
+        (m) => m.status === "SCHEDULED" && (m.leagueName || "").toLowerCase().includes(meta.name.replace(/^(english|spanish|german|italian|french|dutch|portuguese|turkish|scottish|belgian)\s+/i, "").toLowerCase())
+      );
+      for (const om of ofLeagueMatches) {
+        const hTeam = teamsList.find((t) => teamNamesLooselyMatch(t.teamNormalized, om.homeNorm || normalizeTeamKey(om.homeTeamName)));
+        const aTeam = teamsList.find((t) => teamNamesLooselyMatch(t.teamNormalized, om.awayNorm || normalizeTeamKey(om.awayTeamName)));
+        if (hTeam && aTeam) {
+          const dtLbl = `${om.isoDate} ${om.kickoffUtc}`;
+          const pushIfMissing = (myId, oppTeam, venue) => {
+            if (!futureByTeam.has(myId)) futureByTeam.set(myId, []);
+            const arr = futureByTeam.get(myId);
+            if (!arr.some((x) => x.oppId === oppTeam.id && Math.abs((x.timestamp || 0) - om.kickoffMs) < 36 * 3600000)) {
+              arr.push({ venue, oppId: oppTeam.id, oppName: oppTeam.team, date: dtLbl, timestamp: om.kickoffMs });
+            }
+          };
+          pushIfMissing(hTeam.id, aTeam, "H");
+          pushIfMissing(aTeam.id, hTeam, "A");
+        }
+      }
+    } catch {
+      // OneFootball schedule enrichment optional
     }
   }
 
   // Pass 2: Build SoccerSTATS-compatible rows using venue-weighted opponent PPG
   const rows = teamsList.map((team) => {
-    const rawPlayed = playedByTeam.get(team.id) || [];
-    const rawFuture = futureByTeam.get(team.id) || [];
+    const rawPlayed = [...(playedByTeam.get(team.id) || [])].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    const rawFuture = sortRemainingChronologically(futureByTeam.get(team.id) || []);
 
     let playedOpponents = rawPlayed
       .filter((x) => x.oppName)
@@ -804,6 +987,7 @@ async function fetchEspnRuninFallback(meta, options = {}) {
           opponent: x.oppName,
           oppVenuePpg: Math.round(oppVenuePpg * 100) / 100,
           ...(x.date ? { date: x.date } : {}),
+          ...(x.timestamp ? { timestamp: x.timestamp } : {}),
           label: `(${x.venue}) ${x.venue === "H" ? "vs" : "at"} ${x.oppName}`,
           ppgLabel: `PPG ${x.venue === "H" ? "away" : "at home"} = ${oppVenuePpg.toFixed(2)}`
         };
@@ -1018,7 +1202,7 @@ async function fetchTopLeaguesRunin(forceRefresh = false) {
     playedCount: row.playedOpponents.length,
     remainingCount: row.remainingOpponents.length,
     playedOpponents: row.playedOpponents.slice(-6),
-    remainingOpponents: row.remainingOpponents.slice(0, 6)
+    remainingOpponents: row.remainingOpponents.slice(0, 10)
   });
 
   for (const res of results) {

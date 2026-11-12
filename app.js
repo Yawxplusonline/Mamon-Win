@@ -491,23 +491,146 @@
   function getLeagueInfo(mOrSlug) {
     if (typeof mOrSlug === "object" && mOrSlug !== null) {
       const staticLg = leagueBySlug.get(mOrSlug.leagueSlug);
+      const rawCountry = mOrSlug.leagueCountry || staticLg?.country || "";
+      const rawName = mOrSlug.leagueName || staticLg?.name || mOrSlug.leagueSlug;
+      const loc = RT?.resolveCanonicalLocation
+        ? RT.resolveCanonicalLocation(rawCountry, rawName, mOrSlug.sport || "football")
+        : { country: rawCountry || "International", league: rawName, slug: mOrSlug.leagueSlug, flag: "🏳️" };
+      const finalCountry = loc.country || rawCountry || "International";
+      const finalName = (mOrSlug.espnLeagueCode && mOrSlug.espnLeagueCode !== "all" && !RT?.isGenericStageName?.(rawName))
+        ? (loc.league || rawName)
+        : (loc.league || rawName);
       return {
-        slug: mOrSlug.leagueSlug,
-        href: `/competitions/${mOrSlug.leagueSlug}`,
-        name: mOrSlug.leagueName || staticLg?.name || mOrSlug.leagueSlug,
-        country: mOrSlug.leagueCountry || staticLg?.country || "Football",
+        slug: mOrSlug.leagueSlug || loc.slug,
+        href: `/competitions/${mOrSlug.leagueSlug || loc.slug}`,
+        name: finalName,
+        country: finalCountry,
+        flag: loc.flag || (RT?.getCountryFlag ? RT.getCountryFlag(finalCountry) : "🏳️"),
         logo: mOrSlug.leagueLogo || staticLg?.logo || ""
       };
     }
     const staticLg = leagueBySlug.get(mOrSlug);
-    if (staticLg) return staticLg;
+    if (staticLg) return { ...staticLg, flag: RT?.getCountryFlag ? RT.getCountryFlag(staticLg.country) : "🏳️" };
     return {
       slug: mOrSlug,
       href: `/competitions/${mOrSlug}`,
       name: String(mOrSlug).replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      country: "Football",
+      country: "International",
+      flag: "🌐",
       logo: ""
     };
+  }
+
+  const COUNTRY_FLAGCDN_ISO = {
+    "England": "gb-eng", "Scotland": "gb-sct", "Wales": "gb-wls", "Northern Ireland": "gb-nir",
+    "United Kingdom": "gb", "Spain": "es", "Germany": "de", "Italy": "it", "France": "fr",
+    "Portugal": "pt", "Netherlands": "nl", "Belgium": "be", "Turkey": "tr", "Turkiye": "tr",
+    "Brazil": "br", "Argentina": "ar", "Colombia": "co", "Uruguay": "uy", "Venezuela": "ve",
+    "Chile": "cl", "Peru": "pe", "Ecuador": "ec", "Paraguay": "py", "Mexico": "mx",
+    "USA": "us", "United States": "us", "Canada": "ca", "El Salvador": "sv", "Costa Rica": "cr",
+    "Australia": "au", "Japan": "jp", "South Korea": "kr", "Korea Republic": "kr", "China": "cn",
+    "Saudi Arabia": "sa", "Russia": "ru", "Ukraine": "ua", "Poland": "pl", "Sweden": "se",
+    "Norway": "no", "Denmark": "dk", "Finland": "fi", "Austria": "at", "Switzerland": "ch",
+    "Greece": "gr", "Czechia": "cz", "Czech Republic": "cz", "Croatia": "hr", "Serbia": "rs",
+    "Romania": "ro", "Hungary": "hu", "Bulgaria": "bg", "Slovakia": "sk", "Slovenia": "si",
+    "Israel": "il", "Egypt": "eg", "Morocco": "ma", "Nigeria": "ng", "Ghana": "gh",
+    "South Africa": "za", "Tunisia": "tn", "Algeria": "dz", "Cameroon": "cm", "Senegal": "sn",
+    "Europe": "eu"
+  };
+
+  function countryFlagBadgeHtml(country, fallbackFlag = "🌐", compact = false) {
+    const cName = String(country || "International").trim();
+    const iso = COUNTRY_FLAGCDN_ISO[cName] || "";
+    const codeMap = {
+      "England": "ENG", "Scotland": "SCO", "Wales": "WAL", "Europe": "EUR",
+      "Africa": "AFR", "CONCACAF": "CON", "South America": "SAM", "Asia": "ASI",
+      "International": "INT", "International Clubs": "CLB"
+    };
+    const badgeTxt = codeMap[cName] || cName.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase() || "INT";
+    const smCls = compact ? " is-sm" : "";
+    if (iso) {
+      return `<span class="country-flag-wrap"><img class="country-flag-img${smCls}" src="https://flagcdn.com/w40/${iso}.png" alt="${escapeHtml(cName)}" loading="lazy" onerror="this.style.display='none';if(this.nextElementSibling)this.nextElementSibling.style.display='inline-flex';"><span class="country-iso-badge${smCls}" style="display:none;">${escapeHtml(badgeTxt)}</span></span>`;
+    }
+    return `<span class="country-iso-badge${smCls}">${escapeHtml(badgeTxt)}</span>`;
+  }
+
+  function renderCountryGroupedLeagues(matchItems, isCompletedMode = false) {
+    const COUNTRY_PRIORITY = [
+      "England", "Spain", "Germany", "Italy", "France", "Netherlands", "Portugal", "Turkey",
+      "Scotland", "Belgium", "Europe", "Africa", "CONCACAF", "South America",
+      "Brazil", "Argentina", "USA", "Mexico", "Saudi Arabia", "Russia", "Ukraine", "Colombia",
+      "Sweden", "Australia", "Poland", "Austria", "Switzerland", "Greece", "Denmark", "Norway",
+      "International"
+    ];
+
+    const countryMap = new Map();
+    for (const m of matchItems || []) {
+      const lg = getLeagueInfo(m);
+      const cName = lg.country || "International";
+      if (!countryMap.has(cName)) {
+        countryMap.set(cName, { country: cName, flag: lg.flag || "🏳️", leagues: new Map(), count: 0 });
+      }
+      const cBucket = countryMap.get(cName);
+      cBucket.count++;
+      const lKey = String(lg.name || lg.slug || "league").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (!cBucket.leagues.has(lKey)) {
+        cBucket.leagues.set(lKey, { info: lg, items: [] });
+      }
+      cBucket.leagues.get(lKey).items.push(m);
+    }
+
+    const sortedCountries = Array.from(countryMap.values()).sort((a, b) => {
+      const ia = COUNTRY_PRIORITY.indexOf(a.country);
+      const ib = COUNTRY_PRIORITY.indexOf(b.country);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.country.localeCompare(b.country);
+    });
+
+    return sortedCountries
+      .map((cb) => {
+        const leagueBlocks = Array.from(cb.leagues.values())
+          .map(({ info: lg, items }) => {
+            const sortedItems = isCompletedMode ? items : sortMatchesInOrder(items);
+            return `
+              <div class="country-league-block">
+                <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
+                  <span class="league-hdr-spacer" aria-hidden="true"></span>
+                  <span class="league-hdr-center">
+                    <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
+                    <span class="league-name">${escapeHtml(lg.name)}</span>
+                  </span>
+                  <span class="league-hdr-right">
+                    <span class="text-xs font-mono text-muted">${items.length} ${items.length === 1 ? "fixture" : "fixtures"}</span>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
+                  </span>
+                </a>
+                ${sortedItems.map(renderMatchRow).join("")}
+              </div>
+            `;
+          })
+          .join("");
+
+        return `
+          <div class="country-group-card" data-country="${escapeHtml(cb.country)}">
+            <div class="country-group-header">
+              <div class="country-group-title">
+                <span class="country-flag-icon">${countryFlagBadgeHtml(cb.country, cb.flag, false)}</span>
+                <span class="country-name-text">${escapeHtml(cb.country)}</span>
+              </div>
+              <div class="country-group-meta">
+                <span class="country-meta-pill">${cb.leagues.size} ${cb.leagues.size === 1 ? "League" : "Leagues"}</span>
+                <span class="country-meta-pill is-count">${cb.count} ${cb.count === 1 ? "Match" : "Matches"}</span>
+              </div>
+            </div>
+            <div class="country-group-leagues">
+              ${leagueBlocks}
+            </div>
+          </div>
+        `;
+      })
+      .join("");
   }
 
   const ALLOWED_SPORTS = [
@@ -1132,7 +1255,7 @@
                         <div class="flex items-center gap-2 min-w-0 flex-wrap">
                           <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill bg-brand-soft text-brand">#${idx + 1}</span>
                           ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                          <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+                          <span class="text-xs font-semibold text-text-secondary truncate">${lg.flag ? `${escapeHtml(lg.flag)} ${escapeHtml(lg.country)} · ` : ""}${escapeHtml(lg.name)}</span>
                         </div>
                         <div class="flex items-center gap-1.5 flex-wrap">
                           ${renderVerifyKoPills(m)}
@@ -1614,41 +1737,10 @@
           `;
         }
       } else {
-        // Football keeps centered league headers & live clock/half/scorelines
-        const groups = new Map();
-        filtered.forEach((m) => {
-          const k = `${m.leagueSlug}||${m.leagueName || ""}`;
-          if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
-          groups.get(k).items.push(m);
-        });
-
-        let subLeaguesHtml = "";
-        for (const { sample, items } of groups.values()) {
-          const lg = getLeagueInfo(sample);
-          const sortedItems = sortMatchesInOrder(items);
-          subLeaguesHtml += `
-            <div>
-              <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
-                <span class="league-hdr-spacer" aria-hidden="true"></span>
-                <span class="league-hdr-center">
-                  <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-                  <span class="league-name">${escapeHtml(lg.name)}</span>
-                  ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
-                </span>
-                <span class="league-hdr-right">
-                  <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
-                </span>
-              </a>
-              ${sortedItems.map(renderMatchRow).join("")}
-            </div>
-          `;
-        }
-
-        groupsHtml = subLeaguesHtml;
+        groupsHtml = renderCountryGroupedLeagues(filtered, state.matchFilter === "FT");
       }
     } else {
-      // ALL SPORTS SELECTED: Football keeps centered Fixtures & Odds; Tennis, Basketball, Darts & Ice Hockey use Run-In Difficulty Table
+      // ALL SPORTS SELECTED: Football keeps Country -> Original League Fixtures & Odds; Tennis, Basketball, Darts & Ice Hockey use Run-In Difficulty Table
       const sportsToGroup = [
         { key: "football", label: "Football", icon: "⚽" },
         { key: "tennis", label: "Tennis", icon: "🎾" },
@@ -1670,35 +1762,7 @@
           }
           if (spMatches.length === 0) return "";
 
-          const groups = new Map();
-          spMatches.forEach((m) => {
-            const k = `${m.leagueSlug}||${m.leagueName || ""}`;
-            if (!groups.has(k)) groups.set(k, { sample: m, items: [] });
-            groups.get(k).items.push(m);
-          });
-
-          let subLeaguesHtml = "";
-          for (const { sample, items } of groups.values()) {
-            const lg = getLeagueInfo(sample);
-            const sortedItems = state.matchFilter === "FT" ? items : sortMatchesInOrder(items);
-            subLeaguesHtml += `
-              <div>
-                <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
-                  <span class="league-hdr-spacer" aria-hidden="true"></span>
-                  <span class="league-hdr-center">
-                    <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-                    <span class="league-name">${escapeHtml(lg.name)}</span>
-                    ${lg.country ? `<span class="match-league-country">${escapeHtml(lg.country)}</span>` : ""}
-                  </span>
-                  <span class="league-hdr-right">
-                    <span class="text-xs font-mono text-muted">${items.length} fixtures</span>
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted)"><path d="m9 18 6-6-6-6"/></svg>
-                  </span>
-                </a>
-                ${sortedItems.map(renderMatchRow).join("")}
-              </div>
-            `;
-          }
+          const subLeaguesHtml = renderCountryGroupedLeagues(spMatches, state.matchFilter === "FT");
 
           const cardModeTitle = state.matchFilter === "FT" ? `${sp.label} Complete Matches of the Day` : `${sp.label} Fixtures &amp; Odds`;
           const cardModeSub = state.matchFilter === "FT"
@@ -2386,19 +2450,19 @@
   }
 
   const RUNIN_QUICK_LEAGUES = [
-    { code: "england", label: "Premier League", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
-    { code: "spain", label: "La Liga", flag: "🇪🇸" },
-    { code: "italy", label: "Serie A", flag: "🇮🇹" },
-    { code: "germany", label: "Bundesliga", flag: "🇩🇪" },
-    { code: "france", label: "Ligue 1", flag: "🇫🇷" },
-    { code: "cleague", label: "Champions League", flag: "🇪🇺" },
-    { code: "eleague", label: "Europa League", flag: "🇪🇺" },
-    { code: "england2", label: "Championship", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
-    { code: "netherlands", label: "Eredivisie", flag: "🇳🇱" },
-    { code: "portugal", label: "Liga Portugal", flag: "🇵🇹" },
-    { code: "turkey", label: "Süper Lig", flag: "🇹🇷" },
-    { code: "belgium", label: "Pro League", flag: "🇧🇪" },
-    { code: "scotland", label: "Premiership", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" }
+    { code: "england", label: "Premier League", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "spain", label: "La Liga", country: "Spain", flag: "🇪🇸" },
+    { code: "italy", label: "Serie A", country: "Italy", flag: "🇮🇹" },
+    { code: "germany", label: "Bundesliga", country: "Germany", flag: "🇩🇪" },
+    { code: "france", label: "Ligue 1", country: "France", flag: "🇫🇷" },
+    { code: "cleague", label: "Champions League", country: "Europe", flag: "🇪🇺" },
+    { code: "eleague", label: "Europa League", country: "Europe", flag: "🇪🇺" },
+    { code: "england2", label: "Championship", country: "England", flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿" },
+    { code: "netherlands", label: "Eredivisie", country: "Netherlands", flag: "🇳🇱" },
+    { code: "portugal", label: "Liga Portugal", country: "Portugal", flag: "🇵🇹" },
+    { code: "turkey", label: "Süper Lig", country: "Turkey", flag: "🇹🇷" },
+    { code: "belgium", label: "Pro League", country: "Belgium", flag: "🇧🇪" },
+    { code: "scotland", label: "Premiership", country: "Scotland", flag: "🏴󠁧󠁢󠁳󠁣󠁴󠁿" }
   ];
 
   function resolveRuninStateForCode(code) {
@@ -2702,11 +2766,13 @@
         aPart.hasLiveMatch = true;
       }
 
+      const koTs = Number(g.estimateStartTime) || (RT?.resolveKickoffMs ? RT.resolveKickoffMs(g) : 0) || 0;
       hPart.remainingOpponents.push({
         venue: "H",
         opponent: g.awayTeamName,
         oppVenuePpg: Math.round(aPart.awayPpg * 100) / 100,
         date: timeLabel,
+        timestamp: koTs,
         isLive,
         isPreMatch5h: isPre5h,
         footballComGameId: fbGameId,
@@ -2722,6 +2788,7 @@
         opponent: g.homeTeamName,
         oppVenuePpg: Math.round(hPart.homePpg * 100) / 100,
         date: timeLabel,
+        timestamp: koTs,
         isLive,
         isPreMatch5h: isPre5h,
         footballComGameId: fbGameId,
@@ -2739,7 +2806,18 @@
         ? Math.round((playedVals.reduce((s, v) => s + v, 0) / playedVals.length) * 100) / 100
         : Math.round(clamp(1.48 - (rec.ppg - 1.50) * 0.14, 0.90, 1.95) * 100) / 100;
 
-      const remVals = rec.remainingOpponents.map((x) => x.oppVenuePpg).filter((v) => Number.isFinite(v));
+      // Sort upcoming matches chronologically starting from the immediate next matches
+      const remainingSorted = mode === "LIVE"
+        ? rec.remainingOpponents
+        : [...rec.remainingOpponents].sort((x, y) => {
+            if (x.isLive !== y.isLive) return x.isLive ? 1 : -1;
+            const tx = x.timestamp || Infinity;
+            const ty = y.timestamp || Infinity;
+            if (tx !== ty) return tx - ty;
+            return (y.isPreMatch5h ? 1 : 0) - (x.isPreMatch5h ? 1 : 0);
+          });
+
+      const remVals = remainingSorted.map((x) => x.oppVenuePpg).filter((v) => Number.isFinite(v));
       const remainingPpg = remVals.length > 0
         ? Math.round((remVals.reduce((s, v) => s + v, 0) / remVals.length) * 100) / 100
         : 1.35;
@@ -2748,10 +2826,6 @@
       const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
       const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
       const remainingBarPct = Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10);
-
-      const remainingSorted = mode === "LIVE"
-        ? rec.remainingOpponents
-        : [...rec.remainingOpponents].sort((x, y) => (y.isPreMatch5h ? 1 : 0) - (x.isPreMatch5h ? 1 : 0) || (x.isLive ? 1 : 0) - (y.isLive ? 1 : 0));
 
       const hasPreMatch5h = remainingSorted.some((op) => op.isPreMatch5h);
       const row = {
@@ -2792,7 +2866,7 @@
     const scopeKey = String(opts.scopeKey || "england");
     const entityLabel = opts.entityLabel || "Team";
     const clickRoute = opts.clickRoute || null;
-    const inlineLimit = opts.inlineLimit || 3;
+    const inlineLimit = opts.inlineLimit || 5;
 
     // Enrich Football Run-In upcoming chips with exact real kickoff date/time & FB#ID when matched to live/upcoming fixtures
     const liveFixtureByTeams = new Map();
@@ -2909,9 +2983,9 @@
           </td>
           <td class="runin-fixtures-td">
             <div class="runin-rem-cell">
-              <span class="runin-ppg-pill is-rem">${row.remainingPpg.toFixed(2)}</span>
+              <span class="runin-ppg-pill is-rem">${(row.immediate5Ppg ?? row.remainingPpg).toFixed(2)}</span>
               <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
-              <span class="text-xs text-muted font-mono">(${remCount})</span>
+              <span class="text-xs text-muted font-mono">(Next ${Math.min(5, remCount)} / ${remCount})</span>
             </div>
             <div class="runin-inline-fixtures">
               ${renderRuninUpcomingChips(row.remainingOpponents, inlineLimit)}
@@ -2921,6 +2995,7 @@
           <td class="runin-tip-td">
             <div><span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span></div>
             <div class="text-xs text-text-secondary mt-1" style="font-size:11px;line-height:1.25;">${escapeHtml(tip.nextFixtureTip || "")}</div>
+            ${row.immediate5StrongCount > 0 ? `<div class="text-xs font-mono mt-0.5" style="font-size:10px;color:#059669;font-weight:700;">Next 5 Assessment: ${row.immediate5StrongCount}/${Math.min(5, remCount)} Strong Edge${row.immediate5DiffPct >= 0 ? ` (+${row.immediate5DiffPct}% easier)` : ` (${row.immediate5DiffPct}%)`}</div>` : ""}
           </td>
         </tr>
         ${drawerHtml}
@@ -2941,9 +3016,9 @@
               <th style="text-align:center;">Pts</th>
               <th style="text-align:center;">PPG</th>
               <th>Played Opponents &amp; Scores (PLD)</th>
-              <th style="color:#3B82F6;">Upcoming / Live Opponents (REM)</th>
+              <th style="color:#3B82F6;">Immediate Next 5 Matches (REM)</th>
               <th style="text-align:center;">Played vs<br>Remaining</th>
-              <th>Strong PPG Tip</th>
+              <th>Strong PPG &amp; Next-5 Tips</th>
             </tr>
           </thead>
           <tbody>
@@ -2963,7 +3038,7 @@
     const tableHtml = renderRuninTableBlock(data.table, {
       scopeKey,
       entityLabel: spMeta.entityLabel,
-      inlineLimit: 3
+      inlineLimit: 5
     });
 
     if (opts.showHeader === false) return tableHtml;
@@ -3083,14 +3158,14 @@
         <div class="runin-league-selector-row">
           <div class="runin-quick-tabs">
             ${QUICK_LEAGUES.map((ql) => `
-              <button type="button" class="filter-chip${activeCode === ql.code ? " is-active" : ""}" data-runin-league="${ql.code}">${ql.flag} ${escapeHtml(ql.label)}</button>
+              <button type="button" class="filter-chip${activeCode === ql.code ? " is-active" : ""}" data-runin-league="${ql.code}">${countryFlagBadgeHtml(ql.country, ql.flag, true)} <span>${escapeHtml(ql.label)}</span></button>
             `).join("")}
           </div>
           <div class="runin-select-wrap">
             <label class="runin-select-label" for="runinLeagueSelect">All 40 Leagues (Country)</label>
             <select id="runinLeagueSelect" aria-label="Select any SoccerSTATS league">
               ${catalog.map((lg) => `
-                <option value="${escapeHtml(lg.code)}"${activeCode === lg.code ? " selected" : ""}>${lg.flag || "⚽"} ${lg.country ? `${escapeHtml(lg.country)} - ` : ""}${escapeHtml(lg.name)}</option>
+                <option value="${escapeHtml(lg.code)}"${activeCode === lg.code ? " selected" : ""}>${lg.country ? `${escapeHtml(lg.country)} · ` : ""}${escapeHtml(lg.name)}</option>
               `).join("")}
             </select>
           </div>
@@ -3117,7 +3192,7 @@
     const tableBlockHtml = renderRuninTableBlock(filteredRows, {
       scopeKey,
       entityLabel: spMeta.entityLabel,
-      inlineLimit: 3
+      inlineLimit: 5
     });
 
     return `
@@ -3536,8 +3611,8 @@
         <div class="panel-header" style="background: linear-gradient(90deg, rgba(59, 130, 246, 0.12) 0%, transparent 100%); border-bottom: 1px solid rgba(59, 130, 246, 0.25); padding: 14px 18px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#3B82F6;color:#ffffff;font-weight:800;">📈 RUN-IN ANALYSIS (PLD vs REM)</span>
-            <span class="sure-pill-tag">${escapeHtml(subtitleLabel)}</span>
-            <span class="font-mono text-xs text-muted">· Opponents Played vs Remaining %</span>
+            <span class="sure-pill-tag" style="background:rgba(59,130,246,0.12);color:var(--text);border:1px solid rgba(59,130,246,0.28);font-weight:700;">${escapeHtml(subtitleLabel)}</span>
+            <span class="font-mono text-xs text-muted">· Immediate 5 Opponents + Real-Time Assessment</span>
           </div>
           <div class="flex items-center gap-2">
             <a class="btn-subtle text-xs" href="${ctaHref}" data-route="${ctaHref}" style="font-weight:700;color:#3B82F6;">Open ${isFootball ? "Full 40-League" : escapeHtml(spMeta.label)} Run-In Center &rarr;</a>
@@ -3575,7 +3650,7 @@
                   scopeKey,
                   entityLabel: spMeta.entityLabel || "Team",
                   clickRoute: ctaHref,
-                  inlineLimit: 2
+                  inlineLimit: 5
                 })}
               `
           }
@@ -3712,7 +3787,7 @@
           <div class="flex items-center gap-2 min-w-0 flex-wrap">
             <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
             ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-            <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+            <span class="text-xs font-semibold text-text-secondary truncate">${lg.flag ? `${escapeHtml(lg.flag)} ${escapeHtml(lg.country)} · ` : ""}${escapeHtml(lg.name)}</span>
             <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
           </div>
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -5559,6 +5634,10 @@
         });
       }
 
+      const locResolved = RT?.resolveCanonicalLocation
+        ? RT.resolveCanonicalLocation(g.onefootballCountry || g.country, g.onefootballLeague || g.league, sport)
+        : { country: g.country || "International", league: g.onefootballLeague || g.league || `${sportName} Competition`, slug: `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}` };
+
       if (existing) {
         if (isGameLive) {
           existing.status = "LIVE";
@@ -5569,6 +5648,17 @@
           existing.minute = clockInfo.liveClock;
           existing.displayTime = displayTime;
         }
+        // Relocate game to its authentic original league & country if previously unresolved or placed in generic/wrong domestic bucket
+        const isGenericOrUnresolved = existing.needsLeagueResolution || existing.espnLeagueCode === "all" || RT?.isGenericStageName?.(existing.leagueName) || !existing.leagueCountry || existing.leagueCountry === "International";
+        if (isGenericOrUnresolved && locResolved.league) {
+          existing.leagueCountry = locResolved.country;
+          existing.leagueName = locResolved.league;
+          existing.leagueSlug = locResolved.slug;
+          existing.needsLeagueResolution = false;
+        } else if ((!existing.leagueCountry || existing.leagueCountry === "International") && locResolved.country !== "International") {
+          existing.leagueCountry = locResolved.country;
+        }
+        if (g.tournamentIcon && !existing.leagueLogo) existing.leagueLogo = g.tournamentIcon;
         existing.matchStatus = rawMatchStatus;
         existing.timestamp = existing.timestamp || startTs;
         existing.estimateStartTime = existing.estimateStartTime || startTs;
@@ -5617,9 +5707,9 @@
         sport,
         sportName,
         espnLeagueCode: sport,
-        leagueSlug: `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-        leagueName: g.onefootballLeague || g.league || `${sportName} Competition`,
-        leagueCountry: g.country || "International",
+        leagueSlug: locResolved.slug || `${sport}-${(g.league || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        leagueName: locResolved.league || g.onefootballLeague || g.league || `${sportName} Competition`,
+        leagueCountry: locResolved.country || g.country || "International",
         leagueLogo: g.tournamentIcon || "",
         priority: g.onOneFootball ? 10 : 15,
         date: dateStr,

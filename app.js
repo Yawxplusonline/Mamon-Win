@@ -418,11 +418,23 @@
         runinLeagueCacheClient.set(code, data);
         if (data.league?.code) runinLeagueCacheClient.set(data.league.code, data);
         if (Array.isArray(data.leagues) && data.leagues.length > 0) runinCatalogClient = data.leagues;
+        if (RT?.buildMatchAnalysis && Array.isArray(liveMatches)) {
+          liveMatches.forEach((m) => {
+            if (m.analysis?.bestPick?.tipWithheld) m.analysis = RT.buildMatchAnalysis(m);
+          });
+          if (typeof recomputeSlips === "function") recomputeSlips();
+        }
         return data;
       }
       const fb = RT?.buildFallbackRuninTable ? RT.buildFallbackRuninTable(code, liveMatches) : null;
       if (fb?.ok && Array.isArray(fb.table) && fb.table.length > 0) {
         runinLeagueCacheClient.set(code, fb);
+        if (RT?.buildMatchAnalysis && Array.isArray(liveMatches)) {
+          liveMatches.forEach((m) => {
+            if (m.analysis?.bestPick?.tipWithheld) m.analysis = RT.buildMatchAnalysis(m);
+          });
+          if (typeof recomputeSlips === "function") recomputeSlips();
+        }
         return fb;
       }
       return data || null;

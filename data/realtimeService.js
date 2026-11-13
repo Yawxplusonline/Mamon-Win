@@ -5328,7 +5328,9 @@ window.MAMON_REALTIME = (() => {
       syncTopRuninTables().then((riRes) => {
         if (riRes?.ok) {
           activeMatches.forEach((m) => {
-            if (!m.enriched) m.analysis = buildMatchAnalysis(m);
+            if (!m.enriched || m.analysis?.bestPick?.tipWithheld) {
+              m.analysis = buildMatchAnalysis(m);
+            }
           });
           onProgress(activeMatches, finishedToday);
         }

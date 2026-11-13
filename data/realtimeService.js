@@ -775,9 +775,23 @@ window.MAMON_REALTIME = (() => {
     return Math.round(((ko - Date.now()) / 3600000) * 10) / 10;
   }
 
+  function isMatchAbandonedOrInterrupted(item) {
+    if (!item) return false;
+    if (item.isAbandoned === true || item.status === "ABANDONED") return true;
+    const raw = `${item.status || ""} ${item.matchStatus || ""} ${item.matchState || ""} ${item.displayTime || ""} ${item.liveClock || ""} ${item.detail || ""} ${item.shortDetail || ""} ${item.state || ""}`;
+    return /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(raw);
+  }
+
+  function isMatchTrulyLive(item) {
+    if (!item) return false;
+    if (item.isAbandoned === true || item.status === "ABANDONED" || item.status === "FT" || item.isCompleted === true) return false;
+    if (isMatchAbandonedOrInterrupted(item)) return false;
+    return item.status === "LIVE" || item.isLive === true;
+  }
+
   function isTipEligiblePreMatch5h(item) {
     if (!item) return false;
-    if (item.isLive === true || item.status === "LIVE" || item.status === "FT") return false;
+    if (item.isLive === true || item.status === "LIVE" || item.status === "FT" || item.status === "ABANDONED" || item.isAbandoned === true || isMatchAbandonedOrInterrupted(item)) return false;
     const ko = resolveKickoffMs(item);
     if (!Number.isFinite(ko)) return false;
     return (ko - Date.now()) >= MIN_PREMATCH_LEAD_MS;
@@ -847,9 +861,15 @@ window.MAMON_REALTIME = (() => {
 
     const registerFinished = (m) => {
       if (!m) return;
-      const copy = { ...m, status: "FT", isLive: false };
+      const isDead = isMatchAbandonedOrInterrupted(m);
+      const copy = {
+        ...m,
+        status: isDead ? "ABANDONED" : "FT",
+        isLive: false,
+        isAbandoned: Boolean(isDead)
+      };
       if (!copy.displayTime || !/^\d{2}:\d{2}/.test(String(copy.displayTime))) {
-        copy.displayTime = formatKickoffTimeLabel(copy, nowMs).timeStr;
+        copy.displayTime = isDead ? (copy.matchStatus || "Abandoned") : formatKickoffTimeLabel(copy, nowMs).timeStr;
       }
       if (!copy.date) copy.date = formatKickoffTimeLabel(copy, nowMs).dateIso;
       const hNm = normTeamMatchKey(copy.homeTeamName || DATA.TEAMS?.[copy.home]?.name || "");
@@ -870,6 +890,23 @@ window.MAMON_REALTIME = (() => {
 
     const activeRemaining = [];
     for (const m of matchesArr || []) {
+      // If match is abandoned, interrupted, suspended, or stopped -> immediately drop from activeRemaining
+      if (isMatchAbandonedOrInterrupted(m)) {
+        const koInfo = formatKickoffTimeLabel(m, nowMs);
+        const matchDate = m.date || koInfo.dateIso;
+        const abandonedMatch = {
+          ...m,
+          status: "ABANDONED",
+          isLive: false,
+          isAbandoned: true,
+          isPreMatch5h: false,
+          matchStatus: m.matchStatus || m.matchState || "Abandoned",
+          displayTime: m.displayTime || m.matchStatus || "Abandoned",
+          date: matchDate
+        };
+        registerFinished(abandonedMatch);
+        continue;
+      }
       if (hasMatchPlayedByTime(m, nowMs)) {
         const koInfo = formatKickoffTimeLabel(m, nowMs);
         const matchDate = m.date || koInfo.dateIso;
@@ -1217,8 +1254,11 @@ window.MAMON_REALTIME = (() => {
     const rawState = statusType.state || "pre";
     const detail = statusType.shortDetail || statusType.detail || "Scheduled";
 
-    // Filter out postponed/canceled/abandoned/unknown non-playable dead events
-    if (/postponed|cancel|abandon|suspend|delay/i.test(detail)) return null;
+    // Filter out postponed/canceled/abandoned/interrupted/unknown non-playable dead events
+    const rawStatusText = `${detail} ${statusType.name || ""} ${statusType.detail || ""} ${statusType.description || ""} ${statusType.state || ""}`;
+    if (/\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(rawStatusText)) {
+      return null;
+    }
 
     const matchDt = new Date(ev.date);
     const localDate = isoDate(matchDt);
@@ -1421,6 +1461,7 @@ window.MAMON_REALTIME = (() => {
 
   function parseOneFootballMatch(ofm) {
     if (!ofm || !ofm.homeTeamName || !ofm.awayTeamName) return null;
+    if (ofm.isAbandoned === true || ofm.status === "ABANDONED" || isMatchAbandonedOrInterrupted(ofm)) return null;
     if (isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
 
     const loc = resolveCanonicalLocation(ofm.country || "", ofm.leagueName || "International Football", "football");
@@ -4729,15 +4770,7 @@ window.MAMON_REALTIME = (() => {
       }
 
       for (const ofm of onefootballJson.matches) {
-        if (ofm.status === "FT") {
-          const todayUtcIso = new Date().toISOString().slice(0, 10);
-          const isRecentFt = ofm.isoDate === datesToFetch[0].iso || ofm.isoDate === todayUtcIso || (Number(ofm.kickoffMs) >= Date.now() - 24 * 3600000);
-          if (isRecentFt && !finishedTodayMap.has(ofm.id)) {
-            const ftObj = parseOneFootballMatch(ofm);
-            if (ftObj) finishedTodayMap.set(ftObj.id, ftObj);
-          }
-          continue;
-        }
+        const isDeadOfm = ofm.isAbandoned === true || ofm.status === "ABANDONED" || isMatchAbandonedOrInterrupted(ofm);
         const ofH = normalizeRuninTeamKey(ofm.homeTeamName);
         const ofA = normalizeRuninTeamKey(ofm.awayTeamName);
         let matchExisting = (ofH && ofA) ? existingLookupMap.get(`${ofH}|${ofA}`) : null;
@@ -4748,6 +4781,32 @@ window.MAMON_REALTIME = (() => {
             return matchTeamsSimilar(hName, ofm.homeTeamName) && matchTeamsSimilar(aName, ofm.awayTeamName);
           });
           if (matchExisting && ofH && ofA) existingLookupMap.set(`${ofH}|${ofA}`, matchExisting);
+        }
+
+        if (isDeadOfm) {
+          if (matchExisting) {
+            matchExisting.status = "ABANDONED";
+            matchExisting.isLive = false;
+            matchExisting.isAbandoned = true;
+            matchExisting.matchStatus = ofm.matchState || "Abandoned";
+            matchExisting.displayTime = ofm.displayTime || ofm.matchState || "Abandoned";
+          }
+          continue;
+        }
+
+        if (ofm.status === "FT") {
+          const todayUtcIso = new Date().toISOString().slice(0, 10);
+          const isRecentFt = ofm.isoDate === datesToFetch[0].iso || ofm.isoDate === todayUtcIso || (Number(ofm.kickoffMs) >= Date.now() - 24 * 3600000);
+          if (isRecentFt && !finishedTodayMap.has(ofm.id)) {
+            const ftObj = parseOneFootballMatch(ofm);
+            if (ftObj) finishedTodayMap.set(ftObj.id, ftObj);
+          }
+          if (matchExisting) {
+            matchExisting.status = "FT";
+            matchExisting.isLive = false;
+            matchExisting.matchStatus = "FT";
+          }
+          continue;
         }
         if (matchExisting) {
           matchExisting.onOneFootball = true;
@@ -5244,6 +5303,8 @@ window.MAMON_REALTIME = (() => {
     evaluateRuninTableConfirmation,
     computeRuninTip,
     isTipEligiblePreMatch5h,
+    isMatchAbandonedOrInterrupted,
+    isMatchTrulyLive,
     getHoursToKickoff,
     formatPreMatchBadge,
     formatKickoffTimeLabel,

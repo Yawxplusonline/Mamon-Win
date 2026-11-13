@@ -804,9 +804,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
         if (!parsedMkt.home || !parsedMkt.away) return;
 
         const evStatusStr = String(ev.matchStatus || "").trim();
-        const isExplicitCompleted = /\b(ft|full\s*time|ended|finished|completed?|closed|aet|ap|after\s*penalties|retired|walkover)\b/i.test(evStatusStr);
+        const isAbandonedOrInterrupted = /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(evStatusStr);
+        const isExplicitCompleted = isAbandonedOrInterrupted || /\b(ft|full\s*time|ended|finished|completed?|closed|aet|ap|after\s*penalties|retired|walkover)\b/i.test(evStatusStr);
         const isNotStarted = /^(not\s*start|scheduled|prematch)/i.test(evStatusStr);
-        const evIsLive = !isExplicitCompleted && !isNotStarted && (ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr));
+        const evIsLive = !isAbandonedOrInterrupted && !isExplicitCompleted && !isNotStarted && (ev.status === 1 || /^(h1|h2|ht|1st|2nd|half|live|q[1-4]|set\s*\d|period\s*\d|running|in\s*play|paused|break|ot)/i.test(evStatusStr));
         const evPlayedSecs = ev.playedSeconds && String(ev.playedSeconds).toLowerCase() !== "null" ? String(ev.playedSeconds).trim() : "";
         const evRemTime = ev.remainingTimeInPeriod && String(ev.remainingTimeInPeriod).toLowerCase() !== "null" ? String(ev.remainingTimeInPeriod).trim() : "";
         const evPeriod = ev.period !== undefined && ev.period !== null && String(ev.period).toLowerCase() !== "null" ? String(ev.period).trim() : "";
@@ -848,11 +849,14 @@ async function runFullBookmakerScan(forceRefresh = false) {
             isoDate: dt.toISOString().slice(0, 10),
             kickoffUtc: dt.toISOString().slice(11, 16),
             hoursToKickoff: Math.round(((startTs - nowMs) / 3600000) * 10) / 10,
-            isLive: evIsLive && !isCompleted,
+            isLive: evIsLive && !isCompleted && !isAbandonedOrInterrupted,
             isCompleted,
+            isAbandoned: isAbandonedOrInterrupted,
             playedByTime: isTimeElapsed && !isExplicitCompleted,
-            isPreMatch5h: !evIsLive && !isCompleted && (startTs - nowMs) >= 5 * 3600000,
-            matchStatus: isCompleted ? (isExplicitCompleted ? evStatusStr : "FT (Elapsed)") : (evStatusStr || (evIsLive ? "LIVE" : "Scheduled")),
+            isPreMatch5h: !evIsLive && !isCompleted && !isAbandonedOrInterrupted && (startTs - nowMs) >= 5 * 3600000,
+            matchStatus: isAbandonedOrInterrupted
+              ? (evStatusStr || "Abandoned")
+              : (isCompleted ? (isExplicitCompleted ? evStatusStr : "FT (Elapsed)") : (evStatusStr || (evIsLive ? "LIVE" : "Scheduled"))),
             playedSeconds: evPlayedSecs,
             remainingTimeInPeriod: evRemTime,
             period: evPeriod,
@@ -864,13 +868,14 @@ async function runFullBookmakerScan(forceRefresh = false) {
             footballCom: null
           };
           mergedMap.set(eventId, item);
-        } else if (isExplicitCompleted) {
+        } else if (isAbandonedOrInterrupted || isExplicitCompleted) {
           item.isLive = false;
           item.isCompleted = true;
+          item.isAbandoned = Boolean(isAbandonedOrInterrupted);
           item.isPreMatch5h = false;
-          item.matchStatus = evStatusStr || "FT";
+          item.matchStatus = evStatusStr || (isAbandonedOrInterrupted ? "Abandoned" : "FT");
           if (evScore && (!item.score || item.score === "0:0")) item.score = evScore;
-        } else if (evIsLive && !item.isCompleted) {
+        } else if (evIsLive && !item.isCompleted && !item.isAbandoned) {
           item.isLive = true;
           item.isPreMatch5h = false;
           if (evStatusStr && (!item.matchStatus || item.matchStatus === "Scheduled" || item.matchStatus === "Not start" || item.matchStatus === "LIVE")) {

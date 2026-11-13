@@ -155,7 +155,10 @@ function parseOneFootballPage(html, fallbackDateIso) {
 
           let status = "SCHEDULED";
           let playedByTime = false;
-          if (/full|ft|finished|post|ended/i.test(matchStateRaw) || periodNum >= 10) {
+          const isDead = /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(matchStateRaw);
+          if (isDead) {
+            status = "ABANDONED";
+          } else if (/full|ft|finished|post|ended/i.test(matchStateRaw) || periodNum >= 10) {
             status = "FT";
           } else if (/live|inplay|halftime|half_time|1st|2nd/i.test(matchStateRaw) || (periodNum > 1 && periodNum < 10)) {
             status = "LIVE";
@@ -187,13 +190,14 @@ function parseOneFootballPage(html, fallbackDateIso) {
             kickoffUtc: new Date(koMs).toISOString().slice(11, 16),
             hoursToKickoff,
             isLive: status === "LIVE",
+            isAbandoned: isDead,
             isPreMatch5h: status === "SCHEDULED" && koMs - now >= 5 * 3600000,
             playedByTime,
             status,
-            matchState: playedByTime ? "Full Time (Elapsed)" : (matchStateRaw || (status === "LIVE" ? "Live" : status === "FT" ? "FullTime" : "PreMatch")),
+            matchState: isDead ? (matchStateRaw || "Abandoned") : (playedByTime ? "Full Time (Elapsed)" : (matchStateRaw || (status === "LIVE" ? "Live" : status === "FT" ? "FullTime" : "PreMatch"))),
             period: periodNum || 1,
             minute: status === "LIVE" ? rawMinute : 0,
-            displayTime: status === "LIVE" ? (rawMinute > 0 ? `${rawMinute}'` : node.timePeriod || "LIVE") : new Date(koMs).toISOString().slice(11, 16),
+            displayTime: isDead ? (matchStateRaw || "Abandoned") : (status === "LIVE" ? (rawMinute > 0 ? `${rawMinute}'` : node.timePeriod || "LIVE") : new Date(koMs).toISOString().slice(11, 16)),
             homeScore: Number.isFinite(hScore) ? hScore : null,
             awayScore: Number.isFinite(aScore) ? aScore : null
           });
@@ -213,6 +217,13 @@ function parseOneFootballPage(html, fallbackDateIso) {
 function refreshStatusesByTime(payload, nowMs = Date.now()) {
   if (!payload || !Array.isArray(payload.matches)) return payload;
   for (const m of payload.matches) {
+    if (m.isAbandoned || /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(`${m.matchState || ""} ${m.status || ""}`)) {
+      m.status = "ABANDONED";
+      m.isLive = false;
+      m.isAbandoned = true;
+      m.isPreMatch5h = false;
+      continue;
+    }
     if (m.status === "SCHEDULED" && Number.isFinite(m.kickoffMs)) {
       if (m.kickoffMs <= nowMs - FOOTBALL_PLAYED_ELAPSED_MS) {
         m.status = "FT";
@@ -226,8 +237,8 @@ function refreshStatusesByTime(payload, nowMs = Date.now()) {
       }
     }
   }
-  payload.liveCount = payload.matches.filter((m) => m.status === "LIVE").length;
-  payload.scheduledCount = payload.matches.filter((m) => m.status === "SCHEDULED").length;
+  payload.liveCount = payload.matches.filter((m) => m.status === "LIVE" && !m.isAbandoned).length;
+  payload.scheduledCount = payload.matches.filter((m) => m.status === "SCHEDULED" && !m.isAbandoned).length;
   payload.ftCount = payload.matches.filter((m) => m.status === "FT").length;
   payload.preMatch5hCount = payload.matches.filter((m) => m.isPreMatch5h).length;
   return payload;

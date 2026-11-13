@@ -51,9 +51,25 @@
     return `<img src="${safeSrc}" alt="${safeLabel}" width="${size}" height="${size}" loading="lazy" decoding="async" onerror="window.mamonFallbackImg(this,'${safeLabel.replace(/'/g, "")}','${escapeHtml(color)}')">`;
   }
 
+  function isMatchAbandonedOrInterrupted(m) {
+    if (!m) return false;
+    if (m.isAbandoned === true || m.status === "ABANDONED") return true;
+    if (RT?.isMatchAbandonedOrInterrupted) return RT.isMatchAbandonedOrInterrupted(m);
+    const raw = `${m.status || ""} ${m.matchStatus || ""} ${m.matchState || ""} ${m.displayTime || ""} ${m.liveClock || ""} ${m.detail || ""} ${m.shortDetail || ""} ${m.state || ""}`;
+    return /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(raw);
+  }
+
+  function isMatchTrulyLive(m) {
+    if (!m) return false;
+    if (m.isAbandoned === true || m.status === "ABANDONED" || m.status === "FT" || m.isCompleted === true) return false;
+    if (isMatchAbandonedOrInterrupted(m)) return false;
+    return m.status === "LIVE" || m.isLive === true;
+  }
+
   function formatMatchScore(m) {
     if (!m) return "vs";
-    const isLive = m.status === "LIVE";
+    if (isMatchAbandonedOrInterrupted(m)) return m.matchStatus || "Abandoned";
+    const isLive = isMatchTrulyLive(m);
     const isFT = m.status === "FT";
     if (!isLive && !isFT) return "vs";
 
@@ -1422,8 +1438,9 @@
   function renderMatchRow(m) {
     const home = getTeam(m.home, "Home");
     const away = getTeam(m.away, "Away");
-    const isLive = m.status === "LIVE";
-    const isFT = m.status === "FT";
+    const isAbandoned = isMatchAbandonedOrInterrupted(m);
+    const isLive = !isAbandoned && isMatchTrulyLive(m);
+    const isFT = !isAbandoned && m.status === "FT";
     const hasScore = isLive || isFT;
     const homeScoreText = formatSingleScore(m.homeScore, isLive);
     const awayScoreText = formatSingleScore(m.awayScore, isLive);
@@ -1566,7 +1583,7 @@
               const home = getTeam(m.home, "Home");
               const away = getTeam(m.away, "Away");
               const lg = getLeagueInfo(m);
-              const isLive = m.status === "LIVE";
+              const isLive = isMatchTrulyLive(m);
               const best = m.analysis?.bestPick;
               return `
                 <article class="must-watch-card" data-match-id="${m.id}" data-open-analysis="1">
@@ -1607,14 +1624,14 @@
 
   function sortMatchesInOrder(list) {
     return [...list].sort((a, b) => {
-      // 1. Status priority: LIVE first, then SCHEDULED, then FT
-      const priority = (s) => (s === "LIVE" ? 1 : s === "SCHEDULED" ? 2 : 3);
-      const pa = priority(a.status);
-      const pb = priority(b.status);
+      // 1. Status priority: LIVE first, then SCHEDULED, then FT, then ABANDONED
+      const priority = (m) => (isMatchAbandonedOrInterrupted(m) ? 4 : isMatchTrulyLive(m) ? 1 : m.status === "SCHEDULED" ? 2 : 3);
+      const pa = priority(a);
+      const pb = priority(b);
       if (pa !== pb) return pa - pb;
 
       // 2. If both are LIVE, higher minute/progress first
-      if (a.status === "LIVE" && b.status === "LIVE") {
+      if (isMatchTrulyLive(a) && isMatchTrulyLive(b)) {
         const minA = parseInt(a.displayTime, 10) || 0;
         const minB = parseInt(b.displayTime, 10) || 0;
         if (minA !== minB) return minB - minA;
@@ -1643,18 +1660,18 @@
         return (m.sport || "football").toLowerCase() === activeSportKey;
       });
 
-    const liveCount = sourcePool.filter((m) => m.status === "LIVE").length;
-    const schedCount = sourcePool.filter((m) => m.status === "SCHEDULED").length;
-    const dropsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
-    const alertsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
+    const liveCount = sourcePool.filter(isMatchTrulyLive).length;
+    const schedCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m)).length;
+    const dropsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m) && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
+    const alertsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m) && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
 
     let filtered = [];
     let toolbarHtml = "";
 
     if (isLiveSection) {
       // IN LIVE GAMES SECTION: ONLY LIVE GAMES THERE!
-      // TAKE AWAY UPCOMING GAMES, DROPPING ODDS, SUSPENSION AND INJURY FROM HERE!
-      filtered = sourcePool.filter((m) => m.status === "LIVE");
+      // AUTOMATICALLY EXCLUDE ABANDONED, INTERRUPTED, CANCELLED OR STOPPED GAMES!
+      filtered = sourcePool.filter(isMatchTrulyLive);
 
       toolbarHtml = showToolbar
         ? `
@@ -1685,7 +1702,7 @@
         state.matchFilter = "SCHEDULED";
       }
 
-      const schedPool = sourcePool.filter((m) => m.status === "SCHEDULED");
+      const schedPool = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
       const isMatchPre5h = (m) => (
         RT?.isTipEligiblePreMatch5h
           ? RT.isTipEligiblePreMatch5h(m)
@@ -2135,13 +2152,13 @@
     if (state.activeSport && state.activeSport !== "ALL") {
       pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
     }
-    // Strict separation: Live section strictly returns live games
+    // Strict separation: Live section strictly returns live games (no abandoned / interrupted)
     if (state.matchFilter === "LIVE") {
-      return pool.filter((m) => m.status === "LIVE");
+      return pool.filter(isMatchTrulyLive);
     }
     // Strict separation: Upcoming section strictly returns upcoming games
     if (state.matchFilter === "SCHEDULED") {
-      const upcomingPool = pool.filter((m) => m.status === "SCHEDULED");
+      const upcomingPool = pool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
       if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
         return upcomingPool.filter((m) => m.date === state.selectedDate);
       }
@@ -2263,9 +2280,9 @@
         return pct >= 1.5 && pct < 5.0;
       });
     } else if (activeFilter === "INPLAY") {
-      filteredDrops = dropListAll.filter((m) => m.status === "LIVE");
+      filteredDrops = dropListAll.filter(isMatchTrulyLive);
     } else if (activeFilter === "PREMATCH") {
-      filteredDrops = dropListAll.filter((m) => m.status === "SCHEDULED");
+      filteredDrops = dropListAll.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
     }
 
     const heavyCount = dropListAll.filter((m) => (m.droppingOdds?.bestDrop?.dropPct || 0) >= 5.0).length;
@@ -3669,7 +3686,8 @@
 
   function renderHomeLiveCard(liveList, spDef) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const sortedLive = sortMatchesInOrder(liveList);
+    const validLiveList = (liveList || []).filter(isMatchTrulyLive);
+    const sortedLive = sortMatchesInOrder(validLiveList);
     const nonFootballSports = ["tennis", "basketball", "darts", "hockey"];
     let bodyHtml = "";
 
@@ -3710,7 +3728,7 @@
             <h2 style="color:#DC2626; font-size:16px; font-weight:800; letter-spacing:-0.01em;">
               🔴 ${activeSportKey !== "all" ? escapeHtml(spDef.label) + " · " : ""}In-Play Live Games
             </h2>
-            <span class="toolbar-count-badge" style="background:#FEE2E2; color:#DC2626; font-weight:800;">${liveList.length} LIVE NOW</span>
+            <span class="toolbar-count-badge" style="background:#FEE2E2; color:#DC2626; font-weight:800;">${validLiveList.length} LIVE NOW</span>
           </div>
           <div class="panel-hdr-right">
             <a class="see-all" href="/live" data-route="/live" style="color:#DC2626; font-weight:700;">
@@ -3824,7 +3842,7 @@
     const baseSportMatches = liveMatches
       .filter((m) => !isNcaaOrWomenMatch(m))
       .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
-    const liveMatchesPool = baseSportMatches.filter((m) => m.status === "LIVE");
+    const liveMatchesPool = baseSportMatches.filter(isMatchTrulyLive);
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const upcomingTitle = activeSportKey !== "all"
       ? `${spDef.label} Upcoming Fixtures`
@@ -3854,7 +3872,7 @@
       const liveMatchesPool = liveMatches
         .filter((m) => !isNcaaOrWomenMatch(m))
         .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey)
-        .filter((m) => m.status === "LIVE");
+        .filter(isMatchTrulyLive);
 
       const bannerTitle = isSingleSport
         ? `${spDef.icon} ${spDef.label} · 🔴 Live In-Play Games`
@@ -5813,7 +5831,8 @@
       if (g.matchStatus && typeof g.matchStatus === "string" && g.matchStatus.trim() && g.matchStatus.toLowerCase() !== "null") {
         rawMatchStatus = g.matchStatus.trim();
       }
-      const isGameLive = Boolean(g.isLive);
+      const isDeadGame = Boolean(g.isAbandoned || isMatchAbandonedOrInterrupted(g) || isMatchAbandonedOrInterrupted({ status: rawMatchStatus, matchStatus: rawMatchStatus }));
+      const isGameLive = !isDeadGame && Boolean(g.isLive);
       const clockInfo = isGameLive
         ? resolveLiveClockAndHalf({
             sport,
@@ -5831,7 +5850,7 @@
       const hoursToKickoff = Number.isFinite(Number(g.hoursToKickoff))
         ? Number(g.hoursToKickoff)
         : Math.round(((startTs - Date.now()) / 3600000) * 10) / 10;
-      const isPreMatch5h = Boolean(!isGameLive && (startTs - Date.now()) >= 5 * 3600000);
+      const isPreMatch5h = Boolean(!isGameLive && !isDeadGame && (startTs - Date.now()) >= 5 * 3600000);
 
       let existing = existingById.get(matchId);
       let matchedSwappedOrientation = false;
@@ -5845,6 +5864,17 @@
             if (existing) matchedSwappedOrientation = true;
           }
         }
+      }
+
+      if (isDeadGame) {
+        if (existing) {
+          existing.status = "ABANDONED";
+          existing.isLive = false;
+          existing.isAbandoned = true;
+          existing.matchStatus = rawMatchStatus || "Abandoned";
+          existing.displayTime = rawMatchStatus || "Abandoned";
+        }
+        continue;
       }
 
       const locResolved = RT?.resolveCanonicalLocation

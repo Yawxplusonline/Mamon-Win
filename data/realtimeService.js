@@ -1042,6 +1042,115 @@ window.MAMON_REALTIME = (() => {
     return false;
   }
 
+  function normDedupeTeam(name) {
+    return String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\(\)\[\]]/g, " ")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\b(saint)\b/g, "st")
+      .replace(/\b(under\s*2[0-3]|sub\s*2[0-3])\b/g, "u21")
+      .replace(/\b(fc|cf|sc|afc|ac|as|us|cd|ud|rcd|rc|sd|sv|vfl|vfb|fsv|tsg|rb|bsc|fk|sk|if|bk|ik|aik|sad|club|clube|deportivo|city|town|united|utd)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function areMatchesIdentical(m1, m2) {
+    if (!m1 || !m2) return false;
+    if (m1.id && m2.id && m1.id === m2.id) return true;
+    if (m1.eventId && m2.eventId && m1.eventId === m2.eventId) return true;
+    if (m1.espnId && m2.espnId && m1.espnId === m2.espnId) return true;
+
+    const sp1 = (m1.sport || "football").toLowerCase();
+    const sp2 = (m2.sport || "football").toLowerCase();
+    if (sp1 !== sp2) return false;
+
+    const h1 = m1.homeTeamName || DATA?.TEAMS?.[m1.home]?.name || m1.home || "";
+    const a1 = m1.awayTeamName || DATA?.TEAMS?.[m1.away]?.name || m1.away || "";
+    const h2 = m2.homeTeamName || DATA?.TEAMS?.[m2.home]?.name || m2.home || "";
+    const a2 = m2.awayTeamName || DATA?.TEAMS?.[m2.away]?.name || m2.away || "";
+
+    const nh1 = normDedupeTeam(h1);
+    const na1 = normDedupeTeam(a1);
+    const nh2 = normDedupeTeam(h2);
+    const na2 = normDedupeTeam(a2);
+
+    if (!nh1 || !na1 || !nh2 || !na2) return false;
+
+    const direct = (nh1 === nh2 && na1 === na2) || (matchTeamsSimilar(nh1, nh2) && matchTeamsSimilar(na1, na2));
+    const swapped = (nh1 === na2 && na1 === nh2) || (matchTeamsSimilar(nh1, na2) && matchTeamsSimilar(na1, nh2));
+    if (!direct && !swapped) return false;
+
+    const t1 = Number(m1.timestamp || m1.estimateStartTime || 0);
+    const t2 = Number(m2.timestamp || m2.estimateStartTime || 0);
+    if (t1 > 0 && t2 > 0 && Math.abs(t1 - t2) > 8 * 3600000) {
+      return false;
+    }
+    return true;
+  }
+
+  function deduplicateMatches(matchesList) {
+    if (!Array.isArray(matchesList) || matchesList.length <= 1) return matchesList || [];
+    const out = [];
+    const seenMap = new Map();
+
+    for (const m of matchesList) {
+      if (!m) continue;
+      const sp = (m.sport || "football").toLowerCase();
+      const hRaw = m.homeTeamName || DATA?.TEAMS?.[m.home]?.name || m.home || "";
+      const aRaw = m.awayTeamName || DATA?.TEAMS?.[m.away]?.name || m.away || "";
+      const hNorm = normDedupeTeam(hRaw);
+      const aNorm = normDedupeTeam(aRaw);
+
+      if (!hNorm || !aNorm) {
+        out.push(m);
+        continue;
+      }
+
+      const keyDirect = `${sp}:${hNorm}|${aNorm}`;
+      const keySwapped = `${sp}:${aNorm}|${hNorm}`;
+
+      let existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
+      if (!existing) {
+        existing = out.find((ex) => areMatchesIdentical(ex, m)) || null;
+      }
+
+      if (existing) {
+        if (!existing.footballComGameId && m.footballComGameId) existing.footballComGameId = m.footballComGameId;
+        if (!existing.sportybetGameId && m.sportybetGameId) existing.sportybetGameId = m.sportybetGameId;
+        if (!existing.onFootballCom && m.onFootballCom) existing.onFootballCom = true;
+        if (!existing.onOneFootball && m.onOneFootball) existing.onOneFootball = true;
+        if (!existing.onefootballId && m.onefootballId) existing.onefootballId = m.onefootballId;
+        if (!existing.onefootballUrl && m.onefootballUrl) existing.onefootballUrl = m.onefootballUrl;
+        if (!existing.bestOdds && m.bestOdds) existing.bestOdds = m.bestOdds;
+        if (m.odds && (!existing.odds || !existing.hasBookOdds)) {
+          existing.odds = { ...existing.odds, ...m.odds };
+          existing.hasBookOdds = true;
+        }
+        if (m.droppingOdds?.hasData && (!existing.droppingOdds?.hasData || m.droppingOdds.hasDrop)) {
+          existing.droppingOdds = m.droppingOdds;
+        }
+        if (m.status === "LIVE" && existing.status !== "LIVE") {
+          existing.status = "LIVE";
+          existing.isLive = true;
+        }
+        if (m.homeScore !== null && m.awayScore !== null && (existing.homeScore === null || existing.awayScore === null || m.status === "LIVE")) {
+          existing.homeScore = m.homeScore;
+          existing.awayScore = m.awayScore;
+        }
+        if (m.liveClock && !existing.liveClock) existing.liveClock = m.liveClock;
+        if (m.displayTime && (!existing.displayTime || existing.displayTime === "SCHEDULED")) existing.displayTime = m.displayTime;
+        continue;
+      }
+
+      seenMap.set(keyDirect, m);
+      seenMap.set(keySwapped, m);
+      out.push(m);
+    }
+    return out;
+  }
+
   function inferEspnCode(ev, forcedCode = null) {
     if (forcedCode) return forcedCode;
     const slug = ev.season?.slug || "";
@@ -5798,17 +5907,20 @@ window.MAMON_REALTIME = (() => {
       Array.from(finishedTodayMap.values()),
       Date.now()
     );
-    const activeMatches = reconciled.activeRemaining
-      .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name))
-      .sort((a, b) => {
-        if (a.status === "LIVE" && b.status !== "LIVE") return -1;
-        if (a.status !== "LIVE" && b.status === "LIVE") return 1;
-        if (a.priority !== b.priority) return a.priority - b.priority;
-        return new Date(a.isoDateTime) - new Date(b.isoDateTime);
-      });
+    const activeMatches = deduplicateMatches(
+      reconciled.activeRemaining
+        .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name))
+    ).sort((a, b) => {
+      if (a.status === "LIVE" && b.status !== "LIVE") return -1;
+      if (a.status !== "LIVE" && b.status === "LIVE") return 1;
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return new Date(a.isoDateTime) - new Date(b.isoDateTime);
+    });
 
-    const finishedToday = reconciled.finishedList
-      .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name));
+    const finishedToday = deduplicateMatches(
+      reconciled.finishedList
+        .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name))
+    );
 
     // Fetch live news from premier + uefa for News panel
     const liveArticles = [];
@@ -6410,6 +6522,9 @@ window.MAMON_REALTIME = (() => {
     getCountryFlag,
     isGenericStageName,
     matchTeamsSimilar,
+    normDedupeTeam,
+    areMatchesIdentical,
+    deduplicateMatches,
     getRuninCatalog: () => (runinCatalog.length > 0 ? runinCatalog : DEFAULT_RUNIN_LEAGUES),
     slugToEspnCode
   };

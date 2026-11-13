@@ -262,6 +262,118 @@
     return banned.some((rx) => rx.test(text));
   }
 
+  function normDedupeTeam(name) {
+    if (RT?.normDedupeTeam) return RT.normDedupeTeam(name);
+    return String(name || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\(\)\[\]]/g, " ")
+      .replace(/[^a-z0-9]/g, " ")
+      .replace(/\b(saint)\b/g, "st")
+      .replace(/\b(under\s*2[0-3]|sub\s*2[0-3])\b/g, "u21")
+      .replace(/\b(fc|cf|sc|afc|ac|as|us|cd|ud|rcd|rc|sd|sv|vfl|vfb|fsv|tsg|rb|bsc|fk|sk|if|bk|ik|aik|sad|club|clube|deportivo|city|town|united|utd)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function areMatchesIdentical(m1, m2) {
+    if (RT?.areMatchesIdentical) return RT.areMatchesIdentical(m1, m2);
+    if (!m1 || !m2) return false;
+    if (m1.id && m2.id && m1.id === m2.id) return true;
+    if (m1.eventId && m2.eventId && m1.eventId === m2.eventId) return true;
+    if (m1.espnId && m2.espnId && m1.espnId === m2.espnId) return true;
+
+    const sp1 = (m1.sport || "football").toLowerCase();
+    const sp2 = (m2.sport || "football").toLowerCase();
+    if (sp1 !== sp2) return false;
+
+    const h1 = m1.homeTeamName || DATA?.TEAMS?.[m1.home]?.name || m1.home || "";
+    const a1 = m1.awayTeamName || DATA?.TEAMS?.[m1.away]?.name || m1.away || "";
+    const h2 = m2.homeTeamName || DATA?.TEAMS?.[m2.home]?.name || m2.home || "";
+    const a2 = m2.awayTeamName || DATA?.TEAMS?.[m2.away]?.name || m2.away || "";
+
+    const nh1 = normDedupeTeam(h1);
+    const na1 = normDedupeTeam(a1);
+    const nh2 = normDedupeTeam(h2);
+    const na2 = normDedupeTeam(a2);
+
+    if (!nh1 || !na1 || !nh2 || !na2) return false;
+
+    const direct = (nh1 === nh2 && na1 === na2) || (RT?.matchTeamsSimilar?.(nh1, nh2) && RT?.matchTeamsSimilar?.(na1, na2));
+    const swapped = (nh1 === na2 && na1 === nh2) || (RT?.matchTeamsSimilar?.(nh1, na2) && RT?.matchTeamsSimilar?.(na1, nh2));
+    if (!direct && !swapped) return false;
+
+    const t1 = Number(m1.timestamp || m1.estimateStartTime || 0);
+    const t2 = Number(m2.timestamp || m2.estimateStartTime || 0);
+    if (t1 > 0 && t2 > 0 && Math.abs(t1 - t2) > 8 * 3600000) {
+      return false;
+    }
+    return true;
+  }
+
+  function deduplicateMatches(matchesList) {
+    if (RT?.deduplicateMatches) return RT.deduplicateMatches(matchesList);
+    if (!Array.isArray(matchesList) || matchesList.length <= 1) return matchesList || [];
+    const out = [];
+    const seenMap = new Map();
+
+    for (const m of matchesList) {
+      if (!m) continue;
+      const sp = (m.sport || "football").toLowerCase();
+      const hRaw = m.homeTeamName || DATA?.TEAMS?.[m.home]?.name || m.home || "";
+      const aRaw = m.awayTeamName || DATA?.TEAMS?.[m.away]?.name || m.away || "";
+      const hNorm = normDedupeTeam(hRaw);
+      const aNorm = normDedupeTeam(aRaw);
+
+      if (!hNorm || !aNorm) {
+        out.push(m);
+        continue;
+      }
+
+      const keyDirect = `${sp}:${hNorm}|${aNorm}`;
+      const keySwapped = `${sp}:${aNorm}|${hNorm}`;
+
+      let existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
+      if (!existing) {
+        existing = out.find((ex) => areMatchesIdentical(ex, m)) || null;
+      }
+
+      if (existing) {
+        if (!existing.footballComGameId && m.footballComGameId) existing.footballComGameId = m.footballComGameId;
+        if (!existing.sportybetGameId && m.sportybetGameId) existing.sportybetGameId = m.sportybetGameId;
+        if (!existing.onFootballCom && m.onFootballCom) existing.onFootballCom = true;
+        if (!existing.onOneFootball && m.onOneFootball) existing.onOneFootball = true;
+        if (!existing.onefootballId && m.onefootballId) existing.onefootballId = m.onefootballId;
+        if (!existing.onefootballUrl && m.onefootballUrl) existing.onefootballUrl = m.onefootballUrl;
+        if (!existing.bestOdds && m.bestOdds) existing.bestOdds = m.bestOdds;
+        if (m.odds && (!existing.odds || !existing.hasBookOdds)) {
+          existing.odds = { ...existing.odds, ...m.odds };
+          existing.hasBookOdds = true;
+        }
+        if (m.droppingOdds?.hasData && (!existing.droppingOdds?.hasData || m.droppingOdds.hasDrop)) {
+          existing.droppingOdds = m.droppingOdds;
+        }
+        if (m.status === "LIVE" && existing.status !== "LIVE") {
+          existing.status = "LIVE";
+          existing.isLive = true;
+        }
+        if (m.homeScore !== null && m.awayScore !== null && (existing.homeScore === null || existing.awayScore === null || m.status === "LIVE")) {
+          existing.homeScore = m.homeScore;
+          existing.awayScore = m.awayScore;
+        }
+        if (m.liveClock && !existing.liveClock) existing.liveClock = m.liveClock;
+        if (m.displayTime && (!existing.displayTime || existing.displayTime === "SCHEDULED")) existing.displayTime = m.displayTime;
+        continue;
+      }
+
+      seenMap.set(keyDirect, m);
+      seenMap.set(keySwapped, m);
+      out.push(m);
+    }
+    return out;
+  }
+
   function loadState() {
     const defaults = {
       route: "/",
@@ -784,7 +896,7 @@
     ];
 
     const countryMap = new Map();
-    for (const m of matchItems || []) {
+    for (const m of deduplicateMatches(matchItems || [])) {
       const lg = getLeagueInfo(m);
       const cName = lg.country || "International";
       if (!countryMap.has(cName)) {
@@ -812,7 +924,7 @@
       .map((cb) => {
         const leagueBlocks = Array.from(cb.leagues.values())
           .map(({ info: lg, items }) => {
-            const sortedItems = isCompletedMode ? items : sortMatchesInOrder(items);
+            const sortedItems = deduplicateMatches(isCompletedMode ? items : sortMatchesInOrder(items));
             return `
               <div class="country-league-block">
                 <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
@@ -1876,14 +1988,16 @@
     const isScopedList = !showToolbar || forcedSection === "COMPETITION";
 
     // Source pool: respect explicit scoped lists (Competition / Search) instead of rebuilding all 700+ matches
-    const sourcePool = (isScopedList ? (matchesList || []) : liveMatches)
-      .filter((m) => !isNcaaOrWomenMatch(m))
-      .filter((m) => {
-        if (isScopedList || activeSportKey === "all") return true;
-        return (m.sport || "football").toLowerCase() === activeSportKey;
-      });
+    const sourcePool = deduplicateMatches(
+      (isScopedList ? (matchesList || []) : liveMatches)
+        .filter((m) => !isNcaaOrWomenMatch(m))
+        .filter((m) => {
+          if (isScopedList || activeSportKey === "all") return true;
+          return (m.sport || "football").toLowerCase() === activeSportKey;
+        })
+    );
 
-    const liveCount = sourcePool.filter(isMatchTrulyLive).length;
+    const liveCount = deduplicateMatches(sourcePool.filter(isMatchTrulyLive)).length;
     const schedCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m)).length;
     const dropsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m) && m.droppingOdds?.bestDrop && m.droppingOdds.bestDrop.dropPct >= 2.0).length;
     const alertsCount = sourcePool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m) && (m.analysis?.factors?.suspensions?.hasAlert || m.analysis?.factors?.injuries?.home?.length || m.analysis?.factors?.injuries?.away?.length)).length;
@@ -1894,7 +2008,8 @@
     if (isLiveSection) {
       // IN LIVE GAMES SECTION: ONLY LIVE GAMES THERE!
       // AUTOMATICALLY EXCLUDE ABANDONED, INTERRUPTED, CANCELLED OR STOPPED GAMES!
-      filtered = sourcePool.filter(isMatchTrulyLive);
+      // STRICT ZERO-TOLERANCE DUPLICATE GUARD: EVERY GAME IS SUBJECTED TO APPEAR EXACTLY ONCE!
+      filtered = deduplicateMatches(sourcePool.filter(isMatchTrulyLive));
 
       toolbarHtml = showToolbar
         ? `
@@ -2981,7 +3096,8 @@
     }
     for (const m of liveMatches) {
       if ((m.sport || "football").toLowerCase() !== key || isNcaaOrWomenMatch(m)) continue;
-      if (!gamesMap.has(m.id)) {
+      const alreadyHave = Array.from(gamesMap.values()).some((g) => areMatchesIdentical(g, m));
+      if (!gamesMap.has(m.id) && !alreadyHave) {
         gamesMap.set(m.id, {
           eventId: m.id,
           sport: key,
@@ -6253,8 +6369,8 @@
     const matchLookupSwapped = new Map();
     for (const m of liveMatches) {
       const sp = (m.sport || "football").toLowerCase();
-      const mH = normSportParticipantKey(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "");
-      const mA = normSportParticipantKey(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "");
+      const mH = normDedupeTeam(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || "");
+      const mA = normDedupeTeam(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || "");
       if (mH && mA) {
         matchLookupByTeams.set(`${sp}:${mH}|${mA}`, m);
         matchLookupSwapped.set(`${sp}:${mA}|${mH}`, m);
@@ -6351,13 +6467,23 @@
       let existing = existingById.get(matchId);
       let matchedSwappedOrientation = false;
       if (!existing) {
-        const normH = normSportParticipantKey(homeName);
-        const normA = normSportParticipantKey(awayName);
+        const normH = normDedupeTeam(homeName);
+        const normA = normDedupeTeam(awayName);
         if (normH && normA) {
           existing = matchLookupByTeams.get(`${sport}:${normH}|${normA}`) || null;
           if (!existing) {
             existing = matchLookupSwapped.get(`${sport}:${normH}|${normA}`) || null;
             if (existing) matchedSwappedOrientation = true;
+          }
+        }
+        if (!existing) {
+          existing = liveMatches.find((ex) => {
+            if ((ex.sport || "football").toLowerCase() !== sport) return false;
+            return areMatchesIdentical(ex, { sport, homeTeamName: homeName, awayTeamName: awayName, timestamp: startTs });
+          }) || null;
+          if (existing) {
+            const exH = normDedupeTeam(existing.homeTeamName || DATA?.TEAMS?.[existing.home]?.name || "");
+            if (exH === normA) matchedSwappedOrientation = true;
           }
         }
       }
@@ -6622,11 +6748,17 @@
         };
       }
 
-      converted.push(newMatch);
+      // Ensure no duplicate match is ever added
+      const alreadyInConverted = converted.some((c) => areMatchesIdentical(c, newMatch)) || liveMatches.some((ex) => areMatchesIdentical(ex, newMatch));
+      if (!alreadyInConverted) {
+        converted.push(newMatch);
+      }
     }
 
     if (converted.length > 0) {
-      liveMatches = [...liveMatches, ...converted];
+      liveMatches = deduplicateMatches([...liveMatches, ...converted]);
+    } else {
+      liveMatches = deduplicateMatches(liveMatches);
     }
 
     // Ingest any completed-today bookmaker items (sports where playtime finished or FT explicitly flagged)
@@ -6686,10 +6818,10 @@
 
     if (RT?.reconcilePlayedMatchesByTime) {
       const rec = RT.reconcilePlayedMatchesByTime(liveMatches, [...finishedTodayMatches, ...extraCompleted], Date.now());
-      liveMatches = rec.activeRemaining;
-      finishedTodayMatches = rec.finishedList;
+      liveMatches = deduplicateMatches(rec.activeRemaining);
+      finishedTodayMatches = deduplicateMatches(rec.finishedList);
     } else if (extraCompleted.length > 0) {
-      finishedTodayMatches = [...finishedTodayMatches, ...extraCompleted];
+      finishedTodayMatches = deduplicateMatches([...finishedTodayMatches, ...extraCompleted]);
     }
 
     if (RT?.hydrateWeatherForMatches && RT?.isTipEligiblePreMatch5h) {
@@ -6746,16 +6878,16 @@
     isSyncingRealtime = true;
     try {
       const res = await RT.load((updatedActive, updatedFinished) => {
-        liveMatches = (updatedActive || []).filter((m) => !isNcaaOrWomenMatch(m));
+        liveMatches = deduplicateMatches((updatedActive || []).filter((m) => !isNcaaOrWomenMatch(m)));
         if (Array.isArray(updatedFinished)) {
-          finishedTodayMatches = updatedFinished.filter((m) => !isNcaaOrWomenMatch(m));
+          finishedTodayMatches = deduplicateMatches(updatedFinished.filter((m) => !isNcaaOrWomenMatch(m)));
         }
         mergeBookmakerGamesIntoLiveMatches();
         recomputeSlips();
         scheduleBackgroundUiRefresh(state.route === "/", 400);
       });
-      liveMatches = (res.activeMatches || []).filter((m) => !isNcaaOrWomenMatch(m));
-      finishedTodayMatches = (res.finishedToday || []).filter((m) => !isNcaaOrWomenMatch(m));
+      liveMatches = deduplicateMatches((res.activeMatches || []).filter((m) => !isNcaaOrWomenMatch(m)));
+      finishedTodayMatches = deduplicateMatches((res.finishedToday || []).filter((m) => !isNcaaOrWomenMatch(m)));
       mergeBookmakerGamesIntoLiveMatches();
       lastSyncIso = res.fetchedAt;
       isLoadingRealtime = false;
@@ -7476,8 +7608,8 @@
       const prevLen = liveMatches.length;
       const rec = RT.reconcilePlayedMatchesByTime(liveMatches, finishedTodayMatches, Date.now());
       if (rec.activeRemaining.length !== prevLen) {
-        liveMatches = rec.activeRemaining;
-        finishedTodayMatches = rec.finishedList;
+        liveMatches = deduplicateMatches(rec.activeRemaining);
+        finishedTodayMatches = deduplicateMatches(rec.finishedList);
         recomputeSlips();
         scheduleBackgroundUiRefresh(true, 400);
       }

@@ -779,7 +779,7 @@ window.MAMON_REALTIME = (() => {
     if (!item) return false;
     if (item.isAbandoned === true || item.status === "ABANDONED") return true;
     const raw = `${item.status || ""} ${item.matchStatus || ""} ${item.matchState || ""} ${item.displayTime || ""} ${item.liveClock || ""} ${item.detail || ""} ${item.shortDetail || ""} ${item.state || ""}`;
-    return /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(raw);
+    return /\b(aband\w*|interrupt\w*|suspend\w*|suspension|cancel\w*|postpon\w*|delay\w*|fail\w*.*continu\w*|stopped|terminat\w*|void|walkover|retir\w*)\b/i.test(raw);
   }
 
   function isMatchTrulyLive(item) {
@@ -1254,9 +1254,9 @@ window.MAMON_REALTIME = (() => {
     const rawState = statusType.state || "pre";
     const detail = statusType.shortDetail || statusType.detail || "Scheduled";
 
-    // Filter out postponed/canceled/abandoned/interrupted/unknown non-playable dead events
+    // Filter out postponed/canceled/abandoned/interrupted/unknown non-playable dead events (never filter out active stoppage time!)
     const rawStatusText = `${detail} ${statusType.name || ""} ${statusType.detail || ""} ${statusType.description || ""} ${statusType.state || ""}`;
-    if (/\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(rawStatusText)) {
+    if (/\b(aband\w*|interrupt\w*|suspend\w*|suspension|cancel\w*|postpon\w*|delay\w*|fail\w*.*continu\w*|stopped|terminat\w*|void|walkover|retir\w*)\b/i.test(rawStatusText)) {
       return null;
     }
 
@@ -1273,7 +1273,8 @@ window.MAMON_REALTIME = (() => {
     const homeComp = comp.competitors.find((c) => c.homeAway === "home") || comp.competitors[0];
     const awayComp = comp.competitors.find((c) => c.homeAway === "away") || comp.competitors[1];
 
-    if (isChaosOrReserveMatch(leagueMeta.leagueName, homeComp?.team?.name, awayComp?.team?.name)) {
+    // For live in-play games, NEVER discard them! Show all active live games in the live section.
+    if (rawState !== "in" && isChaosOrReserveMatch(leagueMeta.leagueName, homeComp?.team?.name, awayComp?.team?.name)) {
       return null;
     }
 
@@ -1405,12 +1406,15 @@ window.MAMON_REALTIME = (() => {
       hoursToKickoff: getHoursToKickoff({ estimateStartTime: matchDt.getTime() }),
       isPreMatch5h: status === "SCHEDULED" && (matchDt.getTime() - Date.now()) >= MIN_PREMATCH_LEAD_MS,
       status,
+      isLive: status === "LIVE",
       minute: parsedMinute,
       halfLabel,
       liveClock: status === "LIVE" ? (espnClock || detail) : "",
       displayTime: status === "LIVE" ? detail : status === "FT" ? "FT" : formatLocalTime(ev.date),
       home: homeKey,
       away: awayKey,
+      homeTeamName: homeComp?.team?.displayName || homeComp?.team?.name || DATA.TEAMS[homeKey]?.name || "Home",
+      awayTeamName: awayComp?.team?.displayName || awayComp?.team?.name || DATA.TEAMS[awayKey]?.name || "Away",
       homeEspnId: String(homeComp.team?.id || ""),
       awayEspnId: String(awayComp.team?.id || ""),
       homeScore,
@@ -1462,7 +1466,7 @@ window.MAMON_REALTIME = (() => {
   function parseOneFootballMatch(ofm) {
     if (!ofm || !ofm.homeTeamName || !ofm.awayTeamName) return null;
     if (ofm.isAbandoned === true || ofm.status === "ABANDONED" || isMatchAbandonedOrInterrupted(ofm)) return null;
-    if (isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
+    if (ofm.isLive !== true && isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
 
     const loc = resolveCanonicalLocation(ofm.country || "", ofm.leagueName || "International Football", "football");
     const staticLg = leagueBySlug.get(loc.slug) || LEAGUES.find((l) => l.name && loc.league.toLowerCase().includes(l.name.toLowerCase()) && l.country === loc.country);
@@ -5139,16 +5143,22 @@ window.MAMON_REALTIME = (() => {
       )
     );
 
+    // Guaranteed Live Master Scoreboard: capture ALL currently in-play matches globally without date cutoff
+    const liveMasterScoreboardPromise = fetchJson("https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard", 5000)
+      .then((json) => ({ code: null, json }))
+      .catch(() => null);
+
     const onefootballPromise = (typeof window !== "undefined" && window.location?.origin)
       ? fetch("/api/onefootball", { cache: "no-store", signal: AbortSignal.timeout(12000) })
           .then((r) => (r.ok ? r.json() : null))
           .catch(() => null)
       : Promise.resolve(null);
 
-    const [_, priorityBoards, allBoards, onefootballJson] = await Promise.all([
+    const [_, priorityBoards, allBoards, liveMasterBoard, onefootballJson] = await Promise.all([
       standingsPromise,
       priorityPromise,
       allScoreboardPromise,
+      liveMasterScoreboardPromise,
       onefootballPromise
     ]);
 
@@ -5177,6 +5187,7 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
+    if (liveMasterBoard) ingestBoard(liveMasterBoard);
     priorityBoards.forEach(ingestBoard);
     allBoards.forEach(ingestBoard);
 

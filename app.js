@@ -56,7 +56,7 @@
     if (m.isAbandoned === true || m.status === "ABANDONED") return true;
     if (RT?.isMatchAbandonedOrInterrupted) return RT.isMatchAbandonedOrInterrupted(m);
     const raw = `${m.status || ""} ${m.matchStatus || ""} ${m.matchState || ""} ${m.displayTime || ""} ${m.liveClock || ""} ${m.detail || ""} ${m.shortDetail || ""} ${m.state || ""}`;
-    return /\b(aband|interrupt|susp|cancel|postpon|delay|fail.*continu|stop|terminat|void|walkover|retir)/i.test(raw);
+    return /\b(aband\w*|interrupt\w*|suspend\w*|suspension|cancel\w*|postpon\w*|delay\w*|fail\w*.*continu\w*|stopped|terminat\w*|void|walkover|retir\w*)\b/i.test(raw);
   }
 
   function isMatchTrulyLive(m) {
@@ -184,6 +184,8 @@
 
   function isNcaaOrWomenMatch(mOrGame) {
     if (!mOrGame) return false;
+    // CRITICAL: NEVER discard an actively in-play live game! All live games belong in the live section.
+    if (mOrGame.status === "LIVE" || mOrGame.isLive === true) return false;
     const text = [
       mOrGame.leagueName,
       mOrGame.league,

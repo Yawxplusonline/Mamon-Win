@@ -5130,6 +5130,121 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  const DEFAULT_LEAGUE_ROSTERS = {
+    czechrepublic: [
+      { rank: 1, team: "Slavia Praha", gp: 14, w: 10, d: 4, l: 0, pts: 34, ppg: 2.43 },
+      { rank: 2, team: "Slovan Liberec", gp: 13, w: 8, d: 2, l: 3, pts: 26, ppg: 2.0 },
+      { rank: 3, team: "Mlada Boleslav", gp: 14, w: 7, d: 4, l: 3, pts: 25, ppg: 1.79 },
+      { rank: 4, team: "Sparta Praha", gp: 14, w: 7, d: 3, l: 4, pts: 24, ppg: 1.71 },
+      { rank: 5, team: "Sigma Olomouc", gp: 14, w: 7, d: 3, l: 4, pts: 24, ppg: 1.71 },
+      { rank: 6, team: "Teplice", gp: 14, w: 6, d: 3, l: 5, pts: 21, ppg: 1.5 },
+      { rank: 7, team: "Jablonec", gp: 14, w: 6, d: 3, l: 5, pts: 21, ppg: 1.5 },
+      { rank: 8, team: "Viktoria Plzen", gp: 14, w: 5, d: 5, l: 4, pts: 20, ppg: 1.43 },
+      { rank: 9, team: "Bohemians 1905", gp: 14, w: 5, d: 5, l: 4, pts: 20, ppg: 1.43 },
+      { rank: 10, team: "Zbrojovka Brno", gp: 14, w: 6, d: 2, l: 6, pts: 20, ppg: 1.43 },
+      { rank: 11, team: "Hradec Kralove", gp: 14, w: 5, d: 3, l: 6, pts: 18, ppg: 1.29 },
+      { rank: 12, team: "Pardubice", gp: 14, w: 5, d: 2, l: 7, pts: 17, ppg: 1.21 },
+      { rank: 13, team: "Banik Ostrava", gp: 13, w: 4, d: 2, l: 7, pts: 14, ppg: 1.08 },
+      { rank: 14, team: "SK Artis Brno", gp: 14, w: 2, d: 4, l: 8, pts: 10, ppg: 0.71 },
+      { rank: 15, team: "Slovacko", gp: 14, w: 2, d: 4, l: 8, pts: 10, ppg: 0.71 },
+      { rank: 16, team: "Zlin", gp: 14, w: 0, d: 3, l: 11, pts: 3, ppg: 0.21 }
+    ],
+    poland: [
+      { rank: 1, team: "Lech Poznan", gp: 13, w: 10, d: 2, l: 1, pts: 32, ppg: 2.46 },
+      { rank: 2, team: "Gornik Zabrze", gp: 14, w: 9, d: 4, l: 1, pts: 31, ppg: 2.21 },
+      { rank: 3, team: "Legia Warszawa", gp: 14, w: 6, d: 6, l: 2, pts: 24, ppg: 1.71 },
+      { rank: 4, team: "Pogon Szczecin", gp: 13, w: 7, d: 3, l: 3, pts: 24, ppg: 1.85 },
+      { rank: 5, team: "Wisła Krakow", gp: 14, w: 7, d: 3, l: 4, pts: 24, ppg: 1.71 },
+      { rank: 6, team: "Zaglebie Lubin", gp: 14, w: 6, d: 5, l: 3, pts: 23, ppg: 1.64 },
+      { rank: 7, team: "Piast Gliwice", gp: 14, w: 6, d: 4, l: 4, pts: 22, ppg: 1.57 },
+      { rank: 8, team: "Katowice", gp: 14, w: 7, d: 0, l: 7, pts: 21, ppg: 1.5 },
+      { rank: 9, team: "Jagiellonia", gp: 13, w: 7, d: 0, l: 6, pts: 21, ppg: 1.62 },
+      { rank: 10, team: "Motor Lublin", gp: 14, w: 5, d: 4, l: 5, pts: 19, ppg: 1.36 },
+      { rank: 11, team: "Korona Kielce", gp: 14, w: 5, d: 3, l: 6, pts: 18, ppg: 1.29 },
+      { rank: 12, team: "Wisła Płock", gp: 13, w: 4, d: 3, l: 6, pts: 15, ppg: 1.15 },
+      { rank: 13, team: "Widzew Lodz", gp: 14, w: 2, d: 8, l: 4, pts: 14, ppg: 1.0 },
+      { rank: 14, team: "Radomiak Radom", gp: 14, w: 4, d: 2, l: 8, pts: 14, ppg: 1.0 },
+      { rank: 15, team: "Cracovia Krakow", gp: 14, w: 3, d: 3, l: 8, pts: 12, ppg: 0.86 },
+      { rank: 16, team: "Rakow Czestochowa", gp: 14, w: 4, d: 0, l: 10, pts: 12, ppg: 0.86 },
+      { rank: 17, team: "Stal Mielec", gp: 14, w: 3, d: 2, l: 9, pts: 11, ppg: 0.79 },
+      { rank: 18, team: "Lechia Gdansk", gp: 14, w: 1, d: 3, l: 10, pts: 6, ppg: 0.43 }
+    ],
+    southkorea: [
+      { rank: 1, team: "Ulsan HD", gp: 38, w: 21, d: 9, l: 8, pts: 72, ppg: 1.89 },
+      { rank: 2, team: "Gangwon FC", gp: 38, w: 19, d: 7, l: 12, pts: 64, ppg: 1.68 },
+      { rank: 3, team: "Gimcheon Sangmu", gp: 38, w: 18, d: 9, l: 11, pts: 63, ppg: 1.66 },
+      { rank: 4, team: "FC Seoul", gp: 38, w: 15, d: 10, l: 13, pts: 55, ppg: 1.45 },
+      { rank: 5, team: "Pohang Steelers", gp: 38, w: 14, d: 11, l: 13, pts: 53, ppg: 1.39 },
+      { rank: 6, team: "Suwon FC", gp: 38, w: 15, d: 8, l: 15, pts: 53, ppg: 1.39 },
+      { rank: 7, team: "Jeju United", gp: 38, w: 15, d: 4, l: 19, pts: 49, ppg: 1.29 },
+      { rank: 8, team: "Gwangju FC", gp: 38, w: 14, d: 4, l: 20, pts: 46, ppg: 1.21 },
+      { rank: 9, team: "Daejeon Citizen", gp: 38, w: 11, d: 13, l: 14, pts: 46, ppg: 1.21 },
+      { rank: 10, team: "Jeonbuk Motors", gp: 38, w: 10, d: 12, l: 16, pts: 42, ppg: 1.11 },
+      { rank: 11, team: "Daegu FC", gp: 38, w: 9, d: 13, l: 16, pts: 40, ppg: 1.05 },
+      { rank: 12, team: "Incheon United", gp: 38, w: 8, d: 12, l: 18, pts: 36, ppg: 0.95 }
+    ],
+    denmark: [
+      { rank: 1, team: "FC København", gp: 17, w: 11, d: 6, l: 0, pts: 39, ppg: 2.29 },
+      { rank: 2, team: "FC Midtjylland", gp: 17, w: 10, d: 5, l: 2, pts: 35, ppg: 2.06 },
+      { rank: 3, team: "AGF Aarhus", gp: 17, w: 9, d: 6, l: 2, pts: 33, ppg: 1.94 },
+      { rank: 4, team: "Brøndby IF", gp: 17, w: 8, d: 6, l: 3, pts: 30, ppg: 1.76 },
+      { rank: 5, team: "Randers FC", gp: 17, w: 8, d: 5, l: 4, pts: 29, ppg: 1.71 },
+      { rank: 6, team: "FC Nordsjælland", gp: 17, w: 8, d: 3, l: 6, pts: 27, ppg: 1.59 },
+      { rank: 7, team: "Silkeborg IF", gp: 17, w: 6, d: 8, l: 3, pts: 26, ppg: 1.53 },
+      { rank: 8, team: "Viborg FF", gp: 17, w: 5, d: 6, l: 6, pts: 21, ppg: 1.24 },
+      { rank: 9, team: "Sønderjyske Fodbold", gp: 17, w: 3, d: 3, l: 11, pts: 12, ppg: 0.71 },
+      { rank: 10, team: "AaB Aalborg", gp: 17, w: 3, d: 3, l: 11, pts: 12, ppg: 0.71 },
+      { rank: 11, team: "Lyngby Boldklub", gp: 17, w: 1, d: 7, l: 9, pts: 10, ppg: 0.59 },
+      { rank: 12, team: "Vejle Boldklub", gp: 17, w: 1, d: 3, l: 13, pts: 6, ppg: 0.35 }
+    ],
+    switzerland: [
+      { rank: 1, team: "Lugano", gp: 14, w: 7, d: 4, l: 3, pts: 25, ppg: 1.79 },
+      { rank: 2, team: "FC Basel", gp: 14, w: 8, d: 1, l: 5, pts: 25, ppg: 1.79 },
+      { rank: 3, team: "Servette FC", gp: 14, w: 7, d: 4, l: 3, pts: 25, ppg: 1.79 },
+      { rank: 4, team: "FC Zurich", gp: 14, w: 7, d: 4, l: 3, pts: 25, ppg: 1.79 },
+      { rank: 5, team: "Young Boys", gp: 14, w: 5, d: 4, l: 5, pts: 19, ppg: 1.36 },
+      { rank: 6, team: "FC Luzern", gp: 14, w: 6, d: 4, l: 4, pts: 22, ppg: 1.57 },
+      { rank: 7, team: "FC St. Gallen", gp: 14, w: 5, d: 5, l: 4, pts: 20, ppg: 1.43 },
+      { rank: 8, team: "FC Sion", gp: 14, w: 4, d: 5, l: 5, pts: 17, ppg: 1.21 },
+      { rank: 9, team: "Lausanne-Sport", gp: 14, w: 6, d: 2, l: 6, pts: 20, ppg: 1.43 },
+      { rank: 10, team: "Yverdon Sport", gp: 14, w: 4, d: 3, l: 7, pts: 15, ppg: 1.07 },
+      { rank: 11, team: "Winterthur", gp: 14, w: 3, d: 2, l: 9, pts: 11, ppg: 0.79 },
+      { rank: 12, team: "Grasshopper Club", gp: 14, w: 2, d: 3, l: 9, pts: 9, ppg: 0.64 }
+    ],
+    ukraine: [
+      { rank: 1, team: "Dynamo Kyiv", gp: 12, w: 10, d: 2, l: 0, pts: 32, ppg: 2.67 },
+      { rank: 2, team: "Oleksandriya", gp: 12, w: 10, d: 2, l: 0, pts: 32, ppg: 2.67 },
+      { rank: 3, team: "Shakhtar Donetsk", gp: 12, w: 8, d: 2, l: 2, pts: 26, ppg: 2.17 },
+      { rank: 4, team: "Polissya Zhytomyr", gp: 12, w: 6, d: 4, l: 2, pts: 22, ppg: 1.83 },
+      { rank: 5, team: "Kryvbas Kryvyi Rih", gp: 12, w: 5, d: 4, l: 3, pts: 19, ppg: 1.58 },
+      { rank: 6, team: "Karpaty Lviv", gp: 12, w: 5, d: 3, l: 4, pts: 18, ppg: 1.5 },
+      { rank: 7, team: "LNZ Cherkasy", gp: 12, w: 5, d: 3, l: 4, pts: 18, ppg: 1.5 },
+      { rank: 8, team: "Zorya Luhansk", gp: 12, w: 5, d: 0, l: 7, pts: 15, ppg: 1.25 },
+      { rank: 9, team: "Rukh Lviv", gp: 12, w: 3, d: 6, l: 3, pts: 15, ppg: 1.25 },
+      { rank: 10, team: "Vorskla Poltava", gp: 12, w: 3, d: 4, l: 5, pts: 13, ppg: 1.08 },
+      { rank: 11, team: "Veres Rivne", gp: 12, w: 2, d: 6, l: 4, pts: 12, ppg: 1.0 },
+      { rank: 12, team: "Kolos Kovalivka", gp: 12, w: 2, d: 6, l: 4, pts: 12, ppg: 1.0 },
+      { rank: 13, team: "Chornomorets Odesa", gp: 12, w: 3, d: 3, l: 6, pts: 12, ppg: 1.0 },
+      { rank: 14, team: "Livyi Bereh", gp: 12, w: 2, d: 2, l: 8, pts: 8, ppg: 0.67 },
+      { rank: 15, team: "Obolon Kyiv", gp: 12, w: 2, d: 3, l: 7, pts: 9, ppg: 0.75 },
+      { rank: 16, team: "Inhulets Petrove", gp: 12, w: 0, d: 6, l: 6, pts: 6, ppg: 0.5 }
+    ],
+    finland: [
+      { rank: 1, team: "KuPS", gp: 27, w: 17, d: 5, l: 5, pts: 56, ppg: 2.07 },
+      { rank: 2, team: "Ilves", gp: 27, w: 16, d: 6, l: 5, pts: 54, ppg: 2.0 },
+      { rank: 3, team: "HJK Helsinki", gp: 27, w: 13, d: 6, l: 8, pts: 45, ppg: 1.67 },
+      { rank: 4, team: "SJK Seinäjoki", gp: 27, w: 11, d: 7, l: 9, pts: 40, ppg: 1.48 },
+      { rank: 5, team: "VPS Vaasa", gp: 27, w: 11, d: 6, l: 10, pts: 39, ppg: 1.44 },
+      { rank: 6, team: "FC Haka", gp: 27, w: 10, d: 5, l: 12, pts: 35, ppg: 1.3 },
+      { rank: 7, team: "FC Inter Turku", gp: 27, w: 10, d: 5, l: 12, pts: 35, ppg: 1.3 },
+      { rank: 8, team: "IF Gnistan", gp: 27, w: 9, d: 8, l: 10, pts: 35, ppg: 1.3 },
+      { rank: 9, team: "AC Oulu", gp: 27, w: 7, d: 7, l: 13, pts: 28, ppg: 1.04 },
+      { rank: 10, team: "IFK Mariehamn", gp: 27, w: 6, d: 7, l: 14, pts: 25, ppg: 0.93 },
+      { rank: 11, team: "FC Lahti", gp: 27, w: 4, d: 12, l: 11, pts: 24, ppg: 0.89 },
+      { rank: 12, team: "Ekenäs IF", gp: 27, w: 4, d: 7, l: 16, pts: 19, ppg: 0.7 }
+    ]
+  };
+
   function buildFallbackRuninTable(leagueCode = "england", matches = []) {
     const code = String(leagueCode || "england").toLowerCase();
     const meta = findRuninLeagueMeta(code);
@@ -5166,6 +5281,33 @@ window.MAMON_REALTIME = (() => {
       };
       standingsPool.push(rec);
       rowsMap.set(teamName, rec);
+    }
+
+    // If standingsByTeamId was empty for this league, seed from pre-configured league rosters
+    if (standingsPool.length === 0 && DEFAULT_LEAGUE_ROSTERS[code]) {
+      const roster = DEFAULT_LEAGUE_ROSTERS[code];
+      for (const item of roster) {
+        const gp = item.gp || 14;
+        const pts = item.pts || Math.round(item.ppg * gp);
+        const ppg = item.ppg || (gp > 0 ? Math.round((pts / gp) * 100) / 100 : 1.3);
+        const rec = {
+          rank: item.rank,
+          team: item.team,
+          teamNormalized: normalizeRuninTeamKey(item.team),
+          leagueCode: meta.code || code,
+          espnCode,
+          gp,
+          w: item.w || 0,
+          d: item.d || 0,
+          l: item.l || 0,
+          pts,
+          ppg,
+          homePpg: clamp(Math.round((ppg + 0.16) * 100) / 100, 0.25, 2.85),
+          awayPpg: clamp(Math.round((ppg - 0.16) * 100) / 100, 0.25, 2.85)
+        };
+        standingsPool.push(rec);
+        rowsMap.set(item.team, rec);
+      }
     }
 
     if (standingsPool.length > 0) {

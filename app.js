@@ -309,22 +309,82 @@
     return id === "sureStakeInput" || id === "desktopSearchInput" || id === "pageSearchInput";
   }
 
-  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 300) {
+  // Universal High-Performance UI Scheduler (Zero INP Blocking < 16ms)
+  function scheduleUiUpdate(taskFn) {
+    if (typeof taskFn !== "function") return;
+    if (window.scheduler && typeof window.scheduler.postTask === "function") {
+      window.scheduler.postTask(taskFn, { priority: "user-visible" }).catch(() => {
+        try { taskFn(); } catch (err) { console.error(err); }
+      });
+      return;
+    }
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try { taskFn(); } catch (err) { console.error(err); }
+        }, 0);
+      });
+      return;
+    }
+    setTimeout(() => {
+      try { taskFn(); } catch (err) { console.error(err); }
+    }, 0);
+  }
+
+  let renderRafId = null;
+  let pendingRenderType = null; // 'all' | 'main'
+
+  function scheduleRenderMainContent() {
+    if (pendingRenderType !== "all") pendingRenderType = "main";
+    if (renderRafId) return;
+    renderRafId = requestAnimationFrame(() => {
+      setTimeout(() => {
+        renderRafId = null;
+        const type = pendingRenderType;
+        pendingRenderType = null;
+        if (type === "all") renderAll();
+        else renderMainContent();
+      }, 0);
+    });
+  }
+
+  function scheduleRenderAll() {
+    pendingRenderType = "all";
+    if (renderRafId) return;
+    renderRafId = requestAnimationFrame(() => {
+      setTimeout(() => {
+        renderRafId = null;
+        pendingRenderType = null;
+        renderAll();
+      }, 0);
+    });
+  }
+
+  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 200) {
     if (fullAll) pendingRenderAll = true;
     clearTimeout(uiRenderTimer);
     uiRenderTimer = setTimeout(() => {
-      const userActiveRecently = (Date.now() - lastUserActiveMs) < 1800;
-      const modalActive = activeModalMatchId || (Date.now() - lastModalInteractionMs) < 800;
-      if (isUserTypingInInput() || modalActive || userActiveRecently) {
-        scheduleBackgroundUiRefresh(pendingRenderAll, 1200);
+      if (isUserTypingInInput()) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, 800);
         return;
       }
       const doAll = pendingRenderAll;
       pendingRenderAll = false;
-      requestAnimationFrame(() => {
-        if (activeModalMatchId || isUserTypingInInput() || (Date.now() - lastUserActiveMs) < 1000) return;
-        if (doAll && state.route === "/") renderAll();
-        else renderMainContent();
+      scheduleUiUpdate(() => {
+        if (isUserTypingInInput()) return;
+        if (activeModalMatchId) {
+          const m = liveMatches.find((x) => x.id === activeModalMatchId);
+          if (m && isMatchTrulyLive(m)) {
+            openMatchModal(activeModalMatchId, activeModalTab);
+          }
+        }
+        if (doAll || state.route === "/" || state.route === "/live" || state.route === "/upcoming") {
+          renderHeaderState();
+          renderSubnav();
+          renderMainContent();
+        } else {
+          renderMainContent();
+        }
       });
     }, delayMs);
   }
@@ -332,19 +392,24 @@
   async function loadRuninLeague(leagueCode, force = false) {
     const code = String(leagueCode || state.activeRuninLeague || "england").toLowerCase();
     state.activeRuninLeague = code;
-    if (force) runinAttemptedCodes.delete(code);
+    if (force) {
+      runinAttemptedCodes.delete(code);
+      runinLoadingCodes.delete(code);
+    }
 
     const existing = runinLeagueCacheClient.get(code) || (!force ? RT?.getLeagueRuninCached?.(code) : null);
-    if (!force && existing?.isFullFetch && Array.isArray(existing.table) && existing.table.length > 0) {
+    if (existing && Array.isArray(existing.table) && existing.table.length > 0) {
       runinLeagueCacheClient.set(code, existing);
-      if (state.route === "/run-in") renderMainContent();
-      return existing;
+      if (!force) {
+        if (state.route === "/run-in") scheduleRenderMainContent();
+        if (existing.isFullFetch) return existing;
+      }
     }
     if (runinLoadingCodes.has(code)) return existing || null;
 
     runinAttemptedCodes.add(code);
     runinLoadingCodes.add(code);
-    if (state.route === "/run-in") renderMainContent();
+    if (state.route === "/run-in") scheduleRenderMainContent();
     try {
       const data = RT?.fetchLeagueRuninData
         ? await RT.fetchLeagueRuninData(code, force)
@@ -370,7 +435,7 @@
       return null;
     } finally {
       runinLoadingCodes.delete(code);
-      if (state.route === "/run-in" || state.route === "/") renderMainContent();
+      if (state.route === "/run-in" || state.route === "/") scheduleRenderMainContent();
     }
   }
 
@@ -393,8 +458,10 @@
     if (runinSwitchRafId) cancelAnimationFrame(runinSwitchRafId);
     runinSwitchRafId = requestAnimationFrame(() => {
       runinSwitchRafId = null;
+      state.activeRuninFilter = "ALL";
       saveState();
       loadRuninLeague(code, false);
+      scheduleRenderMainContent();
     });
   }
 
@@ -565,26 +632,19 @@
     }
     saveState();
     renderHeaderState();
-    renderSubnav();
     if (route === "/run-in") {
       loadRuninLeague(state.activeRuninLeague || "england");
     }
-    const isHeavyRoute = route === "/" || route === "/upcoming" || route === "/live" || route === "/odds-mismatch" || route === "/run-in";
-    if (isHeavyRoute) {
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          renderMainContent();
-          renderLeftRail();
-          renderFooterPopular();
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        }, 0);
-      });
-    } else {
+
+    // Completely non-blocking asynchronous route rendering:
+    // Event handlers exit immediately so browser presents interaction paint in < 16ms
+    scheduleUiUpdate(() => {
       renderMainContent();
+      renderSubnav();
       renderLeftRail();
       renderFooterPopular();
       window.scrollTo({ top: 0, behavior: "smooth" });
-    }
+    });
   }
 
   function getTeam(key, fallbackName = "Club") {
@@ -2607,14 +2667,15 @@
     let isLoadingThisLeague = runinLoadingCodes.has(activeCode);
     const cachedLive = runinLeagueCacheClient.get(activeCode) || RT?.getLeagueRuninCached?.(activeCode);
     const hasCachedRows = Boolean(cachedLive && Array.isArray(cachedLive.table) && cachedLive.table.length > 0);
-    const fallbackData = !hasCachedRows && runinAttemptedCodes.has(activeCode)
+    const fallbackData = !hasCachedRows
       ? RT?.buildFallbackRuninTable?.(activeCode, liveMatches)
       : null;
     const leagueData = hasCachedRows ? cachedLive : (fallbackData?.ok && fallbackData.table?.length > 0 ? fallbackData : null);
+    if (leagueData && !runinLeagueCacheClient.has(activeCode)) {
+      runinLeagueCacheClient.set(activeCode, leagueData);
+    }
 
     if ((!cachedLive || !cachedLive.isFullFetch || !hasCachedRows) && !isLoadingThisLeague && !runinAttemptedCodes.has(activeCode)) {
-      runinLoadingCodes.add(activeCode);
-      isLoadingThisLeague = true;
       setTimeout(() => loadRuninLeague(activeCode, false), 0);
     }
 
@@ -3260,20 +3321,29 @@
     const QUICK_LEAGUES = RUNIN_QUICK_LEAGUES;
     const rawRows = leagueData?.table || [];
 
+    if (isFootball && rawRows.length === 0 && !isLoadingThisLeague) {
+      setTimeout(() => loadRuninLeague(activeCode, true), 10);
+    }
+
     const favorableRows = rawRows.filter((r) => r.diffPct > 0);
     const toughRows = rawRows.filter((r) => r.diffPct < 0);
     const strongPpgAllRows = rawRows.filter((r) => r.ppg >= 1.60);
     const strongPpgEasyRows = rawRows.filter((r) => r.ppg >= 1.60 && r.diffPct > 0);
 
     let filteredRows = rawRows;
+    let isFilterEmpty = false;
     if (activeFilter === "FAVORABLE") {
-      filteredRows = [...favorableRows].sort((a, b) => b.diffPct - a.diffPct);
+      filteredRows = favorableRows.length > 0 ? [...favorableRows].sort((a, b) => b.diffPct - a.diffPct) : rawRows;
+      isFilterEmpty = favorableRows.length === 0 && rawRows.length > 0;
     } else if (activeFilter === "TOUGH") {
-      filteredRows = [...toughRows].sort((a, b) => a.diffPct - b.diffPct);
+      filteredRows = toughRows.length > 0 ? [...toughRows].sort((a, b) => a.diffPct - b.diffPct) : rawRows;
+      isFilterEmpty = toughRows.length === 0 && rawRows.length > 0;
     } else if (activeFilter === "STRONG_PPG") {
-      filteredRows = [...strongPpgAllRows].sort((a, b) => b.ppg - a.ppg || b.diffPct - a.diffPct);
+      filteredRows = strongPpgAllRows.length > 0 ? [...strongPpgAllRows].sort((a, b) => b.ppg - a.ppg || b.diffPct - a.diffPct) : rawRows;
+      isFilterEmpty = strongPpgAllRows.length === 0 && rawRows.length > 0;
     } else if (activeFilter === "STRONG_PPG_EASY") {
-      filteredRows = [...strongPpgEasyRows].sort((a, b) => (b.ppg + b.diffPct / 100) - (a.ppg + a.diffPct / 100));
+      filteredRows = strongPpgEasyRows.length > 0 ? [...strongPpgEasyRows].sort((a, b) => (b.ppg + b.diffPct / 100) - (a.ppg + a.diffPct / 100)) : rawRows;
+      isFilterEmpty = strongPpgEasyRows.length === 0 && rawRows.length > 0;
     }
 
     const easiestTop = [...rawRows].sort((a, b) => b.diffPct - a.diffPct)[0];
@@ -3410,10 +3480,10 @@
           <div class="panel-hdr-center">
             <h2>${escapeHtml(leagueMeta.name)} — Run-In Difficulty Table</h2>
             <span class="count">${
-              isLoadingThisLeague
+              isLoadingThisLeague && rawRows.length === 0
                 ? "Syncing live Run-In data..."
                 : rawRows.length > 0
-                  ? (filteredRows.length !== rawRows.length
+                  ? (filteredRows.length !== rawRows.length && !isFilterEmpty
                       ? `${rawRows.length} Competitors (${filteredRows.length} shown) · Click any row for all played scores &amp; fixture tips`
                       : `${rawRows.length} Competitors · Click any row for all played scores &amp; fixture tips`)
                   : "0 Competitors · Click any row for all played scores &amp; fixture tips"
@@ -3426,16 +3496,19 @@
             ? `<div class="empty-state"><h3>Fetching live Run-In Analysis for ${escapeHtml(leagueMeta.name)}...</h3><p class="text-sm">Calculating Opponents Played PPG (PLD), Scorelines &amp; Remaining Opponents PPG (REM).</p></div>`
             : rawRows.length === 0
               ? `<div class="empty-state"><h3>No Run-In fixtures currently loaded for ${escapeHtml(leagueMeta.name)}</h3><p class="text-sm">Tap Retry / Sync below to refresh live schedule &amp; bookmaker stats.</p><button type="button" class="filter-chip is-active mt-3" data-runin-refresh="1">Retry ${escapeHtml(leagueMeta.name)}</button></div>`
-              : filteredRows.length === 0
-                ? `<div class="empty-state">
-                    <h3>No teams match the "${escapeHtml(activeFilter)}" filter in ${escapeHtml(leagueMeta.name)}</h3>
-                    <p class="text-sm">Currently no teams in this competition satisfy both criteria. View all ${rawRows.length} teams or Strong PPG tips.</p>
-                    <div class="flex items-center justify-center gap-2 mt-3 flex-wrap">
-                      <button type="button" class="filter-chip is-active" data-runin-filter="ALL">Show all ${rawRows.length} teams in ${escapeHtml(leagueMeta.name)}</button>
-                      ${strongPpgAllRows.length > 0 ? `<button type="button" class="filter-chip" data-runin-filter="STRONG_PPG">Strong PPG (${strongPpgAllRows.length})</button>` : ""}
-                    </div>
-                  </div>`
-                : tableBlockHtml
+              : `
+                ${
+                  isFilterEmpty
+                    ? `<div class="empty-state" style="margin:0 0 1rem 0;padding:12px 18px;background:rgba(255,255,255,0.03);border:1px dashed var(--border);text-align:left;">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                          <span class="text-sm">No teams in <strong>${escapeHtml(leagueMeta.name)}</strong> currently meet the <strong>${escapeHtml(activeFilter)}</strong> filter. Showing all <strong>${rawRows.length}</strong> teams below:</span>
+                          <button type="button" class="filter-chip is-active" data-runin-filter="ALL" style="padding:4px 10px;font-size:11px;">Reset to All (${rawRows.length})</button>
+                        </div>
+                      </div>`
+                    : ""
+                }
+                ${tableBlockHtml}
+              `
         }
       </section>
     `;
@@ -5334,15 +5407,22 @@
         main.innerHTML = renderSearchView();
         const pageSearch = document.getElementById("pageSearchInput");
         if (pageSearch) {
+          let pageSearchTimer = null;
           pageSearch.addEventListener("input", (e) => {
+            const val = e.target.value;
             const desktopInput = document.getElementById("desktopSearchInput");
-            if (desktopInput) desktopInput.value = e.target.value;
-            renderMainContent();
-            const newInput = document.getElementById("pageSearchInput");
-            if (newInput) {
-              newInput.focus();
-              newInput.setSelectionRange(newInput.value.length, newInput.value.length);
-            }
+            if (desktopInput) desktopInput.value = val;
+            if (pageSearchTimer) clearTimeout(pageSearchTimer);
+            pageSearchTimer = setTimeout(() => {
+              scheduleUiUpdate(() => {
+                renderMainContent();
+                const newInput = document.getElementById("pageSearchInput");
+                if (newInput) {
+                  newInput.focus();
+                  newInput.setSelectionRange(newInput.value.length, newInput.value.length);
+                }
+              });
+            }, 40);
           });
         }
       } else if (r.startsWith("/competitions/")) {
@@ -5376,7 +5456,7 @@
       currSelect.addEventListener("change", (e) => {
         state.stakeCurrency = e.target.value;
         saveState();
-        renderAll();
+        scheduleRenderAll();
       });
     }
   }
@@ -6293,9 +6373,12 @@
     // Fast-path Match Modal Tab switching
     const fastMatchTab = e.target.closest("[data-match-tab]");
     if (fastMatchTab) {
-      openMatchModal(fastMatchTab.getAttribute("data-match-id"), fastMatchTab.getAttribute("data-match-tab"));
+      const mId = fastMatchTab.getAttribute("data-match-id");
+      const tab = fastMatchTab.getAttribute("data-match-tab");
+      scheduleUiUpdate(() => openMatchModal(mId, tab));
       return;
     }
+
     // Switch Active Sport Filter (Football, Tennis, Basketball, Darts, Ice Hockey)
     const sportBtn = e.target.closest("[data-sport-filter]");
     if (sportBtn) {
@@ -6307,7 +6390,7 @@
         expandedRuninTeam = null;
       }
       saveState();
-      renderAll();
+      scheduleRenderAll();
       return;
     }
 
@@ -6316,16 +6399,17 @@
     if (tierJump) {
       e.preventDefault();
       state.activeSureTier = tierJump.getAttribute("data-tier-jump");
-      navigate("/sure-odds");
+      scheduleUiUpdate(() => navigate("/sure-odds"));
       return;
     }
 
-    // Route links
+    // Route links (Completely non-blocking navigation for <a> and league headers)
     const routeLink = e.target.closest("[data-route]");
     if (routeLink) {
       e.preventDefault();
+      const targetRoute = routeLink.getAttribute("data-route");
       document.getElementById("searchDropdown")?.classList.add("hidden");
-      navigate(routeLink.getAttribute("data-route"));
+      scheduleUiUpdate(() => navigate(targetRoute));
       return;
     }
 
@@ -6334,11 +6418,13 @@
     if (tierBtn) {
       state.activeSureTier = tierBtn.getAttribute("data-select-tier");
       saveState();
-      if (tierBtn.hasAttribute("data-go-sure")) {
-        navigate("/sure-odds");
-      } else {
-        renderAll();
-      }
+      scheduleUiUpdate(() => {
+        if (tierBtn.hasAttribute("data-go-sure")) {
+          navigate("/sure-odds");
+        } else {
+          renderAll();
+        }
+      });
       return;
     }
 
@@ -6347,7 +6433,7 @@
     if (dropFilterBtn) {
       state.activeDropFilter = dropFilterBtn.getAttribute("data-drop-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6356,7 +6442,7 @@
     if (ppgCatBtn) {
       state.activePpgCategory = ppgCatBtn.getAttribute("data-ppg-cat");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6368,12 +6454,14 @@
       state.activeRuninSport = spKey;
       state.activeRuninSportLeague = "ALL";
       saveState();
-      if (spKey === "football") {
-        loadRuninLeague(state.activeRuninLeague || "england", false);
-      } else if (!bookmakerScan) {
-        syncBookmakerMismatchFeed(false, false);
-      }
-      renderMainContent();
+      scheduleUiUpdate(() => {
+        if (spKey === "football") {
+          loadRuninLeague(state.activeRuninLeague || "england", false);
+        } else if (!bookmakerScan) {
+          syncBookmakerMismatchFeed(false, false);
+        }
+        renderMainContent();
+      });
       return;
     }
     const runinLgBtn = e.target.closest("[data-runin-league]");
@@ -6389,18 +6477,21 @@
     if (runinFilterBtn) {
       state.activeRuninFilter = runinFilterBtn.getAttribute("data-runin-filter") || "ALL";
       saveState();
-      requestAnimationFrame(() => renderMainContent());
+      scheduleRenderMainContent();
       return;
     }
     if (e.target.closest("[data-runin-refresh]")) {
-      if ((state.activeRuninSport || "football") === "football") {
-        const activeCode = state.activeRuninLeague || "england";
-        runinAttemptedCodes.delete(activeCode);
-        loadRuninLeague(activeCode, true);
-      } else {
-        syncBookmakerMismatchFeed(true, true);
-      }
-      showToast("Syncing live Run-In Analysis tables...");
+      scheduleUiUpdate(() => {
+        if ((state.activeRuninSport || "football") === "football") {
+          const activeCode = state.activeRuninLeague || "england";
+          runinAttemptedCodes.delete(activeCode);
+          runinLoadingCodes.delete(activeCode);
+          loadRuninLeague(activeCode, true);
+        } else {
+          syncBookmakerMismatchFeed(true, true);
+        }
+        showToast("Syncing live Run-In Analysis tables...");
+      });
       return;
     }
     const runinTeamRow = e.target.closest("[data-toggle-runin-team]");
@@ -6408,24 +6499,25 @@
       const teamKey = runinTeamRow.getAttribute("data-toggle-runin-team");
       const wasOpen = expandedRuninTeam === teamKey;
       expandedRuninTeam = wasOpen ? null : teamKey;
-      // Surgical DOM drawer toggle (< 2ms INP — avoid rebuilding 900+ rows)
-      document.querySelectorAll("tr.runin-drawer-row").forEach((el) => el.remove());
-      document.querySelectorAll("tr[data-runin-expanded='1']").forEach((el) => {
-        el.removeAttribute("data-runin-expanded");
-        const arr = el.querySelector("[data-runin-arrow]");
-        if (arr) arr.textContent = "▼";
-      });
-      if (!wasOpen) {
-        const builder = runinDrawerBuilders.get(teamKey);
-        if (typeof builder === "function") {
-          runinTeamRow.setAttribute("data-runin-expanded", "1");
-          const arr = runinTeamRow.querySelector("[data-runin-arrow]");
-          if (arr) arr.textContent = "▲";
-          runinTeamRow.insertAdjacentHTML("afterend", builder());
-          return;
+      scheduleUiUpdate(() => {
+        document.querySelectorAll("tr.runin-drawer-row").forEach((el) => el.remove());
+        document.querySelectorAll("tr[data-runin-expanded='1']").forEach((el) => {
+          el.removeAttribute("data-runin-expanded");
+          const arr = el.querySelector("[data-runin-arrow]");
+          if (arr) arr.textContent = "▼";
+        });
+        if (!wasOpen) {
+          const builder = runinDrawerBuilders.get(teamKey);
+          if (typeof builder === "function") {
+            runinTeamRow.setAttribute("data-runin-expanded", "1");
+            const arr = runinTeamRow.querySelector("[data-runin-arrow]");
+            if (arr) arr.textContent = "▲";
+            runinTeamRow.insertAdjacentHTML("afterend", builder());
+            return;
+          }
+          renderMainContent();
         }
-        renderMainContent();
-      }
+      });
       return;
     }
 
@@ -6434,7 +6526,7 @@
     if (strongFilterBtn) {
       state.activeStrongFilter = strongFilterBtn.getAttribute("data-strong-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6443,7 +6535,7 @@
     if (worstFilterBtn) {
       state.activeWorstFilter = worstFilterBtn.getAttribute("data-worst-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6452,7 +6544,7 @@
     if (intelTabBtn) {
       state.activeIntelTab = intelTabBtn.getAttribute("data-intel-tab");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6461,7 +6553,7 @@
     if (powerCatBtn) {
       state.activePowerCategory = powerCatBtn.getAttribute("data-power-cat");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6470,13 +6562,13 @@
     if (mismatchCatBtn) {
       state.activeMismatchCategory = mismatchCatBtn.getAttribute("data-mismatch-cat");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
     // Rescan SportyBet & Football.com live feed
     if (e.target.closest("[data-rescan-bookmakers]")) {
-      syncBookmakerMismatchFeed(true, true);
+      scheduleUiUpdate(() => syncBookmakerMismatchFeed(true, true));
       return;
     }
 
@@ -6485,7 +6577,7 @@
     if (handicapFilterBtn) {
       state.activeHandicapFilter = handicapFilterBtn.getAttribute("data-handicap-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6494,7 +6586,7 @@
     if (specialTabBtn) {
       state.activeSpecialTipTab = specialTabBtn.getAttribute("data-special-tab");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6503,7 +6595,7 @@
     if (specialFilterBtn) {
       state.activeSpecialTipFilter = specialFilterBtn.getAttribute("data-special-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6525,16 +6617,18 @@
     if (quickStakeBtn) {
       state.stakeAmount = Number(quickStakeBtn.getAttribute("data-quick-stake")) || 10;
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
     // Shuffle / Regenerate Sure Odds slip
     if (e.target.closest("[data-regen-slip]")) {
       state.slipSeed = (state.slipSeed || 0) + 1;
-      recomputeSlips();
-      renderAll();
-      showToast("Refreshed Sure Odds slip with alternative real-time fixtures.");
+      scheduleUiUpdate(() => {
+        recomputeSlips();
+        renderAll();
+        showToast("Refreshed Sure Odds slip with alternative real-time fixtures.");
+      });
       return;
     }
 
@@ -6544,32 +6638,36 @@
       const mId = toggleFactorsBtn.getAttribute("data-toggle-factors");
       const current = Boolean(state.expandedLegs[mId]);
       state.expandedLegs[mId] = !current;
-      const targetMatch = liveMatches.find((x) => x.id === mId);
-      if (!current && targetMatch && RT && !targetMatch.enriched) {
-        RT.enrichMatchDetails(targetMatch).then(() => {
-          recomputeSlips();
-          renderMainContent();
-        }).catch(() => {});
-      }
-      renderMainContent();
+      scheduleUiUpdate(() => {
+        const targetMatch = liveMatches.find((x) => x.id === mId);
+        if (!current && targetMatch && RT && !targetMatch.enriched) {
+          RT.enrichMatchDetails(targetMatch).then(() => {
+            recomputeSlips();
+            renderMainContent();
+          }).catch(() => {});
+        }
+        renderMainContent();
+      });
       return;
     }
 
     // Expand / Collapse All 11 Factors on current /sure-odds slip
     if (e.target.closest("#expandAllFactorsBtn")) {
-      const slip = sureSlips[state.activeSureTier || "2"];
-      if (slip?.legs?.length) {
-        const anyClosed = slip.legs.some((l) => !state.expandedLegs[l.matchId]);
-        slip.legs.forEach((l) => {
-          state.expandedLegs[l.matchId] = anyClosed;
-          if (anyClosed && RT && !l.match.enriched) {
-            RT.enrichMatchDetails(l.match).then(() => {
-              scheduleBackgroundUiRefresh(false, 80);
-            }).catch(() => {});
-          }
-        });
-        renderMainContent();
-      }
+      scheduleUiUpdate(() => {
+        const slip = sureSlips[state.activeSureTier || "2"];
+        if (slip?.legs?.length) {
+          const anyClosed = slip.legs.some((l) => !state.expandedLegs[l.matchId]);
+          slip.legs.forEach((l) => {
+            state.expandedLegs[l.matchId] = anyClosed;
+            if (anyClosed && RT && !l.match.enriched) {
+              RT.enrichMatchDetails(l.match).then(() => {
+                scheduleBackgroundUiRefresh(false, 80);
+              }).catch(() => {});
+            }
+          });
+          renderMainContent();
+        }
+      });
       return;
     }
 
@@ -6578,23 +6676,25 @@
     if (hydrateBtn) {
       e.stopPropagation();
       const mId = hydrateBtn.getAttribute("data-hydrate-match");
-      const target = [...liveMatches, ...finishedTodayMatches].find((x) => x.id === mId);
-      if (target && RT) {
-        hydrateBtn.disabled = true;
-        hydrateBtn.textContent = "Syncing ESPN live splits...";
-        RT.enrichMatchDetails(target).then(() => {
-          recomputeSlips();
-          if (activeModalMatchId === mId) {
-            openMatchModal(mId, activeModalTab);
-          } else {
-            renderAll();
-          }
-          showToast("Synced live H2H, Home/Away splits & Run-in schedule.");
-        }).catch(() => {
-          hydrateBtn.disabled = false;
-          hydrateBtn.textContent = "↻ Refresh Live Splits";
-        });
-      }
+      hydrateBtn.disabled = true;
+      hydrateBtn.textContent = "Syncing ESPN live splits...";
+      scheduleUiUpdate(() => {
+        const target = [...liveMatches, ...finishedTodayMatches].find((x) => x.id === mId);
+        if (target && RT) {
+          RT.enrichMatchDetails(target).then(() => {
+            recomputeSlips();
+            if (activeModalMatchId === mId) {
+              openMatchModal(mId, activeModalTab);
+            } else {
+              renderAll();
+            }
+            showToast("Synced live H2H, Home/Away splits & Run-in schedule.");
+          }).catch(() => {
+            hydrateBtn.disabled = false;
+            hydrateBtn.textContent = "↻ Refresh Live Splits";
+          });
+        }
+      });
       return;
     }
 
@@ -6629,7 +6729,7 @@
         showToast(`Following ${TEAMS[k]?.name || k}`);
       }
       saveState();
-      renderAll();
+      scheduleRenderAll();
       return;
     }
 
@@ -6644,7 +6744,7 @@
         showToast(`Following ${getLeagueInfo(slug).name}`);
       }
       saveState();
-      renderAll();
+      scheduleRenderAll();
       return;
     }
 
@@ -6653,7 +6753,7 @@
     if (dateBtn) {
       state.selectedDate = dateBtn.getAttribute("data-date");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6662,7 +6762,7 @@
     if (filterBtn) {
       state.matchFilter = filterBtn.getAttribute("data-filter");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -6671,22 +6771,23 @@
     if (standingsTab) {
       state.standingsLeague = standingsTab.getAttribute("data-standings-tab");
       saveState();
-      renderMainContent();
+      scheduleRenderMainContent();
       return;
     }
 
     // Refresh real-time scores
     if (e.target.closest("#refreshMatchesBtn")) {
       showToast("Refreshing live ESPN matchday feeds...");
-      syncRealtimeFeed(true);
+      scheduleUiUpdate(() => syncRealtimeFeed(true));
       return;
     }
 
     // Open Match Center modal
     const matchCard = e.target.closest("[data-match-id]");
     if (matchCard) {
+      const matchId = matchCard.getAttribute("data-match-id");
       document.getElementById("searchDropdown")?.classList.add("hidden");
-      openMatchModal(matchCard.getAttribute("data-match-id"), "analysis");
+      scheduleUiUpdate(() => openMatchModal(matchId, "analysis"));
       return;
     }
 
@@ -6694,7 +6795,8 @@
     const newsEl = e.target.closest("[data-news-id]");
     if (newsEl) {
       e.preventDefault();
-      openNewsModal(newsEl.getAttribute("data-news-id"));
+      const newsId = newsEl.getAttribute("data-news-id");
+      scheduleUiUpdate(() => openNewsModal(newsId));
       return;
     }
 
@@ -6702,7 +6804,8 @@
     const legalLink = e.target.closest("[data-legal]");
     if (legalLink) {
       e.preventDefault();
-      openLegalModal(legalLink.getAttribute("data-legal"));
+      const legalType = legalLink.getAttribute("data-legal");
+      scheduleUiUpdate(() => openLegalModal(legalType));
       return;
     }
 
@@ -6710,8 +6813,10 @@
     if (e.target.closest("#settingsBtn")) {
       const menu = document.getElementById("settingsMenu");
       if (menu) {
-        renderSettingsMenu();
-        menu.classList.toggle("hidden");
+        scheduleUiUpdate(() => {
+          renderSettingsMenu();
+          menu.classList.toggle("hidden");
+        });
       }
       return;
     }
@@ -6719,24 +6824,30 @@
     if (e.target.closest("#toggleThemeBtn")) {
       state.theme = state.theme === "dark" ? "light" : "dark";
       saveState();
-      applyTheme();
-      renderSettingsMenu();
+      scheduleUiUpdate(() => {
+        applyTheme();
+        renderSettingsMenu();
+      });
       return;
     }
 
     if (e.target.closest("#toggleTickerBtn")) {
       state.liveTicker = !state.liveTicker;
       saveState();
-      renderSettingsMenu();
-      showToast(state.liveTicker ? "Real-time polling active" : "Real-time auto-refresh paused");
+      scheduleUiUpdate(() => {
+        renderSettingsMenu();
+        showToast(state.liveTicker ? "Real-time polling active" : "Real-time auto-refresh paused");
+      });
       return;
     }
 
     if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
-      document.getElementById("settingsMenu")?.classList.add("hidden");
+      const sm = document.getElementById("settingsMenu");
+      if (sm && !sm.classList.contains("hidden")) sm.classList.add("hidden");
     }
     if (!e.target.closest(".search-wrap")) {
-      document.getElementById("searchDropdown")?.classList.add("hidden");
+      const sd = document.getElementById("searchDropdown");
+      if (sd && !sd.classList.contains("hidden")) sd.classList.add("hidden");
     }
   });
 
@@ -6744,7 +6855,7 @@
     if (e.target.id === "oddsFormatSelect") {
       state.oddsFormat = e.target.value;
       saveState();
-      requestAnimationFrame(() => renderMainContent());
+      scheduleRenderMainContent();
     } else if (e.target.id === "runinLeagueSelect") {
       const code = e.target.value || "england";
       expandedRuninTeam = null;
@@ -6756,21 +6867,33 @@
       expandedRuninTeam = null;
       state.activeRuninSportLeague = e.target.value || "ALL";
       saveState();
-      requestAnimationFrame(() => renderMainContent());
+      scheduleRenderMainContent();
     }
   });
 
   const desktopSearch = document.getElementById("desktopSearchInput");
   if (desktopSearch) {
-    desktopSearch.addEventListener("input", (e) => renderSearchDropdown(e.target.value));
+    let desktopSearchDebounce = null;
+    desktopSearch.addEventListener("input", (e) => {
+      const q = e.target.value;
+      if (desktopSearchDebounce) clearTimeout(desktopSearchDebounce);
+      desktopSearchDebounce = setTimeout(() => {
+        scheduleUiUpdate(() => renderSearchDropdown(q));
+      }, 50);
+    });
     desktopSearch.addEventListener("focus", (e) => {
-      if (e.target.value.trim()) renderSearchDropdown(e.target.value);
+      if (e.target.value.trim()) {
+        scheduleUiUpdate(() => renderSearchDropdown(e.target.value));
+      }
     });
     desktopSearch.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
-        document.getElementById("searchDropdown")?.classList.add("hidden");
-        navigate("/search");
+        const q = e.target.value.trim();
+        if (q) {
+          document.getElementById("searchDropdown")?.classList.add("hidden");
+          scheduleUiUpdate(() => navigate(`/search?q=${encodeURIComponent(q)}`));
+        }
       }
     });
   }

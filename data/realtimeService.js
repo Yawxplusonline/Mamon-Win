@@ -103,7 +103,51 @@ window.MAMON_REALTIME = (() => {
     [/scottish-championship/i, "sco.2"]
   ];
 
+  function isNcaaOrWomenSoccer(...args) {
+    const text = args
+      .filter(Boolean)
+      .map((x) => (typeof x === "string" ? x : typeof x === "object" ? JSON.stringify(x) : String(x)))
+      .join(" ")
+      .toLowerCase();
+
+    const banned = [
+      /\bncaa\b/i,
+      /\bnacca\b/i,
+      /\bcollege\b/i,
+      /\bdivision\s*[i|1|2|3]+\s*women\b/i,
+      /\bncaa\s*division\b/i,
+      /\bnaia\b/i,
+      /\bnjcaa\b/i,
+      /\bwomen('s)?\b/i,
+      /\(w\)\b/i,
+      /\b\(w\)/i,
+      /\b-w\b/i,
+      /\bwbb\b/i,
+      /\bwnba\b/i,
+      /\bladies\b/i,
+      /\blady\b/i,
+      /\bfemenil\b/i,
+      /\bfeminina\b/i,
+      /\bfeminino\b/i,
+      /\bfem\b/i,
+      /\bfemminile\b/i,
+      /\bféminine\b/i,
+      /\bfrauen\b/i,
+      /\bw-league\b/i,
+      /\bwsl\b/i,
+      /\bnwsl\b/i,
+      /\bd1\s*arkema\b/i,
+      /\bfrauen-bundesliga\b/i,
+      /\bserie\s*a\s*femminile\b/i,
+      /\bliga\s*f\b/i,
+      /\bdamallsvenskan\b/i,
+      /\btopserien\b/i
+    ];
+    return banned.some((rx) => rx.test(text));
+  }
+
   function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
+    if (isNcaaOrWomenSoccer(league, homeTeam, awayTeam)) return true;
     const text = `${league || ""} ${homeTeam || ""} ${awayTeam || ""}`.toLowerCase();
     const chaosPatterns = [
       /\breserve(s)?\b/i,
@@ -133,17 +177,7 @@ window.MAMON_REALTIME = (() => {
       /\bisthmian\b/i,
       /\bnorthern premier\b/i,
       /\bnational league south\b/i,
-      /\bnational league north\b/i,
-      /\bncaa\b/i,
-      /\bnacca\b/i,
-      /\bwomen('s)?\b/i,
-      /\b(w)\b/i,
-      /\bwbb\b/i,
-      /\bcollege\b/i,
-      /\bladies\b/i,
-      /\bfemenil\b/i,
-      /\bfeminina\b/i,
-      /\bfem\b/i
+      /\bnational league north\b/i
     ];
     return chaosPatterns.some((p) => p.test(text));
   }
@@ -792,6 +826,7 @@ window.MAMON_REALTIME = (() => {
   function isTipEligiblePreMatch5h(item) {
     if (!item) return false;
     if (item.isLive === true || item.status === "LIVE" || item.status === "FT" || item.status === "ABANDONED" || item.isAbandoned === true || isMatchAbandonedOrInterrupted(item)) return false;
+    if (isNcaaOrWomenSoccer(item.leagueName, item.league, item.leagueSlug, item.homeTeamName, item.awayTeamName, DATA.TEAMS?.[item.home]?.name, DATA.TEAMS?.[item.away]?.name)) return false;
     const ko = resolveKickoffMs(item);
     if (!Number.isFinite(ko)) return false;
     return (ko - Date.now()) >= MIN_PREMATCH_LEAD_MS;
@@ -1273,7 +1308,27 @@ window.MAMON_REALTIME = (() => {
     const homeComp = comp.competitors.find((c) => c.homeAway === "home") || comp.competitors[0];
     const awayComp = comp.competitors.find((c) => c.homeAway === "away") || comp.competitors[1];
 
-    // For live in-play games, NEVER discard them! Show all active live games in the live section.
+    // UNCONDITIONAL STRICT BAN: NCAA and Women's Soccer are purged completely (pre-match, live, or completed)
+    if (
+      isNcaaOrWomenSoccer(
+        leagueMeta?.leagueName,
+        leagueMeta?.leagueSlug,
+        scoreboardLeague?.name,
+        ev.season?.slug,
+        ev.name,
+        ev.shortName,
+        homeComp?.team?.name,
+        homeComp?.team?.displayName,
+        homeComp?.team?.shortDisplayName,
+        awayComp?.team?.name,
+        awayComp?.team?.displayName,
+        awayComp?.team?.shortDisplayName
+      )
+    ) {
+      return null;
+    }
+
+    // For live in-play games, NEVER discard legitimate professional youth/cups, but filter chaos/reserves pre-match
     if (rawState !== "in" && isChaosOrReserveMatch(leagueMeta.leagueName, homeComp?.team?.name, awayComp?.team?.name)) {
       return null;
     }
@@ -1512,6 +1567,7 @@ window.MAMON_REALTIME = (() => {
   function parseOneFootballMatch(ofm) {
     if (!ofm || !ofm.homeTeamName || !ofm.awayTeamName) return null;
     if (ofm.isAbandoned === true || ofm.status === "ABANDONED" || isMatchAbandonedOrInterrupted(ofm)) return null;
+    if (isNcaaOrWomenSoccer(ofm.leagueName, ofm.country, ofm.homeTeamName, ofm.awayTeamName)) return null;
     if (ofm.isLive !== true && isChaosOrReserveMatch(ofm.leagueName, ofm.homeTeamName, ofm.awayTeamName)) return null;
 
     const loc = resolveCanonicalLocation(ofm.country || "", ofm.leagueName || "International Football", "football");
@@ -5421,6 +5477,7 @@ window.MAMON_REALTIME = (() => {
       }
 
       for (const ofm of onefootballJson.matches) {
+        if (isNcaaOrWomenSoccer(ofm.leagueName, ofm.country, ofm.homeTeamName, ofm.awayTeamName)) continue;
         const isDeadOfm = ofm.isAbandoned === true || ofm.status === "ABANDONED" || isMatchAbandonedOrInterrupted(ofm);
         const ofH = normalizeRuninTeamKey(ofm.homeTeamName);
         const ofA = normalizeRuninTeamKey(ofm.awayTeamName);
@@ -5506,14 +5563,17 @@ window.MAMON_REALTIME = (() => {
       Array.from(finishedTodayMap.values()),
       Date.now()
     );
-    const activeMatches = reconciled.activeRemaining.sort((a, b) => {
-      if (a.status === "LIVE" && b.status !== "LIVE") return -1;
-      if (a.status !== "LIVE" && b.status === "LIVE") return 1;
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return new Date(a.isoDateTime) - new Date(b.isoDateTime);
-    });
+    const activeMatches = reconciled.activeRemaining
+      .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name))
+      .sort((a, b) => {
+        if (a.status === "LIVE" && b.status !== "LIVE") return -1;
+        if (a.status !== "LIVE" && b.status === "LIVE") return 1;
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        return new Date(a.isoDateTime) - new Date(b.isoDateTime);
+      });
 
-    const finishedToday = reconciled.finishedList;
+    const finishedToday = reconciled.finishedList
+      .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name));
 
     // Fetch live news from premier + uefa for News panel
     const liveArticles = [];
@@ -6101,6 +6161,7 @@ window.MAMON_REALTIME = (() => {
     lookupTeamRunin,
     evaluateRuninTableConfirmation,
     computeRuninTip,
+    isNcaaOrWomenSoccer,
     isTipEligiblePreMatch5h,
     isMatchAbandonedOrInterrupted,
     isMatchTrulyLive,

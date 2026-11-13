@@ -184,19 +184,43 @@
 
   function isNcaaOrWomenMatch(mOrGame) {
     if (!mOrGame) return false;
-    // CRITICAL: NEVER discard an actively in-play live game! All live games belong in the live section.
-    if (mOrGame.status === "LIVE" || mOrGame.isLive === true) return false;
+    const hTeamName = mOrGame.homeTeamName || DATA?.TEAMS?.[mOrGame.home]?.name || "";
+    const aTeamName = mOrGame.awayTeamName || DATA?.TEAMS?.[mOrGame.away]?.name || "";
+
+    if (RT?.isNcaaOrWomenSoccer && RT.isNcaaOrWomenSoccer(
+      mOrGame.leagueName,
+      mOrGame.league,
+      mOrGame.leagueSlug,
+      mOrGame.name,
+      mOrGame.shortName,
+      mOrGame.tournamentName,
+      mOrGame._tournamentName,
+      mOrGame.competitionName,
+      mOrGame.categoryName,
+      mOrGame.country,
+      mOrGame._countryName,
+      hTeamName,
+      aTeamName
+    )) {
+      return true;
+    }
+
     const text = [
       mOrGame.leagueName,
       mOrGame.league,
       mOrGame.leagueSlug,
-      mOrGame.homeTeamName,
-      mOrGame.awayTeamName,
+      hTeamName,
+      aTeamName,
       mOrGame.home,
       mOrGame.away,
       mOrGame.name,
+      mOrGame.shortName,
       mOrGame.tournamentName,
-      mOrGame._tournamentName
+      mOrGame._tournamentName,
+      mOrGame.competitionName,
+      mOrGame.categoryName,
+      mOrGame.country,
+      mOrGame._countryName
     ]
       .filter(Boolean)
       .join(" ")
@@ -205,16 +229,35 @@
     const banned = [
       /\bncaa\b/i,
       /\bnacca\b/i,
+      /\bcollege\b/i,
+      /\bdivision\s*[i|1|2|3]+\s*women\b/i,
+      /\bncaa\s*division\b/i,
+      /\bnaia\b/i,
+      /\bnjcaa\b/i,
       /\bwomen('s)?\b/i,
       /\(w\)\b/i,
+      /\b\(w\)/i,
+      /\b-w\b/i,
       /\bwbb\b/i,
       /\bwnba\b/i,
-      /\bdivision i women\b/i,
-      /\bcollege w(omen)?\b/i,
       /\bladies\b/i,
+      /\blady\b/i,
       /\bfemenil\b/i,
       /\bfeminina\b/i,
-      /\bfem\b/i
+      /\bfeminino\b/i,
+      /\bfem\b/i,
+      /\bfemminile\b/i,
+      /\bféminine\b/i,
+      /\bfrauen\b/i,
+      /\bw-league\b/i,
+      /\bwsl\b/i,
+      /\bnwsl\b/i,
+      /\bd1\s*arkema\b/i,
+      /\bfrauen-bundesliga\b/i,
+      /\bserie\s*a\s*femminile\b/i,
+      /\bliga\s*f\b/i,
+      /\bdamallsvenskan\b/i,
+      /\btopserien\b/i
     ];
     return banned.some((rx) => rx.test(text));
   }

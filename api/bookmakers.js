@@ -209,7 +209,7 @@ function extractEventsFromFactCenter(json, sportKey = "football", sportLabel = "
   const tList = Array.isArray(json.data) ? json.data : json.data.tournaments || [];
   const out = [];
   const isExcludedTournamentOrEvent = (text) => {
-    return /\bncaa\b|\bnacca\b|\bwomen('s)?\b|\(w\)\b|\bwbb\b|\bwnba\b|\bdivision i women\b|\bladies\b|\bfemenil\b|\bfeminina\b|\bfem\b/i.test(text);
+    return /\bncaa\b|\bnacca\b|\bcollege\b|\bdivision\s*[i|1|2|3]+\s*women\b|\bncaa\s*division\b|\bwomen('s)?\b|\(w\)\b|\b\(w\)|\b-w\b|\bwbb\b|\bwnba\b|\bladies\b|\blady\b|\bfemenil\b|\bfeminina\b|\bfeminino\b|\bfem\b|\bfemminile\b|\bféminine\b|\bfrauen\b|\bw-league\b|\bwsl\b|\bnwsl\b|\bd1\s*arkema\b|\bliga\s*f\b|\bdamallsvenskan\b/i.test(text);
   };
   for (const t of tList) {
     const tIcon = t.tournamentIcon || "";
@@ -430,14 +430,28 @@ function isChaosOrReserveMatch(league, homeTeam, awayTeam) {
     /\bnational league north\b/i,
     /\bncaa\b/i,
     /\bnacca\b/i,
+    /\bcollege\b/i,
+    /\bdivision\s*[i|1|2|3]+\s*women\b/i,
+    /\bncaa\s*division\b/i,
     /\bwomen('s)?\b/i,
     /\b(w)\b/i,
     /\bwbb\b/i,
-    /\bcollege\b/i,
+    /\bwnba\b/i,
     /\bladies\b/i,
+    /\blady\b/i,
     /\bfemenil\b/i,
     /\bfeminina\b/i,
-    /\bfem\b/i
+    /\bfeminino\b/i,
+    /\bfem\b/i,
+    /\bfemminile\b/i,
+    /\bféminine\b/i,
+    /\bfrauen\b/i,
+    /\bw-league\b/i,
+    /\bwsl\b/i,
+    /\bnwsl\b/i,
+    /\bd1\s*arkema\b/i,
+    /\bliga\s*f\b/i,
+    /\bdamallsvenskan\b/i
   ];
   return chaosPatterns.some((p) => p.test(text));
 }

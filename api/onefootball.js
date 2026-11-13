@@ -87,9 +87,10 @@ function isChaosOrWomen(comp, home, away) {
     /\bu1[5-9]\b/i,
     /\bsub-20\b|\bsub 20\b|\bsub-23\b|\bsub 23\b/i,
     /\byouth\b|\bacademy\b/i,
-    /\bwomen('s)?\b|\bfemenil\b|\bfeminina\b|\bladies\b|\bfem\b|\bwbb\b/i,
+    /\bwomen('s)?\b|\bfemenil\b|\bfeminina\b|\bfeminino\b|\bladies\b|\blady\b|\bfem\b|\bfemminile\b|\bféminine\b|\bfrauen\b|\bw-league\b|\bwsl\b|\bnwsl\b|\bd1\s*arkema\b|\bliga\s*f\b|\bdamallsvenskan\b|\bwbb\b|\bwnba\b/i,
     /\s+w\b/i,
-    /\bncaa\b|\bcollege\b|\bamateur\b/i
+    /\(w\)/i,
+    /\bncaa\b|\bcollege\b|\bamateur\b|\bdivision\s*[i|1|2|3]+\s*women\b/i
   ];
   return banned.some((rx) => rx.test(text));
 }

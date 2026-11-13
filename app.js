@@ -469,8 +469,10 @@
   // Universal High-Performance UI Scheduler (Zero INP Blocking < 16ms)
   function scheduleUiUpdate(taskFn) {
     if (typeof taskFn !== "function") return;
-    if (window.scheduler && typeof window.scheduler.postTask === "function") {
-      window.scheduler.postTask(taskFn, { priority: "user-visible" }).catch(() => {
+    if (window.scheduler && typeof window.scheduler.yield === "function") {
+      window.scheduler.yield().then(() => {
+        try { taskFn(); } catch (err) { console.error(err); }
+      }).catch(() => {
         try { taskFn(); } catch (err) { console.error(err); }
       });
       return;
@@ -3419,12 +3421,16 @@
       const buildDrawerRow = () => `
         <tr class="runin-drawer-row">
           <td colspan="12">
-            <div class="runin-tip-banner">
-              <div>
+            <div class="runin-tip-banner" data-runin-tip-copy="${escapeHtml(tip.nextFixtureTip || tip.badge || "")}" title="Click to copy tip">
+              <div class="flex items-center gap-1.5 flex-wrap">
                 <span class="runin-tip-pill ${tipCls}">${escapeHtml(tip.badge)}</span>
-                <strong class="text-sm ml-2 text-text">${escapeHtml(tip.nextFixtureTip || "")}</strong>
+                <strong class="text-sm ml-2 text-text" data-runin-tip-copy="${escapeHtml(tip.nextFixtureTip || tip.badge || "")}" title="Click to copy tip">${escapeHtml(tip.nextFixtureTip || "")}</strong>
+                <span class="text-xs font-mono text-muted cursor-pointer" data-runin-tip-copy="${escapeHtml(tip.nextFixtureTip || tip.badge || "")}" title="Click to copy tip">📋</span>
               </div>
-              <div class="text-xs text-muted">${escapeHtml(tip.reason || "")}</div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <div class="text-xs text-muted">${escapeHtml(tip.reason || "")}</div>
+                <button type="button" class="btn-subtle text-xs" style="padding:1px 8px;font-size:11px;color:var(--text-muted);" data-toggle-runin-team="${escapeHtml(expandId)}" title="Close details">✕ Close</button>
+              </div>
             </div>
             <div class="runin-opp-grid">
               <div>
@@ -6912,6 +6918,20 @@
       return;
     }
 
+    // Fast-path: Run-In Tip Banner & Next Fixture Tip (Instant zero-blocking copy & feedback < 1ms)
+    const runinTipEl = e.target.closest("[data-runin-tip-copy], .runin-tip-banner, strong.text-sm.ml-2.text-text");
+    if (runinTipEl && !e.target.closest("[data-toggle-runin-team]")) {
+      e.stopPropagation();
+      const tipText = runinTipEl.getAttribute("data-runin-tip-copy") ||
+                      runinTipEl.querySelector("strong")?.textContent?.trim() ||
+                      runinTipEl.textContent?.trim() || "";
+      if (tipText && navigator.clipboard) {
+        navigator.clipboard.writeText(tipText).catch(() => {});
+      }
+      showToast(`Copied Tip: ${tipText.slice(0, 50)}${tipText.length > 50 ? "..." : ""}`);
+      return;
+    }
+
     // Fast-path Modal Close (zero selector cascade latency -> optimal INP)
     if (e.target.closest("[data-close-modal]") || e.target.id === "modalBackdrop") {
       closeModal();
@@ -7042,25 +7062,48 @@
       });
       return;
     }
-    const runinTeamRow = e.target.closest("[data-toggle-runin-team]");
-    if (runinTeamRow) {
-      const teamKey = runinTeamRow.getAttribute("data-toggle-runin-team");
+    const runinToggleTarget = e.target.closest("[data-toggle-runin-team]");
+    if (runinToggleTarget) {
+      const teamKey = runinToggleTarget.getAttribute("data-toggle-runin-team");
       const wasOpen = expandedRuninTeam === teamKey;
       expandedRuninTeam = wasOpen ? null : teamKey;
+      
+      // Locate the primary table row for this team
+      const hostRow = runinToggleTarget.classList.contains("runin-row")
+        ? runinToggleTarget
+        : (document.querySelector(`tr.runin-row[data-toggle-runin-team="${CSS.escape ? CSS.escape(teamKey) : teamKey}"]`) || runinToggleTarget.closest("tr.runin-row"));
+
+      // Instant synchronous visual toggle (< 1ms INP): Arrow flips and active state updates without waiting for builder
+      if (hostRow) {
+        const arr = hostRow.querySelector("[data-runin-arrow]");
+        if (arr) arr.textContent = wasOpen ? "▼" : "▲";
+        if (wasOpen) {
+          hostRow.removeAttribute("data-runin-expanded");
+        } else {
+          hostRow.setAttribute("data-runin-expanded", "1");
+        }
+      }
+
+      // If closing, instantly remove the drawer row (0ms presentation delay)
+      if (wasOpen) {
+        document.querySelectorAll("tr.runin-drawer-row").forEach((el) => el.remove());
+        return;
+      }
+
+      // If opening, yield to browser paint frame before building and inserting full drawer DOM
       scheduleUiUpdate(() => {
         document.querySelectorAll("tr.runin-drawer-row").forEach((el) => el.remove());
         document.querySelectorAll("tr[data-runin-expanded='1']").forEach((el) => {
-          el.removeAttribute("data-runin-expanded");
-          const arr = el.querySelector("[data-runin-arrow]");
-          if (arr) arr.textContent = "▼";
+          if (el !== hostRow) {
+            el.removeAttribute("data-runin-expanded");
+            const arr = el.querySelector("[data-runin-arrow]");
+            if (arr) arr.textContent = "▼";
+          }
         });
-        if (!wasOpen) {
+        if (hostRow) {
           const builder = runinDrawerBuilders.get(teamKey);
           if (typeof builder === "function") {
-            runinTeamRow.setAttribute("data-runin-expanded", "1");
-            const arr = runinTeamRow.querySelector("[data-runin-arrow]");
-            if (arr) arr.textContent = "▲";
-            runinTeamRow.insertAdjacentHTML("afterend", builder());
+            hostRow.insertAdjacentHTML("afterend", builder());
             return;
           }
           renderMainContent();

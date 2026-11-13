@@ -1827,6 +1827,30 @@ ul {
   box-sizing: border-box;
 }
 
+.match-odds-pill.is-withheld {
+  color: #F59E0B;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.match-odds-pill.is-shielded {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.45);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.2);
+}
+
+.match-odds-pill.is-confirmed {
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.sure-pick-box.is-withheld {
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  background: rgba(245, 158, 11, 0.05) !important;
+}
+
 .match-desktop .chevron svg {
   width: 16px;
   height: 16px;

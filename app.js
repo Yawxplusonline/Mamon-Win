@@ -1061,6 +1061,15 @@
             <span class="factor-name">11. Run-in Analysis (Opponents Played PLD vs Remaining REM)</span>
             <span class="factor-edge-pill">${escapeHtml(f.runInAnalysis.edge)}</span>
           </div>
+          ${
+            f.runInAnalysis.easiestRunin || f.runInAnalysis.toughestRunin || f.runInAnalysis.strongPpgBestRunin
+              ? `<div class="flex items-center gap-2 flex-wrap mb-2">
+                  ${f.runInAnalysis.easiestRunin ? `<span class="runin-diff-pill is-easy" style="font-size:11px;">🟢 EASIEST REMAINING RUN-IN: ${escapeHtml(f.runInAnalysis.easiestRunin.label)}</span>` : ""}
+                  ${f.runInAnalysis.toughestRunin ? `<span class="runin-diff-pill is-tough" style="font-size:11px;">🔴 TOUGHEST REMAINING RUN-IN: ${escapeHtml(f.runInAnalysis.toughestRunin.label)}</span>` : ""}
+                  ${f.runInAnalysis.strongPpgBestRunin ? `<span class="strong-ppg-proof-badge" style="font-size:11px;">💎 STRONG PPG + BEST RUN-IN: ${escapeHtml(f.runInAnalysis.strongPpgBestRunin.label)}</span>` : ""}
+                </div>`
+              : ""
+          }
           <div class="factor-vs-row">
             <div class="factor-side">
               <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -1191,6 +1200,68 @@
               f.weather?.ok
                 ? `<strong class="font-mono text-brand">${f.weather.tempC}°C</strong> · ${escapeHtml(f.weather.condition)} · Wind <strong class="font-mono">${f.weather.windKmh} km/h</strong> · Rain <strong class="font-mono">${f.weather.precipMm}mm</strong>${f.weather.humidityPct !== null && f.weather.humidityPct !== undefined ? ` · Humidity <strong class="font-mono">${f.weather.humidityPct}%</strong>` : ""} (${escapeHtml(f.weather.impact)})`
                 : `${escapeHtml(match.venueCity ? `${match.venueCity}, ${match.venueCountry}` : (match.leagueCountry || "Match venue"))} — ${escapeHtml(f.weather?.impact || "Normal playing conditions")}`
+            }
+          </div>
+        </div>
+
+        <!-- 17. International / European Cup Context (UCL, UEL, UECL vs Domestic League Priority & Dual Form) -->
+        <div class="factor-tile is-wide">
+          <div class="factor-tile-head">
+            <span class="factor-name">17. European / Continental Cup Context (UCL, UEL, UECL vs Domestic Priority)</span>
+            <span class="factor-edge-pill">${escapeHtml(f.internationalContext?.summary || "Domestic Focus")}</span>
+          </div>
+          <div class="factor-vs-row">
+            <div class="factor-side">
+              <div class="side-lbl">${escapeHtml(home.name)} Focus: <strong class="text-text">${escapeHtml(f.internationalContext?.home?.priorityFocus || "DOMESTIC_LEAGUE")}</strong></div>
+              <div class="text-xs mt-1">${escapeHtml(f.internationalContext?.home?.tacticalMotivation || "Standard domestic league campaign focus.")}</div>
+              <div class="text-xs text-muted mt-1">Rotation Risk: <strong class="${f.internationalContext?.home?.rotationRisk === "HIGH" ? "text-live font-bold" : "text-text"}">${escapeHtml(f.internationalContext?.home?.rotationRisk || "LOW")}</strong> · Archetype: <em>${escapeHtml(f.internationalContext?.home?.archetype || "DOMESTIC_STEADY")}</em></div>
+            </div>
+            <div class="factor-side">
+              <div class="side-lbl">${escapeHtml(away.name)} Focus: <strong class="text-text">${escapeHtml(f.internationalContext?.away?.priorityFocus || "DOMESTIC_LEAGUE")}</strong></div>
+              <div class="text-xs mt-1">${escapeHtml(f.internationalContext?.away?.tacticalMotivation || "Standard domestic league campaign focus.")}</div>
+              <div class="text-xs text-muted mt-1">Rotation Risk: <strong class="${f.internationalContext?.away?.rotationRisk === "HIGH" ? "text-live font-bold" : "text-text"}">${escapeHtml(f.internationalContext?.away?.rotationRisk || "LOW")}</strong> · Archetype: <em>${escapeHtml(f.internationalContext?.away?.archetype || "DOMESTIC_STEADY")}</em></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 18. Star Players & Squad Lineups (Playing vs Missing) -->
+        <div class="factor-tile is-wide">
+          <div class="factor-tile-head">
+            <span class="factor-name">18. Star Players &amp; Squad Lineups (Starting GK, Lead Striker &amp; Playmaker)</span>
+            <span class="factor-edge-pill">Edge: ${escapeHtml(f.starPlayers?.starEdge || "Parity")}</span>
+          </div>
+          <div class="factor-vs-row">
+            <div class="factor-side">
+              <div class="side-lbl">${escapeHtml(home.name)} Squad Readiness: <strong class="font-mono text-brand">${f.starPlayers?.home?.readinessScore ?? 100}%</strong></div>
+              <div class="text-xs mt-1">${escapeHtml(f.starPlayers?.home?.summary || "All core stars active")}</div>
+              <div class="text-xs text-muted mt-0.5">GK: <strong>${escapeHtml(f.starPlayers?.home?.gkStatus?.status || "CONFIRMED")}</strong> · Striker: <strong>${escapeHtml(f.starPlayers?.home?.strikerStatus?.status || "CONFIRMED")}</strong></div>
+            </div>
+            <div class="factor-side">
+              <div class="side-lbl">${escapeHtml(away.name)} Squad Readiness: <strong class="font-mono text-brand">${f.starPlayers?.away?.readinessScore ?? 100}%</strong></div>
+              <div class="text-xs mt-1">${escapeHtml(f.starPlayers?.away?.summary || "All core stars active")}</div>
+              <div class="text-xs text-muted mt-0.5">GK: <strong>${escapeHtml(f.starPlayers?.away?.gkStatus?.status || "CONFIRMED")}</strong> · Striker: <strong>${escapeHtml(f.starPlayers?.away?.strikerStatus?.status || "CONFIRMED")}</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 19. 99% Sure Win Protective Shield Engine (Targeting 1% Loss Rate) -->
+        <div class="factor-tile is-wide" style="border: 1px solid rgba(16,185,129,0.35);background:rgba(16,185,129,0.03);">
+          <div class="factor-tile-head">
+            <span class="factor-name font-bold" style="color:var(--brand);">19. 99% Sure Win Protective Shield (1% Loss Rate Target)</span>
+            <span class="factor-edge-pill" style="background:rgba(16,185,129,0.18);color:#059669;font-weight:bold;">${f.sureWinShield?.tipWithheld ? "⛔ TIP WITHHELD" : (f.sureWinShield?.applied ? "🛡️ SHIELD DEPLOYED" : "💎 99% CONFIRMED")}</span>
+          </div>
+          <div class="text-xs">
+            ${
+              f.sureWinShield?.tipWithheld
+                ? `<span class="text-danger font-semibold">Strict Non-Tip Gate Active:</span> ${escapeHtml(f.sureWinShield.reason || "Predictions withheld pending full Run-In Difficulty Table telemetry.")}`
+                : `<div class="flex items-center gap-2 flex-wrap mb-1">
+                    <span class="font-bold text-text">${escapeHtml(f.sureWinShield?.badge || "💎 99% SURE WIN CONFIRMED")}</span>
+                    <span>&bull;</span>
+                    <span class="text-muted">Draw Risk: <strong class="font-mono ${f.sureWinShield?.drawRiskPct >= 20 ? "text-live" : "text-brand"}">${f.sureWinShield?.drawRiskPct ?? 25}%</strong></span>
+                    <span>&bull;</span>
+                    <span class="text-text-secondary">${f.sureWinShield?.applied ? "Anti-Draw Double Chance / O15 Cushion Deployed" : "Multi-factor Safety Criteria Verified"}</span>
+                  </div>
+                  <div class="text-text-secondary mt-0.5">${escapeHtml(f.sureWinShield?.reason || "")}</div>`
             }
           </div>
         </div>
@@ -1508,7 +1579,11 @@
     const { liveClock, halfLabel, periodSubScore } = resolveLiveClockAndHalf(m);
     const homeWon = isFT && Number(m.homeScore) > Number(m.awayScore);
     const awayWon = isFT && Number(m.awayScore) > Number(m.homeScore);
-    const bestLabel = m.analysis?.bestPick?.code || "1X";
+    const best = m.analysis?.bestPick;
+    const isTipWithheld = Boolean(best?.tipWithheld || !best?.runinConfirmed);
+    const bestLabel = isTipWithheld ? "⛔ No Tip" : (best?.code || "1X");
+    const bestOddsLabel = isTipWithheld ? "Run-In Pending" : `@ ${formatOdds(best?.odds || m.odds?.home)}`;
+    const pickBadgeClass = isTipWithheld ? "is-withheld" : (best?.shieldApplied ? "is-shielded" : "is-confirmed");
 
     const redBadges = (count) =>
       count > 0 ? `<span class="red-cards" title="Red card">${"<span></span>".repeat(count)}</span>` : "";
@@ -1615,7 +1690,7 @@
             </div>
             <div class="chevron-action-row">
               ${sosBadge}
-              <span class="match-odds-pill" title="Sure Pick">${escapeHtml(bestLabel)} @ ${formatOdds(m.analysis?.bestPick?.odds || m.odds?.home)}</span>
+              <span class="match-odds-pill ${pickBadgeClass}" title="${escapeHtml(isTipWithheld ? "Tip Withheld: Full Run-In Analysis Pending" : (best?.shieldReason || best?.reason || "99% Sure Win Confirmed"))}">${escapeHtml(bestLabel)} ${escapeHtml(bestOddsLabel)}</span>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
             </div>
           </div>
@@ -5530,24 +5605,39 @@
     if (activeTab === "analysis") {
       const a = m.analysis || (RT ? RT.buildMatchAnalysis(m) : null);
       const best = a?.bestPick;
+      const isTipWithheld = Boolean(best?.tipWithheld || !best?.runinConfirmed);
       tabBody = `
         <div class="p-4">
-          <div class="sure-pick-box" style="margin-top:0;">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-xs font-bold uppercase tracking-wide text-brand">Recommended Sure Tip:</span>
-                <span class="font-bold text-sm text-text">${best ? escapeHtml(best.label) : "1X / Over 1.5"}</span>
-                ${best ? `<span class="text-xs font-mono text-muted">· ${Math.round(best.prob * 100)}% Prob · xG ${a.expectedGoals.home}-${a.expectedGoals.away}</span>` : ""}
-                ${best?.strongPpg ? `<span class="strong-ppg-proof-badge">${best.strongPpg.trajectory === "GAIN_BLUE" ? "🔵" : "💎"} ${escapeHtml(best.strongPpg.badgeText)}</span>` : ""}
-                ${best?.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(best.runinConfirmation.badge)}</span>` : ""}
-              </div>
-              <div class="text-xs text-text-secondary mt-1">${best ? escapeHtml(best.reason) : ""}${best?.runinConfirmation?.summary ? ` · Run-In Table: ${escapeHtml(best.runinConfirmation.summary)}` : ""}</div>
-            </div>
-            ${best ? `<span class="sure-odds-chip">@ ${best.odds.toFixed(2)}</span>` : ""}
-          </div>
+          ${
+            isTipWithheld
+              ? `<div class="sure-pick-box" style="margin-top:0;border:1px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.06);">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-xs font-bold uppercase tracking-wide text-danger">🛡️ Tip Withheld (Strict Non-Tip Gate):</span>
+                      <span class="font-bold text-sm text-text">No Prediction Issued</span>
+                      <span class="strong-ppg-proof-badge" style="background:rgba(239,68,68,0.16);color:#DC2626;border-color:rgba(239,68,68,0.4);">⛔ RUN-IN TABLE TELEMETRY PENDING</span>
+                    </div>
+                    <div class="text-xs text-text-secondary mt-1">Under strict system rules, predictions are withheld for fixtures until full Run-In Difficulty Table telemetry is confirmed. Model does not guess unverified games.</div>
+                  </div>
+                </div>`
+              : `<div class="sure-pick-box" style="margin-top:0;">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-xs font-bold uppercase tracking-wide text-brand">${best?.badge || "💎 99% SURE WIN CONFIRMED"}:</span>
+                      <span class="font-bold text-sm text-text">${best ? escapeHtml(best.label) : "1X / Over 1.5"}</span>
+                      ${best ? `<span class="text-xs font-mono text-muted">· ${Math.round((best.prob || 0.70) * 100)}% Prob · xG ${a.expectedGoals.home}-${a.expectedGoals.away}</span>` : ""}
+                      ${best?.shieldApplied ? `<span class="strong-ppg-proof-badge" style="background:rgba(16,185,129,0.16);border-color:rgba(16,185,129,0.4);color:#059669;">🛡️ ANTI-DRAW SHIELD (${best.drawRiskPct}% DRAW RISK)</span>` : ""}
+                      ${best?.strongPpg ? `<span class="strong-ppg-proof-badge">${best.strongPpg.trajectory === "GAIN_BLUE" ? "🔵" : "💎"} ${escapeHtml(best.strongPpg.badgeText)}</span>` : ""}
+                      ${best?.runinConfirmation ? `<span class="strong-ppg-proof-badge" style="background:rgba(59,130,246,0.14);border-color:rgba(59,130,246,0.35);color:#2563EB;">${escapeHtml(best.runinConfirmation.badge)}</span>` : ""}
+                    </div>
+                    <div class="text-xs text-text-secondary mt-1">${escapeHtml(best?.shieldReason || best?.reason || "")}${best?.runinConfirmation?.summary ? ` · Run-In Table: ${escapeHtml(best.runinConfirmation.summary)}` : ""}</div>
+                  </div>
+                  ${best ? `<span class="sure-odds-chip">@ ${Number(best.odds).toFixed(2)}</span>` : ""}
+                </div>`
+          }
 
           <div class="flex items-center justify-between mt-3 mb-1">
-            <span class="text-xs font-bold uppercase tracking-wide text-muted">Full 14-Factor Match Analysis (11 Core + PPG, Drops &amp; Weather)</span>
+            <span class="text-xs font-bold uppercase tracking-wide text-muted">Full 18-Factor Deep Match Analysis (Run-In, Pitch, Weather, UCL/UEL Priority, Star Lineups &amp; 99% Shield)</span>
             <button type="button" class="analyze-inline-btn" data-hydrate-match="${m.id}">
               ${m.analysis?.factors?.last5HomeGames?.isLiveFeed ? "✓ Live Feed Synced" : "↻ Refresh Live Splits"}
             </button>

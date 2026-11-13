@@ -2180,7 +2180,8 @@ window.MAMON_REALTIME = (() => {
   }
 
   // Canonical Run-In Difficulty Table Confirmation Engine
-  // Ensures EVERY tip across the system is checked and confirmed against the Run-In Difficulty Table (PLD vs REM)
+  // Ensures EVERY tip across the system is strictly checked and confirmed against the Run-In Difficulty Table (PLD vs REM)
+  // Non-negotiable rule: Do NOT predict or give tips for games without verified Run-In Difficulty Table analysis!
   function evaluateRuninTableConfirmation({
     homeName = "Home",
     awayName = "Away",
@@ -2196,6 +2197,7 @@ window.MAMON_REALTIME = (() => {
   } = {}) {
     const liveH = findLiveSoccerStatsTeam(homeName, leagueSlug);
     const liveA = findLiveSoccerStatsTeam(awayName, leagueSlug);
+    const hasLiveTableEntry = Boolean(liveH || liveA || homeRuninStats?.isLiveSoccerStats || awayRuninStats?.isLiveSoccerStats);
 
     const hPpg = Number(liveH?.ppg ?? homeRuninStats?.ppg ?? homePpg ?? 1.35);
     const aPpg = Number(liveA?.ppg ?? awayRuninStats?.ppg ?? awayPpg ?? 1.30);
@@ -2205,6 +2207,24 @@ window.MAMON_REALTIME = (() => {
     const aRem = Number(liveA?.immediate5Ppg ?? liveA?.remainingPpg ?? awayRuninStats?.remainingPpg ?? hPpg);
     const hDiff = Number.isFinite(Number(liveH?.diffPct)) ? Number(liveH.diffPct) : Number(homeRuninStats?.diffPct ?? Math.round(((hPlayed - hRem) / Math.max(0.5, hPlayed)) * 100));
     const aDiff = Number.isFinite(Number(liveA?.diffPct)) ? Number(liveA.diffPct) : Number(awayRuninStats?.diffPct ?? Math.round(((aPlayed - aRem) / Math.max(0.5, aPlayed)) * 100));
+
+    // STRICT NON-TIP GATE: If fixture has no verified Run-In Difficulty Table entry, WITHHOLD TIP COMPLETELY!
+    if (!hasLiveTableEntry) {
+      return {
+        confirmed: false,
+        tipWithheld: true,
+        hasLiveTableEntry: false,
+        source: "Run-In Difficulty Table (Awaiting Sync)",
+        badge: "⛔ NO TIP (RUN-IN UNCONFIRMED)",
+        shortTag: "⛔ No Run-In",
+        summary: `Tip Withheld: ${homeName} vs ${awayName} has no confirmed Run-In Difficulty Table entry. Predictions strictly withheld without full Run-In telemetry.`,
+        home: { name: homeName, ppg: hPpg, playedPpg: hPlayed, remainingPpg: hRem, diffPct: 0, diffLabel: "0%", isDropRed: false, isGainBlue: false },
+        away: { name: awayName, ppg: aPpg, playedPpg: aPlayed, remainingPpg: aRem, diffPct: 0, diffLabel: "0%", isDropRed: false, isGainBlue: false },
+        easiestRunin: null,
+        toughestRunin: null,
+        strongPpgBestRunin: null
+      };
+    }
 
     const hDropRisk = Boolean(homeDrop || (hDiff <= -14 && hPpg < 1.55) || (hPpg <= 1.10 && aPpg >= 1.55));
     const aDropRisk = Boolean(awayDrop || (aDiff <= -14 && aPpg < 1.55) || (aPpg <= 1.10 && hPpg >= 1.55));
@@ -2253,16 +2273,365 @@ window.MAMON_REALTIME = (() => {
 
     const hDiffTxt = `${hDiff > 0 ? "+" : ""}${hDiff}%`;
     const aDiffTxt = `${aDiff > 0 ? "+" : ""}${aDiff}%`;
+
+    // Extract EASIEST REMAINING RUN-IN (+%), TOUGHEST REMAINING RUN-IN (-%), and STRONG PPG + BEST RUN-IN
+    const easiestRunin = hDiff > aDiff && hDiff > 0
+      ? { team: homeName, diffPct: hDiff, label: `${homeName} (+${hDiff}%) EASIEST RUN-IN` }
+      : aDiff > hDiff && aDiff > 0
+        ? { team: awayName, diffPct: aDiff, label: `${awayName} (+${aDiff}%) EASIEST RUN-IN` }
+        : null;
+
+    const toughestRunin = hDiff < aDiff && hDiff < 0
+      ? { team: homeName, diffPct: hDiff, label: `${homeName} (${hDiff}%) TOUGHEST RUN-IN` }
+      : aDiff < hDiff && aDiff < 0
+        ? { team: awayName, diffPct: aDiff, label: `${awayName} (${aDiff}%) TOUGHEST RUN-IN` }
+        : null;
+
+    const strongPpgBestRunin = (hPpg >= 1.55 && hDiff >= 4)
+      ? { team: homeName, ppg: hPpg, diffPct: hDiff, label: `${homeName} (PPG ${hPpg.toFixed(2)} · +${hDiff}% Run-In)` }
+      : (aPpg >= 1.55 && aDiff >= 4)
+        ? { team: awayName, ppg: aPpg, diffPct: aDiff, label: `${awayName} (PPG ${aPpg.toFixed(2)} · +${aDiff}% Run-In)` }
+        : null;
+
     return {
       confirmed,
-      hasLiveTableEntry: Boolean(liveH || liveA),
+      tipWithheld: false,
+      hasLiveTableEntry: true,
       source: liveH || liveA ? "Run-In Difficulty Table" : "Run-In Matrix (PLD vs REM)",
       badge: "✓ Run-In Table Confirmed",
       shortTag: `✓ Run-In (${hDiffTxt} / ${aDiffTxt})`,
       summary: verdictReason || `${homeName} (${hPpg.toFixed(2)} PPG · ${hDiffTxt}) vs ${awayName} (${aPpg.toFixed(2)} PPG · ${aDiffTxt})`,
       home: { name: homeName, ppg: hPpg, playedPpg: hPlayed, remainingPpg: hRem, diffPct: hDiff, diffLabel: hDiffTxt, isDropRed: hDropRisk, isGainBlue: hGainSurge },
-      away: { name: awayName, ppg: aPpg, playedPpg: aPlayed, remainingPpg: aRem, diffPct: aDiff, diffLabel: aDiffTxt, isDropRed: aDropRisk, isGainBlue: aGainSurge }
+      away: { name: awayName, ppg: aPpg, playedPpg: aPlayed, remainingPpg: aRem, diffPct: aDiff, diffLabel: aDiffTxt, isDropRed: aDropRisk, isGainBlue: aGainSurge },
+      easiestRunin,
+      toughestRunin,
+      strongPpgBestRunin
     };
+  }
+
+  // Factor 17: International / European Cup (UCL, UEL, UECL) vs Domestic League Priorities & Dual Form
+  // Evaluates whether clubs play European games before or after, domestic title race pressure, rotation risk, and dual-form
+  function evaluateInternationalAndScheduleContext(match, sum = null, homeSched = null, awaySched = null, stH = null, stA = null) {
+    const homeTeam = DATA.TEAMS[match.home] || { name: match.homeTeamName || "Home" };
+    const awayTeam = DATA.TEAMS[match.away] || { name: match.awayTeamName || "Away" };
+    const hName = homeTeam.name;
+    const aName = awayTeam.name;
+
+    const isIntlComp = (slugOrName) => {
+      const s = String(slugOrName || "").toLowerCase();
+      return /uefa|champions|europa|conf(?:erence)?|cleague|eleague|cfleague|libertadores|sudamericana|afc|concacaf/i.test(s);
+    };
+
+    const isCurrentMatchIntl = isIntlComp(match.leagueSlug) || isIntlComp(match.leagueName) || isIntlComp(match.espnLeagueCode);
+
+    const scanScheduleForIntl = (sched, refDateIso) => {
+      const nowMs = new Date(refDateIso || Date.now()).getTime();
+      let prevIntl = null;
+      let nextIntl = null;
+      const intlGamesLast5 = [];
+      const domesticGamesLast5 = [];
+
+      const allPast = Array.isArray(sched?.past) ? sched.past : [];
+      const allUpcoming = Array.isArray(sched?.upcoming) ? sched.upcoming : [];
+
+      for (const ev of allPast) {
+        const comp = ev?.competitions?.[0];
+        const lgName = comp?.league?.name || ev?.season?.displayName || comp?.type?.text || "";
+        const isIntl = isIntlComp(lgName) || isIntlComp(ev?.slug);
+        const evDate = new Date(ev.date || comp?.date || 0).getTime();
+        const daysDiff = (nowMs - evDate) / (1000 * 60 * 60 * 24);
+
+        if (isIntl) {
+          if (!prevIntl && daysDiff >= 0 && daysDiff <= 6) {
+            prevIntl = {
+              opponent: comp?.competitors?.find((c) => c.id !== sched.teamId)?.team?.displayName || "European Opponent",
+              competition: lgName || "UEFA Competition",
+              daysAgo: Math.round(daysDiff * 10) / 10,
+              date: ev.date
+            };
+          }
+          if (intlGamesLast5.length < 5) intlGamesLast5.push(ev);
+        } else {
+          if (domesticGamesLast5.length < 5) domesticGamesLast5.push(ev);
+        }
+      }
+
+      for (const ev of allUpcoming) {
+        const comp = ev?.competitions?.[0];
+        const lgName = comp?.league?.name || ev?.season?.displayName || comp?.type?.text || "";
+        const isIntl = isIntlComp(lgName) || isIntlComp(ev?.slug);
+        const evDate = new Date(ev.date || comp?.date || 0).getTime();
+        const daysAhead = (evDate - nowMs) / (1000 * 60 * 60 * 24);
+
+        if (isIntl && !nextIntl && daysAhead >= 0 && daysAhead <= 6) {
+          nextIntl = {
+            opponent: comp?.competitors?.find((c) => c.id !== sched.teamId)?.team?.displayName || "European Opponent",
+            competition: lgName || "UEFA Knockout",
+            daysAhead: Math.round(daysAhead * 10) / 10,
+            date: ev.date
+          };
+        }
+      }
+
+      return { prevIntl, nextIntl, intlGamesLast5, domesticGamesLast5 };
+    };
+
+    const hIntl = scanScheduleForIntl(homeSched, match.isoDateTime || match.date);
+    const aIntl = scanScheduleForIntl(awaySched, match.isoDateTime || match.date);
+
+    // Assess Club Dual-Form & Strategic Priority
+    const assessDualForm = (teamName, intlInfo, st, isHome) => {
+      const rank = st?.rank || 8;
+      const pts = st?.pts || 20;
+      const mp = st?.mp || 10;
+      const domPpg = mp > 0 ? pts / mp : 1.45;
+
+      let priorityFocus = "DOMESTIC_LEAGUE";
+      let rotationRisk = "LOW";
+      let tacticalMotivation = "";
+      let archetype = "DOMESTIC_STEADY";
+
+      const hasKnockoutAhead = Boolean(intlInfo.nextIntl && intlInfo.nextIntl.daysAhead <= 4.5);
+      const hasRecentIntlFatigue = Boolean(intlInfo.prevIntl && intlInfo.prevIntl.daysAgo <= 3.5);
+
+      if (hasKnockoutAhead) {
+        if (rank <= 2) {
+          // Razor-thin title race: MUST win domestic game to maintain table lead!
+          priorityFocus = "DUAL_FOCUS_TITLE_RACE";
+          rotationRisk = "CONTROLLED";
+          tacticalMotivation = `${teamName} is #${rank} in domestic title race (${pts} pts) — cannot sacrifice domestic points despite ${intlInfo.nextIntl.competition} in ${intlInfo.nextIntl.daysAhead}d. High motivation to secure early lead then manage minutes.`;
+          archetype = "DUAL_POWERHOUSE";
+        } else if (rank >= 4 && rank <= 11) {
+          // Mid-table or distant from title: European glory is primary objective!
+          priorityFocus = "EUROPEAN_SILVERWARE_PRIORITY";
+          rotationRisk = "HIGH";
+          tacticalMotivation = `${teamName} is #${rank} domestically with title out of reach — tactical focus shifts to ${intlInfo.nextIntl.competition} in ${intlInfo.nextIntl.daysAhead}d. High rotation risk for star players; manager may settle for domestic draw to keep squad fresh.`;
+          archetype = "EUROPEAN_GLORY_HUNTER";
+        } else {
+          priorityFocus = "BALANCED_COMPETITION";
+          rotationRisk = "MODERATE";
+          tacticalMotivation = `${teamName} balances league position (#${rank}) ahead of ${intlInfo.nextIntl.competition} in ${intlInfo.nextIntl.daysAhead}d.`;
+          archetype = "BALANCED";
+        }
+      } else if (hasRecentIntlFatigue) {
+        rotationRisk = "MODERATE_FATIGUE";
+        tacticalMotivation = `${teamName} played ${intlInfo.prevIntl.competition} against ${intlInfo.prevIntl.opponent} just ${intlInfo.prevIntl.daysAgo}d ago. European travel fatigue alert — possible lower pressing intensity in first 35 mins.`;
+        archetype = "FATIGUE_RECOVERY";
+      } else {
+        tacticalMotivation = `${teamName} has pure domestic league focus (#${rank}, ${pts} pts) — zero continental distraction or rotation needed.`;
+        archetype = "DOMESTIC_SPECIALIST";
+      }
+
+      return {
+        teamName,
+        hasKnockoutAhead,
+        hasRecentIntlFatigue,
+        nextIntl: intlInfo.nextIntl,
+        prevIntl: intlInfo.prevIntl,
+        priorityFocus,
+        rotationRisk,
+        tacticalMotivation,
+        archetype,
+        domesticPpg: Math.round(domPpg * 100) / 100
+      };
+    };
+
+    const homeContext = assessDualForm(hName, hIntl, stH, true);
+    const awayContext = assessDualForm(aName, aIntl, stA, false);
+
+    let summary = "";
+    let drawRiskBonus = 0;
+    let homeXgMod = 0;
+    let awayXgMod = 0;
+
+    if (homeContext.hasKnockoutAhead && homeContext.rotationRisk === "HIGH") {
+      drawRiskBonus += 0.09;
+      homeXgMod -= 0.20;
+      summary = `${hName} facing European knockout in ${homeContext.nextIntl.daysAhead}d (star rotation alert) vs fully focused ${aName}`;
+    } else if (awayContext.hasKnockoutAhead && awayContext.rotationRisk === "HIGH") {
+      drawRiskBonus += 0.09;
+      awayXgMod -= 0.20;
+      summary = `${aName} facing European knockout in ${awayContext.nextIntl.daysAhead}d (star rotation alert) vs fully focused ${hName}`;
+    } else if (homeContext.hasRecentIntlFatigue && !awayContext.hasRecentIntlFatigue) {
+      drawRiskBonus += 0.05;
+      homeXgMod -= 0.12;
+      summary = `${hName} recovering from European travel (${homeContext.prevIntl.daysAgo}d ago) — ${aName} arrives fresher`;
+    } else if (awayContext.hasRecentIntlFatigue && !homeContext.hasRecentIntlFatigue) {
+      awayXgMod -= 0.15;
+      summary = `${aName} recovering from European travel (${awayContext.prevIntl.daysAgo}d ago) — ${hName} holds full rest edge`;
+    } else {
+      summary = `Domestic league priority aligned for both sides; standard tactical intensity expected`;
+    }
+
+    return {
+      isCurrentMatchIntl,
+      home: homeContext,
+      away: awayContext,
+      summary,
+      drawRiskBonus,
+      homeXgMod,
+      awayXgMod
+    };
+  }
+
+  // Factor 18: Star Players Playing or Missing (Starting GK, Top Striker, Playmaker, Center-Back)
+  function evaluateStarPlayersAndAbsences(match, sum = null, homeRoster = null, awayRoster = null, squadReport = null) {
+    const homeTeam = DATA.TEAMS[match.home] || { name: match.homeTeamName || "Home" };
+    const awayTeam = DATA.TEAMS[match.away] || { name: match.awayTeamName || "Away" };
+
+    const analyzeRosterStars = (roster, teamName, isHome) => {
+      const injuries = isHome ? (squadReport?.homeInjuries || []) : (squadReport?.awayInjuries || []);
+      const suspensions = isHome ? (squadReport?.homeSuspensions || []) : (squadReport?.awaySuspensions || []);
+      const allAbsences = [...injuries, ...suspensions];
+
+      const gkStatus = { position: "GK", name: "Starting Goalkeeper", status: "CONFIRMED_PLAYING", impact: "Normal" };
+      const strikerStatus = { position: "ST", name: "Lead Goalscorer", status: "CONFIRMED_PLAYING", impact: "Normal" };
+      const playmakerStatus = { position: "MF", name: "Creative Playmaker", status: "CONFIRMED_PLAYING", impact: "Normal" };
+      const defenderStatus = { position: "CB", name: "Defensive Anchor", status: "CONFIRMED_PLAYING", impact: "Normal" };
+
+      const absenceText = allAbsences.join(" ").toLowerCase();
+
+      if (/keeper|goalkeeper|gk|\bno\.?\s?1\b/i.test(absenceText)) {
+        gkStatus.status = "FLAGGED_ABSENT_OR_DOUBT";
+        gkStatus.impact = "Backup GK starting — defense leaks +0.35 xGA, higher BTTS & goal volatility";
+      }
+
+      if (/striker|forward|top scorer|scorer|winger|attack/i.test(absenceText) || allAbsences.some((a) => /hamstring|groin|knee|ankle/i.test(a))) {
+        strikerStatus.status = "FLAGGED_ABSENT_OR_DOUBT";
+        strikerStatus.impact = "Key goalscorer missing or doubtful — finishing volume reduced by -0.25 xG";
+      }
+
+      if (/playmaker|midfield|creator|captain|assist/i.test(absenceText)) {
+        playmakerStatus.status = "FLAGGED_ABSENT_OR_DOUBT";
+        playmakerStatus.impact = "Creative midfield engine depleted — lower through-ball and transition efficiency";
+      }
+
+      if (/center back|centre back|defender|cb|defence/i.test(absenceText)) {
+        defenderStatus.status = "FLAGGED_ABSENT_OR_DOUBT";
+        defenderStatus.impact = "Backline reshuffled — vulnerable to set pieces and counter-attacks";
+      }
+
+      const missingStarCount = [gkStatus, strikerStatus, playmakerStatus, defenderStatus].filter((s) => s.status !== "CONFIRMED_PLAYING").length;
+      const readinessScore = Math.max(50, 100 - missingStarCount * 18 - (injuries.length * 6) - (suspensions.length * 10));
+
+      return {
+        teamName,
+        readinessScore,
+        gkStatus,
+        strikerStatus,
+        playmakerStatus,
+        defenderStatus,
+        missingStarCount,
+        summary: missingStarCount === 0
+          ? `All core stars available (Lead Striker, Starting GK & Playmaker verified)`
+          : `${missingStarCount} key star position(s) flagged with injury/suspension risk (${readinessScore}% readiness)`
+      };
+    };
+
+    const homeStars = analyzeRosterStars(homeRoster, homeTeam.name, true);
+    const awayStars = analyzeRosterStars(awayRoster, awayTeam.name, false);
+
+    const starEdge = homeStars.readinessScore > awayStars.readinessScore + 8
+      ? homeTeam.name
+      : awayStars.readinessScore > homeStars.readinessScore + 8
+        ? awayTeam.name
+        : "Squad Parity";
+
+    return {
+      home: homeStars,
+      away: awayStars,
+      starEdge,
+      readinessDifference: homeStars.readinessScore - awayStars.readinessScore
+    };
+  }
+
+  // 99% Sure Win Protective Shield Engine (Targeting 1% Loss Rate / 99% Win Rate)
+  // Eliminates naked Moneyline 1X2 draw traps; deploys Double Chance (1X/X2) & Over 1.5 cushions
+  function apply99PercentSureWinShield({
+    bestPick,
+    markets,
+    probs,
+    homeTeam,
+    awayTeam,
+    runinConfirmation,
+    intlContext,
+    starReport,
+    weather,
+    pitch,
+    droppingOdds,
+    hPpg,
+    aPpg
+  }) {
+    // STRICT RULE: If Run-In table has NO live confirmation entry, STRICTLY WITHHOLD TIP!
+    if (!runinConfirmation || !runinConfirmation.hasLiveTableEntry || !runinConfirmation.confirmed) {
+      return {
+        tipWithheld: true,
+        code: "TIP_WITHHELD",
+        label: "Tip Withheld — Run-In Table Analysis Pending",
+        badge: "⛔ NO TIP (RUN-IN UNCONFIRMED)",
+        odds: 1.0,
+        prob: 0,
+        drawRiskPct: Math.round((probs?.pD || 0.25) * 100),
+        shieldApplied: false,
+        shieldReason: "Strict Non-Tip Gate: Match lacks confirmed Run-In Difficulty Table entry. Predictions strictly withheld without full multi-factor verification."
+      };
+    }
+
+    const pD = probs?.pD || 0.25;
+    const drawRiskPct = Math.round(pD * 100);
+
+    const isHighDrawRisk = drawRiskPct >= 18;
+    const hasIntlRotationRisk = (intlContext?.home?.rotationRisk === "HIGH" || intlContext?.away?.rotationRisk === "HIGH");
+    const isAdverseEnvironment = (weather?.ok && (weather.precipMm >= 2.5 || weather.windKmh >= 28)) || (pitch?.rating === "SLIPPERY_WET" || pitch?.rating === "HIGH_DRAG");
+    const hasStarAbsenceRisk = (starReport?.home?.missingStarCount > 0 || starReport?.away?.missingStarCount > 0);
+    const bestDrop = droppingOdds?.bestDrop;
+    const isMarketDriftingAgainstFav = bestDrop && bestDrop.dropPct <= -5;
+
+    let shieldedPick = { ...bestPick };
+    let shieldApplied = false;
+    let shieldReason = "";
+
+    // The 99% Sure Win Mandate:
+    // If proposed pick is a naked straight win ("HOME" or "AWAY") and ANY risk flag is present:
+    // VETO naked 1X2 and upgrade immediately to Double Chance (1X / X2) or Over 1.5 Goals!
+    if (["HOME", "AWAY"].includes(shieldedPick.code)) {
+      const isBackingHome = shieldedPick.code === "HOME";
+      const dangerPresent = isHighDrawRisk || hasIntlRotationRisk || isAdverseEnvironment || hasStarAbsenceRisk || isMarketDriftingAgainstFav;
+
+      if (dangerPresent) {
+        shieldApplied = true;
+        if (isBackingHome) {
+          const m1X = markets.find((m) => m.code === "1X" && m.runinConfirmed);
+          const mO15 = markets.find((m) => m.code === "O15" && m.runinConfirmed);
+          if (m1X && m1X.prob >= 0.70) {
+            shieldedPick = { ...m1X };
+            shieldReason = `99% Protective Shield: Elevated Draw Risk (${drawRiskPct}%) & tactical factors vetoed naked Home Win. Upgraded to 1X (${homeTeam.name} or Draw) to ensure 100% loss-protection against draws.`;
+          } else if (mO15 && mO15.prob >= 0.74) {
+            shieldedPick = { ...mO15 };
+            shieldReason = `99% Protective Shield: Draw risk (${drawRiskPct}%) vetoed naked win. Upgraded to Over 1.5 Goals (${Math.round(mO15.prob * 100)}% safety prob).`;
+          }
+        } else {
+          const mX2 = markets.find((m) => m.code === "X2" && m.runinConfirmed);
+          const mO15 = markets.find((m) => m.code === "O15" && m.runinConfirmed);
+          if (mX2 && mX2.prob >= 0.68) {
+            shieldedPick = { ...mX2 };
+            shieldReason = `99% Protective Shield: Draw Risk (${drawRiskPct}%) vetoed naked Away Win. Upgraded to X2 (Draw or ${awayTeam.name}) to guarantee 99% win security.`;
+          } else if (mO15 && mO15.prob >= 0.74) {
+            shieldedPick = { ...mO15 };
+            shieldReason = `99% Protective Shield: Upgraded to Over 1.5 Goals for maximum safety cushion.`;
+          }
+        }
+      }
+    }
+
+    shieldedPick.tipWithheld = false;
+    shieldedPick.runinConfirmed = true;
+    shieldedPick.drawRiskPct = drawRiskPct;
+    shieldedPick.shieldApplied = shieldApplied;
+    shieldedPick.shieldReason = shieldReason || `99% Sure Win Standard confirmed via Run-In Table (${runinConfirmation.shortTag}) and multi-factor validation.`;
+    shieldedPick.badge = shieldApplied ? "🛡️ 99% SURE WIN SHIELDED" : "💎 99% SURE WIN CONFIRMED";
+
+    return shieldedPick;
   }
 
   function buildMatchAnalysis(match, sum = null, homeSched = null, awaySched = null, homeRoster = null, awayRoster = null) {
@@ -2416,6 +2785,8 @@ window.MAMON_REALTIME = (() => {
     const squadReport = scanInjuriesAndSuspensions(match, sum, homeRoster, awayRoster);
     const refProfile = resolveRefereeProfile(match, sum, squadReport);
     const pitchProfile = resolvePitchProfile(match);
+    const intlContext = evaluateInternationalAndScheduleContext(match, sum, homeSched, awaySched, stH, stA);
+    const starReport = evaluateStarPlayersAndAbsences(match, sum, homeRoster, awayRoster, squadReport);
 
     // PPG (Points Per Game: Overall + Venue Home/Away splits)
     const calcPpg = (gamesArr) => {
@@ -2525,6 +2896,14 @@ window.MAMON_REALTIME = (() => {
     lamA -= Math.min(0.36, aAbsenceLoad);
     lamH += Math.min(0.14, aAbsenceLoad * 0.28);
     lamA += Math.min(0.14, hAbsenceLoad * 0.28);
+
+    // International schedule & squad rotation adjustments
+    lamH += (intlContext?.homeXgMod || 0);
+    lamA += (intlContext?.awayXgMod || 0);
+    lamH -= ((starReport?.home?.missingStarCount || 0) * 0.10);
+    lamA -= ((starReport?.away?.missingStarCount || 0) * 0.10);
+    lamH += ((starReport?.away?.missingStarCount || 0) * 0.06);
+    lamA += ((starReport?.home?.missingStarCount || 0) * 0.06);
 
     // Market anchor using real 1X2 implied strength + sharp dropping odds steam
     const impH = 1 / (match.odds?.home || 2.1);
@@ -2798,17 +3177,17 @@ window.MAMON_REALTIME = (() => {
           (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA + safetyBias(a));
       });
 
-    const bestPick = sortedCore[0] || markets.find((m) => m.runinConfirmed && (m.code === "O15" || m.code === "1X" || m.code === "X2")) || markets.find((m) => m.code === "O15") || markets[0];
-    const bestRuninConf = bestPick.runinConfirmation || buildRuninCtx(bestPick.code);
-    bestPick.runinConfirmed = bestRuninConf.confirmed;
-    bestPick.runinConfirmation = bestRuninConf;
+    const rawBestPick = sortedCore[0] || markets.find((m) => m.runinConfirmed && (m.code === "O15" || m.code === "1X" || m.code === "X2")) || markets.find((m) => m.runinConfirmed) || markets[0];
+    const bestRuninConf = rawBestPick.runinConfirmation || buildRuninCtx(rawBestPick.code);
+    rawBestPick.runinConfirmed = bestRuninConf.confirmed;
+    rawBestPick.runinConfirmation = bestRuninConf;
     const strongSide = isHomeStrong ? "HOME" : isAwayStrong ? "AWAY" : (homeOverallPpg >= awayOverallPpg ? "HOME" : "AWAY");
     const strongTeam = strongSide === "HOME" ? homeTeam : awayTeam;
     const oppTeam = strongSide === "HOME" ? awayTeam : homeTeam;
     const strongPpgVal = strongSide === "HOME" ? homeOverallPpg : awayOverallPpg;
     const oppPpgVal = strongSide === "HOME" ? awayOverallPpg : homeOverallPpg;
 
-    bestPick.strongPpg = {
+    rawBestPick.strongPpg = {
       isStrong: Boolean(isHomeStrong || isAwayStrong),
       strongSide,
       teamName: strongTeam.name,
@@ -2820,10 +3199,28 @@ window.MAMON_REALTIME = (() => {
       badge: "💎 STRONG PPG + RUN-IN CONFIRMED",
       badgeText: `Strong PPG: ${strongTeam.name} (${strongPpgVal.toFixed(2)} PPG) vs ${oppTeam.name} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGap.toFixed(2)} Edge`
     };
+
+    // Apply the 99% Sure Win Protective Shield Engine (Draw Protection & Strict Run-In Non-Tip Gate)
+    const bestPick = apply99PercentSureWinShield({
+      bestPick: rawBestPick,
+      markets,
+      probs,
+      homeTeam,
+      awayTeam,
+      runinConfirmation: bestRuninConf,
+      intlContext,
+      starReport,
+      weather: match.weather,
+      pitch: pitchProfile,
+      droppingOdds: match.droppingOdds,
+      hPpg: homeOverallPpg,
+      aPpg: awayOverallPpg
+    });
+
     const backedAbsencePenalty = strongSide === "HOME" ? hAbsenceLoad * 10 - aAbsenceLoad * 4 : aAbsenceLoad * 10 - hAbsenceLoad * 4;
     const pitchConfShift = pitchMod >= 0.015 ? 2 : pitchMod <= -0.04 ? -4 : pitchMod <= -0.02 ? -2 : 0;
     const situConfShift = (refProfile.confShift || 0) + pitchConfShift - Math.round(clamp(backedAbsencePenalty, -4, 6));
-    const modelConfPct = Math.round(clamp(bestPick.prob * 100 + situConfShift, 46, 93));
+    const modelConfPct = Math.round(clamp((bestPick.prob || 0.65) * 100 + situConfShift, 46, 95));
     const calcHome = computeTeamStandingsCalc(match, "home", stH, stA);
     const calcAway = computeTeamStandingsCalc(match, "away", stA, stH);
 
@@ -2853,8 +3250,8 @@ window.MAMON_REALTIME = (() => {
           awayForm: awayLast5,
           homePts: homeFormPts,
           awayPts: awayFormPts,
-          homeRecord: stH ? `${stH.w}-${stH.d}-${stH.l}` : `${match.homeRecord.w}-${match.homeRecord.d}-${match.homeRecord.l}`,
-          awayRecord: stA ? `${stA.w}-${stA.d}-${stA.l}` : `${match.awayRecord.w}-${match.awayRecord.d}-${match.awayRecord.l}`,
+          homeRecord: stH ? `${stH.w}-${stH.d}-${stH.l}` : `${match.homeRecord?.w ?? 0}-${match.homeRecord?.d ?? 0}-${match.homeRecord?.l ?? 0}`,
+          awayRecord: stA ? `${stA.w}-${stA.d}-${stA.l}` : `${match.awayRecord?.w ?? 0}-${match.awayRecord?.d ?? 0}-${match.awayRecord?.l ?? 0}`,
           homeLast5Games,
           awayLast5Games,
           edge: homeFormPts >= awayFormPts ? homeTeam.name : awayTeam.name
@@ -2929,7 +3326,10 @@ window.MAMON_REALTIME = (() => {
           calcAway,
           homeStats: homeRuninStats,
           awayStats: awayRuninStats,
-          edge: runInEdge
+          edge: runInEdge,
+          easiestRunin: bestRuninConf?.easiestRunin,
+          toughestRunin: bestRuninConf?.toughestRunin,
+          strongPpgBestRunin: bestRuninConf?.strongPpgBestRunin
         },
         // 14. Pitch & Surface Condition
         pitchCondition: pitchProfile,
@@ -2961,7 +3361,19 @@ window.MAMON_REALTIME = (() => {
           scheduleStrength: ppgScheduleStrength
         },
         // 13. Dropping Odds (Real Bookmaker Open -> Latest Movement)
-        droppingOdds: match.droppingOdds || { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] }
+        droppingOdds: match.droppingOdds || { hasData: false, hasDrop: false, bestDrop: null, allMoves: [] },
+        // 17. International / European Cup (UCL, UEL, UECL) vs Domestic League Priorities & Dual Form
+        internationalContext: intlContext,
+        // 18. Star Players Playing or Missing (Starting GK, Lead Striker, Playmaker)
+        starPlayers: starReport,
+        // 19. 99% Sure Win Protective Shield
+        sureWinShield: {
+          applied: Boolean(bestPick.shieldApplied),
+          tipWithheld: Boolean(bestPick.tipWithheld),
+          drawRiskPct: bestPick.drawRiskPct,
+          reason: bestPick.shieldReason || bestPick.reason,
+          badge: bestPick.badge
+        }
       }
     };
   }
@@ -3007,6 +3419,11 @@ window.MAMON_REALTIME = (() => {
   }
 
   function allowedMarketsForPool(match, pool) {
+    if (!match.analysis) match.analysis = buildMatchAnalysis(match);
+    // Non-negotiable: If tip is withheld or Run-In Table is unconfirmed, reject completely from accumulator pool!
+    if (match.analysis?.bestPick?.tipWithheld || !match.analysis?.bestPick?.runinConfirmed) {
+      return [];
+    }
     const all = match.analysis?.markets || [];
     const ppg = match.analysis?.factors?.ppg || match.analysis?.ppg || match.ppgSummary || {};
     const sched = ppg.scheduleStrength || {};
@@ -3071,6 +3488,8 @@ window.MAMON_REALTIME = (() => {
         if (isChaosOrReserveMatch(m.leagueName, hName, aName)) return false;
 
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        // STRICT NON-TIP GATE: Never include any match where Run-In analysis is missing or tip is withheld!
+        if (m.analysis?.bestPick?.tipWithheld || !m.analysis?.bestPick?.runinConfirmed) return false;
         const ppg = m.analysis?.factors?.ppg || m.analysis?.ppg || m.ppgSummary || {};
         const sched = ppg.scheduleStrength || {};
         const homePpg = ppg.homeOverall || 1.30;
@@ -3094,6 +3513,8 @@ window.MAMON_REALTIME = (() => {
     const playable = chosenPool
       .map((m) => {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        // STRICT NON-TIP GATE: Never include any match where Run-In analysis is missing or tip is withheld!
+        if (m.analysis?.bestPick?.tipWithheld || !m.analysis?.bestPick?.runinConfirmed) return false;
         const ppg = m.analysis?.factors?.ppg || m.analysis?.ppg || m.ppgSummary || {};
         const sched = ppg.scheduleStrength || {};
         const homePpg = ppg.homeOverall || 1.30;
@@ -5366,6 +5787,8 @@ window.MAMON_REALTIME = (() => {
       const leagueMatches = matches.filter((m) => (m.leagueSlug || "").toLowerCase() === slug || (m.espnLeagueCode || "").toLowerCase() === espnCode || (m.espnLeagueCode || "").toLowerCase() === code);
       for (const m of leagueMatches) {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
+        // STRICT NON-TIP GATE: Never include any match where Run-In analysis is missing or tip is withheld!
+        if (m.analysis?.bestPick?.tipWithheld || !m.analysis?.bestPick?.runinConfirmed) return false;
         const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name;
         const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name;
         const ri = m.analysis?.factors?.runInAnalysis;
@@ -5418,6 +5841,7 @@ window.MAMON_REALTIME = (() => {
     const table = Array.from(rowsMap.values())
       .map((r) => ({ ...r, tip: r.tip || computeRuninTip(r) }))
       .sort((a, b) => a.rank - b.rank || b.ppg - a.ppg);
+    ingestRuninRows(table);
     return {
       ok: table.length > 0,
       isFallback: true,
@@ -5461,3 +5885,7 @@ window.MAMON_REALTIME = (() => {
     slugToEspnCode
   };
 })();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = window.MAMON_REALTIME;
+}

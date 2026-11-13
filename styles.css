@@ -5786,3 +5786,254 @@ ul {
 .runin-fixtures-td .runin-inline-fixtures {
   max-width: 440px;
 }
+
+/* ============ LIVE IN-PLAY GOAL RADAR & MOMENTUM STYLES ============ */
+.live-threat-pill {
+  font-weight: 800;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  letter-spacing: -0.01em;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.live-threat-pill.is-imminent {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(220, 38, 38, 0.28));
+  border: 1px solid #EF4444;
+  color: #DC2626;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+  animation: liveThreatPulse 1.6s infinite ease-in-out;
+}
+.live-threat-pill.is-elevated {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(217, 119, 6, 0.22));
+  border: 1px solid #F59E0B;
+  color: #D97706;
+}
+.live-threat-pill.is-steady {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #059669;
+}
+
+@keyframes liveThreatPulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+  70% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.live-threat-chip.is-imminent {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #EF4444;
+  color: #DC2626;
+  font-weight: 800;
+}
+.live-threat-chip.is-elevated {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #F59E0B;
+  color: #D97706;
+  font-weight: 700;
+}
+.live-threat-chip.is-steady {
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #059669;
+}
+
+.live-radar-card {
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: linear-gradient(180deg, #111827, #0F172A);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.live-radar-card.is-imminent {
+  border-color: #EF4444;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.18);
+}
+.live-radar-card.is-elevated {
+  border-color: #F59E0B;
+}
+.live-radar-card.is-steady {
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.live-radar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.live-radar-threat-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+}
+.live-radar-threat-badge.is-imminent {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FCA5A5;
+}
+.live-radar-threat-badge.is-elevated {
+  background: #FEF3C7;
+  color: #D97706;
+  border: 1px solid #FCD34D;
+}
+.live-radar-threat-badge.is-steady {
+  background: #D1FAE5;
+  color: #059669;
+  border: 1px solid #6EE7B7;
+}
+
+.live-radar-threat-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.live-radar-threat-banner.is-imminent {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(185, 28, 28, 0.22));
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.live-radar-threat-banner.is-elevated {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(180, 83, 9, 0.18));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.live-radar-threat-banner.is-steady {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.10), rgba(4, 120, 87, 0.15));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.live-radar-threat-main {
+  flex: 1;
+  min-width: 0;
+}
+.live-radar-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+}
+.live-radar-tip {
+  font-size: 12.5px;
+  color: #E2E8F0;
+  line-height: 1.4;
+}
+
+.live-radar-threat-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  text-align: center;
+}
+.live-radar-number {
+  font-size: 26px;
+  font-weight: 900;
+  font-family: var(--font-mono);
+  line-height: 1;
+}
+.live-radar-threat-banner.is-imminent .live-radar-number {
+  color: #EF4444;
+}
+.live-radar-threat-banner.is-elevated .live-radar-number {
+  color: #F59E0B;
+}
+.live-radar-threat-banner.is-steady .live-radar-number {
+  color: #10B981;
+}
+.live-radar-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #94A3B8;
+  margin-top: 2px;
+}
+
+.live-radar-pressure-bar-wrap {
+  margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.live-radar-team-pressure-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.team-pressure-name {
+  color: #F8FAFC;
+}
+.team-pressure-center {
+  color: #94A3B8;
+  text-align: center;
+}
+.live-radar-pressure-track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: #334155;
+  display: flex;
+  overflow: hidden;
+}
+.live-radar-pressure-fill-home {
+  background: #3B82F6;
+  height: 100%;
+  transition: width 0.4s ease;
+}
+.live-radar-pressure-fill-away {
+  background: #EF4444;
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.live-radar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+.live-radar-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.radar-tile-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.radar-tile-content {
+  flex: 1;
+  min-width: 0;
+}
+.radar-tile-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #94A3B8;
+  margin-bottom: 2px;
+}
+.radar-tile-val {
+  font-size: 12px;
+  font-weight: 600;
+  color: #F1F5F9;
+  line-height: 1.35;
+}

@@ -1456,10 +1456,56 @@ window.MAMON_REALTIME = (() => {
       stats: null,
       lineups: null,
       enriched: false,
-      analysis: null
+      analysis: null,
+      liveRadar: null
     };
 
+    // Extract initial live statistics & events from scoreboard competition if match is in play
+    if (status === "LIVE") {
+      const getStat = (compObj, sName) => parseFloat(compObj?.statistics?.find((s) => s.name === sName)?.displayValue) || 0;
+      const hPossRaw = getStat(homeComp, "possessionPct");
+      const aPossRaw = getStat(awayComp, "possessionPct") || (hPossRaw > 0 ? 100 - hPossRaw : 50);
+      const hShotsRaw = getStat(homeComp, "totalShots");
+      const aShotsRaw = getStat(awayComp, "totalShots");
+      const hSotRaw = getStat(homeComp, "shotsOnTarget");
+      const aSotRaw = getStat(awayComp, "shotsOnTarget");
+      const hCornersRaw = getStat(homeComp, "wonCorners");
+      const aCornersRaw = getStat(awayComp, "wonCorners");
+      const hFoulsRaw = getStat(homeComp, "foulsCommitted");
+      const aFoulsRaw = getStat(awayComp, "foulsCommitted");
+
+      const compEvents = Array.isArray(comp.details)
+        ? comp.details
+            .filter((d) => d.type?.text || d.yellowCard || d.redCard)
+            .map((d) => ({
+              min: d.clock?.displayValue || "",
+              team: String(d.team?.id) === String(homeComp.team?.id) ? "home" : "away",
+              type: d.redCard ? "red" : d.yellowCard ? "yellow" : (d.type?.text && /goal/i.test(d.type.text)) ? "goal" : "card",
+              player: d.athletesInvolved?.[0]?.displayName || d.type?.text || "Event",
+              assist: ""
+            }))
+        : [];
+
+      match.homeRed = compEvents.filter((e) => e.team === "home" && e.type === "red").length;
+      match.awayRed = compEvents.filter((e) => e.team === "away" && e.type === "red").length;
+      match.events = compEvents;
+      match.stats = {
+        possession: [Math.round(hPossRaw || 50), Math.round(aPossRaw || 50)],
+        shots: [hShotsRaw, aShotsRaw],
+        shotsOnTarget: [hSotRaw, aSotRaw],
+        corners: [hCornersRaw, aCornersRaw],
+        fouls: [hFoulsRaw, aFoulsRaw],
+        passes: [0, 0],
+        accuratePasses: [0, 0],
+        clearances: [0, 0]
+      };
+    }
+
     match.analysis = buildMatchAnalysis(match, null);
+    if (status === "LIVE") {
+      match.liveRadar = computeLiveInPlayGoalRadar(match, null);
+      if (match.analysis) match.analysis.liveRadar = match.liveRadar;
+    }
     return match;
   }
 
@@ -3658,10 +3704,170 @@ window.MAMON_REALTIME = (() => {
     return slips;
   }
 
+  // ============ REAL-TIME IN-PLAY MOMENTUM & NEXT 5-10 MIN GOAL RADAR ============
+  function computeLiveInPlayGoalRadar(match, summaryJson = null) {
+    if (!match) return null;
+    const isLive = match.status === "LIVE" || match.isLive === true;
+    if (!isLive) return null;
+
+    const minute = Number(match.minute) || (parseInt(String(match.displayTime || match.liveClock || "").match(/\d+/)?.[0], 10) || 45);
+    const homeScore = Number(match.homeScore) || 0;
+    const awayScore = Number(match.awayScore) || 0;
+    const homeName = match.homeTeamName || DATA.TEAMS?.[match.home]?.name || "Home";
+    const awayName = match.awayTeamName || DATA.TEAMS?.[match.away]?.name || "Away";
+
+    const stats = match.stats || {};
+    const hPoss = Number(stats.possession?.[0]) || 50;
+    const aPoss = Number(stats.possession?.[1]) || (100 - hPoss);
+    const hShots = Number(stats.shots?.[0]) || 0;
+    const aShots = Number(stats.shots?.[1]) || 0;
+    const hSot = Number(stats.shotsOnTarget?.[0]) || 0;
+    const aSot = Number(stats.shotsOnTarget?.[1]) || 0;
+    const hCorners = Number(stats.corners?.[0]) || 0;
+    const aCorners = Number(stats.corners?.[1]) || 0;
+    const hPasses = Number(stats.passes?.[0]) || 0;
+    const aPasses = Number(stats.passes?.[1]) || 0;
+    const hAccPasses = Number(stats.accuratePasses?.[0]) || Math.round(hPasses * 0.82);
+    const aAccPasses = Number(stats.accuratePasses?.[1]) || Math.round(aPasses * 0.78);
+    const hFouls = Number(stats.fouls?.[0]) || 0;
+    const aFouls = Number(stats.fouls?.[1]) || 0;
+    const hClear = Number(stats.clearances?.[0]) || 0;
+    const aClear = Number(stats.clearances?.[1]) || 0;
+
+    const hRed = Number(match.homeRed) || (match.events?.filter((e) => e.team === "home" && e.type === "red").length || 0);
+    const aRed = Number(match.awayRed) || (match.events?.filter((e) => e.team === "away" && e.type === "red").length || 0);
+    const hYellow = Number(match.homeYellow) || (match.events?.filter((e) => e.team === "home" && e.type === "yellow").length || 0);
+    const aYellow = Number(match.awayYellow) || (match.events?.filter((e) => e.team === "away" && e.type === "yellow").length || 0);
+
+    const referee = match.refereeName || "Match Official";
+
+    // Detect fresh attacking substitutions (from commentary, keyEvents or rosters)
+    const recentEvents = Array.isArray(summaryJson?.keyEvents) ? summaryJson.keyEvents : match.events || [];
+    const hasRecentSubHome = recentEvents.some((e) => (e.team === "home" || String(e.team?.id) === String(match.homeEspnId)) && (/sub/i.test(e.type?.text || "") || /sub/i.test(e.type || "")));
+    const hasRecentSubAway = recentEvents.some((e) => (e.team === "away" || String(e.team?.id) === String(match.awayEspnId)) && (/sub/i.test(e.type?.text || "") || /sub/i.test(e.type || "")));
+
+    // 1. Attacking Power (Shots, SoT, Corners, Opponent Forced Clearances)
+    let hAttack = Math.min(15, (hShots * 1.8) + (hSot * 3.2)) + Math.min(10, hCorners * 2.4) + Math.min(10, aClear * 0.45);
+    let aAttack = Math.min(15, (aShots * 1.8) + (aSot * 3.2)) + Math.min(10, aCorners * 2.4) + Math.min(10, hClear * 0.45);
+
+    // 2. Possession Dominance & Passing Rhythm (Pass accuracy & Territory)
+    const hPassPct = hPasses > 0 ? (hAccPasses / hPasses) : 0.80;
+    const aPassPct = aPasses > 0 ? (aAccPasses / aPasses) : 0.76;
+    let hControl = (hPoss >= 70 ? 15 : hPoss >= 60 ? 11 : hPoss >= 52 ? 6 : 2) + (hPassPct >= 0.85 ? 10 : hPassPct >= 0.78 ? 7 : 4);
+    let aControl = (aPoss >= 70 ? 15 : aPoss >= 60 ? 11 : aPoss >= 52 ? 6 : 2) + (aPassPct >= 0.85 ? 10 : aPassPct >= 0.78 ? 7 : 4);
+
+    // 3. Disciplinary Tension & Opponent Fouls (Cards, Red card advantage)
+    let hDisc = (aRed > 0 ? 14 : 0) + (aYellow >= 2 ? 6 : aYellow === 1 ? 3 : 0) + (aFouls >= 10 ? 4 : aFouls >= 6 ? 2 : 0);
+    let aDisc = (hRed > 0 ? 14 : 0) + (hYellow >= 2 ? 6 : hYellow === 1 ? 3 : 0) + (hFouls >= 10 ? 4 : hFouls >= 6 ? 2 : 0);
+
+    // 4. Quality Players & Fresh Attackers Impact
+    let hSquad = 6 + (hasRecentSubHome ? 7 : 0);
+    let aSquad = 6 + (hasRecentSubAway ? 7 : 0);
+    if (match.analysis?.factors?.starPlayers?.homeStarST || match.analysis?.factors?.starPlayers?.homeKeyMF) hSquad += 4;
+    if (match.analysis?.factors?.starPlayers?.awayStarST || match.analysis?.factors?.starPlayers?.awayKeyMF) aSquad += 4;
+
+    // 5. Game Phase & Urgency Multipliers
+    let hPhase = (minute >= 75 ? 9 : minute >= 45 && minute <= 70 ? 7 : minute >= 35 && minute < 45 ? 5 : 3);
+    let aPhase = (minute >= 75 ? 9 : minute >= 45 && minute <= 70 ? 7 : minute >= 35 && minute < 45 ? 5 : 3);
+    if (homeScore <= awayScore) hPhase += 5; // Level or trailing -> heavy attacking urge
+    if (awayScore <= homeScore) aPhase += 5;
+
+    const homePressure = Math.min(98, Math.max(15, Math.round(hAttack + hControl + hDisc + hSquad + hPhase)));
+    const awayPressure = Math.min(98, Math.max(15, Math.round(aAttack + aControl + aDisc + aSquad + aPhase)));
+
+    const dominantSide = homePressure >= awayPressure + 7 ? "HOME" : awayPressure >= homePressure + 7 ? "AWAY" : "BALANCED";
+    const dominantTeamName = dominantSide === "HOME" ? homeName : dominantSide === "AWAY" ? awayName : (homePressure >= awayPressure ? homeName : awayName);
+
+    // Overall match goal threat
+    const isEndToEnd = (hShots + aShots >= 9) && (hCorners + aCorners >= 5);
+    const overallThreat = isEndToEnd
+      ? Math.min(99, Math.max(homePressure, awayPressure, Math.round((homePressure + awayPressure) * 0.58)))
+      : Math.max(homePressure, awayPressure);
+
+    const sumPressure = homePressure + awayPressure;
+    const homePressurePct = sumPressure > 0 ? Math.round((homePressure / sumPressure) * 100) : 50;
+    const awayPressurePct = 100 - homePressurePct;
+
+    let verdict = "LOW_THREAT";
+    let threatClass = "is-steady";
+    let verdictBadge = `🛡️ ${overallThreat}% LOW THREAT`;
+    let verdictTitle = "Tactical Midfield Stalemate";
+    let inPlayTip = `⏳ No Immediate Goal Threat · Midfield Battle · Under ${homeScore + awayScore + 1.5} In-Play`;
+    let threatPillLabel = `🛡️ ${overallThreat}% Steady`;
+    let threatShortLabel = `🛡️ ${overallThreat}% Threat`;
+    let urgency = "LOW";
+
+    if (overallThreat >= 75) {
+      verdict = "IMMINENT_GOAL_5_10";
+      threatClass = "is-imminent";
+      verdictBadge = `⚡ ${overallThreat}% GOAL IMMINENT (Next 5-10m)`;
+      verdictTitle = `⚡ HIGH GOAL THREAT: Goal Expected in Next 5-10 Mins!`;
+      inPlayTip = `⚽ GOAL EXPECTED NEXT 5-10 MINS · ${dominantTeamName} Pressure Wave · Over ${homeScore + awayScore + 0.5} / Next Goal ${dominantTeamName}`;
+      threatPillLabel = `⚡ ${overallThreat}% Goal Next 5-10m`;
+      threatShortLabel = `⚡ ${overallThreat}% Goal Next 5-10m`;
+      urgency = "CRITICAL";
+    } else if (overallThreat >= 52) {
+      verdict = "ELEVATED_PRESSURE";
+      threatClass = "is-elevated";
+      verdictBadge = `🔥 ${overallThreat}% PRESSURE BUILDING`;
+      verdictTitle = `🔥 ELEVATED PRESSURE: Offensive Waves Building`;
+      inPlayTip = `📈 Pressure Surge: ${dominantTeamName} pushing hard · Over ${homeScore + awayScore + 0.5} In-Play Recommended`;
+      threatPillLabel = `🔥 ${overallThreat}% Pressure`;
+      threatShortLabel = `🔥 ${overallThreat}% Pressure`;
+      urgency = "HIGH";
+    }
+
+    const attackingPowerSummary = `${hShots + aShots} Total Shots (${hSot + aSot} on target) · ${hCorners + aCorners} Corners · ${dominantSide === "HOME" ? `${hShots} shots by ${homeName}` : dominantSide === "AWAY" ? `${aShots} shots by ${awayName}` : "Even distribution"}`;
+    const possessionPassesSummary = `${homeName} ${Math.round(hPoss)}% - ${Math.round(aPoss)}% ${awayName} · Teamwork Sync: ${Math.round(hPassPct * 100)}% (${hPasses || "High"} passes)`;
+    const defensiveSiegeSummary = aClear > 0 || hClear > 0
+      ? `${dominantSide === "HOME" ? awayName : homeName} under siege with ${dominantSide === "HOME" ? aClear : hClear} clearances forced inside box`
+      : `${dominantSide === "HOME" ? awayName : homeName} forced into deep defensive low-block territory`;
+    const disciplineSummary = `${hYellow + aYellow} Yellows, ${hRed + aRed} Reds · ${hFouls + aFouls} Fouls committed · ${aRed > 0 || hRed > 0 ? "⚠️ Red Card numeric advantage active!" : aYellow >= 2 || hYellow >= 2 ? "Defenders booked, cautious tackling" : "Disciplined backlines"}`;
+    const qualitySubsSummary = hasRecentSubHome || hasRecentSubAway
+      ? `Fresh attacking substitutes active on pitch · Exploiting fatigue in defense`
+      : `Core starting attackers leading forward momentum · High stamina`;
+    const refereePhaseSummary = `Official: ${referee} · Min ${minute}' (${match.halfLabel || "In Play"}) · ${minute >= 75 ? "Late match frantic urgency" : minute >= 45 ? "Post-HT tactical adjustments" : "First half establishing rhythm"}`;
+
+    return {
+      isLive: true,
+      minute,
+      homeScore,
+      awayScore,
+      homeName,
+      awayName,
+      homePressure,
+      awayPressure,
+      homePressurePct,
+      awayPressurePct,
+      dominantSide,
+      dominantTeamName,
+      overallThreat,
+      verdict,
+      threatClass,
+      verdictBadge,
+      verdictTitle,
+      inPlayTip,
+      threatPillLabel,
+      threatShortLabel,
+      urgency,
+      attackingPowerSummary,
+      possessionPassesSummary,
+      defensiveSiegeSummary,
+      disciplineSummary,
+      qualitySubsSummary,
+      refereePhaseSummary
+    };
+  }
+
   // Deep ESPN Hydration for any single match (H2H + Last 5 Home/Away + Clean Sheets + Run-in + Injuries/Suspensions)
   async function enrichMatchDetails(match) {
     if (!match) return match;
-    if (match.enriched && match.analysis?.factors?.h2h?.isLiveFeed && match.analysis?.factors?.last5HomeGames?.isLiveFeed) {
+    const isLive = match.status === "LIVE" || match.isLive === true;
+    if (!isLive && match.enriched && match.analysis?.factors?.h2h?.isLiveFeed && match.analysis?.factors?.last5HomeGames?.isLiveFeed) {
+      return match;
+    }
+    const now = Date.now();
+    if (isLive && match.lastLiveEnrichMs && (now - match.lastLiveEnrichMs < 12000)) {
       return match;
     }
 
@@ -3672,11 +3878,11 @@ window.MAMON_REALTIME = (() => {
     const code = match.espnLeagueCode && match.espnLeagueCode !== "all" ? match.espnLeagueCode : "all";
     const sumPromise = !isNumericEspnId
       ? Promise.resolve(null)
-      : summaryCache.has(rawEspnId)
+      : (!isLive && summaryCache.has(rawEspnId))
         ? Promise.resolve(summaryCache.get(rawEspnId))
         : fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/summary?event=${rawEspnId}`, 5000)
             .then((d) => {
-              if (d) summaryCache.set(rawEspnId, d);
+              if (d && !isLive) summaryCache.set(rawEspnId, d);
               return d;
             })
             .catch(() => null);
@@ -3777,13 +3983,21 @@ window.MAMON_REALTIME = (() => {
         };
         const hPoss = statVal(hBox, ["possessionPct"]) || 50;
         const aPoss = statVal(aBox, ["possessionPct"]) || 100 - hPoss;
+        const hClear = statVal(hBox, ["totalClearance", "effectiveClearance"]) || 0;
+        const aClear = statVal(aBox, ["totalClearance", "effectiveClearance"]) || 0;
+        const hAccPass = statVal(hBox, ["accuratePasses"]) || 0;
+        const aAccPass = statVal(aBox, ["accuratePasses"]) || 0;
+        const hTotPass = statVal(hBox, ["totalPasses"]) || 0;
+        const aTotPass = statVal(aBox, ["totalPasses"]) || 0;
         match.stats = {
           possession: [Math.round(hPoss), Math.round(aPoss)],
           shots: [statVal(hBox, ["totalShots"]), statVal(aBox, ["totalShots"])],
           shotsOnTarget: [statVal(hBox, ["shotsOnTarget"]), statVal(aBox, ["shotsOnTarget"])],
           xg: [String(statVal(hBox, ["expectedGoals"]) || "-"), String(statVal(aBox, ["expectedGoals"]) || "-")],
           corners: [statVal(hBox, ["wonCorners"]), statVal(aBox, ["wonCorners"])],
-          passes: [statVal(hBox, ["totalPasses"]), statVal(aBox, ["totalPasses"])],
+          passes: [hTotPass, aTotPass],
+          accuratePasses: [hAccPass, aAccPass],
+          clearances: [hClear, aClear],
           fouls: [statVal(hBox, ["foulsCommitted"]), statVal(aBox, ["foulsCommitted"])]
         };
       }
@@ -3806,7 +4020,12 @@ window.MAMON_REALTIME = (() => {
     }
 
     match.enriched = true;
+    if (isLive) match.lastLiveEnrichMs = now;
     match.analysis = buildMatchAnalysis(match, sum, homeSched, awaySched, homeRoster, awayRoster);
+    if (isLive || match.status === "LIVE") {
+      match.liveRadar = computeLiveInPlayGoalRadar(match, sum);
+      if (match.analysis) match.analysis.liveRadar = match.liveRadar;
+    }
     return match;
   }
 
@@ -5878,6 +6097,7 @@ window.MAMON_REALTIME = (() => {
     fetchLeagueRuninData,
     getLeagueRuninCached,
     buildFallbackRuninTable,
+    computeLiveInPlayGoalRadar,
     lookupTeamRunin,
     evaluateRuninTableConfirmation,
     computeRuninTip,

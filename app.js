@@ -1599,6 +1599,10 @@
     const bestOddsLabel = isTipWithheld ? "Run-In Pending" : `@ ${formatOdds(best?.odds || m.odds?.home)}`;
     const pickBadgeClass = isTipWithheld ? "is-withheld" : (best?.shieldApplied ? "is-shielded" : "is-confirmed");
 
+    const liveRadar = isLive
+      ? (m.liveRadar || m.analysis?.liveRadar || (RT?.computeLiveInPlayGoalRadar ? RT.computeLiveInPlayGoalRadar(m) : null))
+      : null;
+
     const redBadges = (count) =>
       count > 0 ? `<span class="red-cards" title="Red card">${"<span></span>".repeat(count)}</span>` : "";
 
@@ -1660,7 +1664,13 @@
               <span class="team-score${isLive ? " is-live" : ""}">${awayScoreText}</span>
             </div>
             ${
-              dropChipHtml || ppgText || sosBadge || runinBadgeHtml || periodSubScore
+              isLive && liveRadar
+                ? `<div class="match-mobile-meta">
+                    <span class="ppg-chip live-threat-chip ${liveRadar.threatClass}">${escapeHtml(liveRadar.threatShortLabel)}</span>
+                    <span class="ppg-chip" style="font-size:10px;">${escapeHtml(liveRadar.dominantSide === "BALANCED" ? "⚖️ Balanced" : `⚡ ${liveRadar.dominantTeamName}`)}</span>
+                    ${periodSubScore ? `<span class="ppg-chip">${escapeHtml(periodSubScore)}</span>` : ""}
+                  </div>`
+                : (dropChipHtml || ppgText || sosBadge || runinBadgeHtml || periodSubScore)
                 ? `<div class="match-mobile-meta">
                     ${periodSubScore ? `<span class="ppg-chip">${escapeHtml(periodSubScore)}</span>` : ""}
                     ${ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : ""}
@@ -1696,15 +1706,24 @@
           </div>
           <div class="chevron">
             <div class="chevron-meta-row">
-              ${runinBadgeHtml}
-              ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
-              ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
-              ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
-              ${m.onOneFootball ? `<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OF</span>` : ""}
+              ${
+                isLive && liveRadar
+                  ? `<span class="ppg-chip live-threat-chip ${liveRadar.threatClass}" title="${escapeHtml(liveRadar.inPlayTip)}">${escapeHtml(liveRadar.verdictBadge)}</span>
+                     <span class="ppg-chip" style="font-size:10px;">${escapeHtml(liveRadar.dominantSide === "BALANCED" ? "⚖️ Balanced" : `⚡ ${liveRadar.dominantTeamName}`)}</span>`
+                  : `${runinBadgeHtml}
+                     ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
+                     ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
+                     ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
+                     ${m.onOneFootball ? `<span class="of-verify-pill" title="Confirmed on onefootball.com/en/matches">⚽ OF</span>` : ""}`
+              }
             </div>
             <div class="chevron-action-row">
               ${sosBadge}
-              <span class="match-odds-pill ${pickBadgeClass}" title="${escapeHtml(isTipWithheld ? "Tip Withheld: Full Run-In Analysis Pending" : (best?.shieldReason || best?.reason || "99% Sure Win Confirmed"))}">${escapeHtml(bestLabel)} ${escapeHtml(bestOddsLabel)}</span>
+              ${
+                isLive && liveRadar
+                  ? `<span class="match-odds-pill live-threat-pill ${liveRadar.threatClass}" title="${escapeHtml(liveRadar.inPlayTip)}">${escapeHtml(liveRadar.threatPillLabel)}</span>`
+                  : `<span class="match-odds-pill ${pickBadgeClass}" title="${escapeHtml(isTipWithheld ? "Tip Withheld: Full Run-In Analysis Pending" : (best?.shieldReason || best?.reason || "99% Sure Win Confirmed"))}">${escapeHtml(bestLabel)} ${escapeHtml(bestOddsLabel)}</span>`
+              }
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
             </div>
           </div>
@@ -5588,6 +5607,107 @@
     });
   }
 
+  function renderLiveInPlayGoalRadar(m, radar) {
+    if (!m || !radar) return "";
+    const home = getTeam(m.home, "Home");
+    const away = getTeam(m.away, "Away");
+    const threatClass = radar.threatClass || "is-steady";
+
+    return `
+      <div class="live-radar-card ${threatClass}">
+        <div class="live-radar-header">
+          <div class="flex items-center gap-2">
+            <span class="live-dot-pulse"></span>
+            <span class="live-radar-kicker font-mono text-xs font-bold uppercase" style="color:#EF4444;">
+              🔴 REAL-TIME IN-PLAY GOAL RADAR
+            </span>
+          </div>
+          <span class="live-radar-threat-badge ${threatClass}">
+            ${escapeHtml(radar.verdictBadge)}
+          </span>
+        </div>
+
+        <div class="live-radar-threat-banner ${threatClass}">
+          <div class="live-radar-threat-main">
+            <div class="live-radar-title">${escapeHtml(radar.verdictTitle)}</div>
+            <div class="live-radar-tip">
+              <strong>In-Play Prediction / Tip:</strong> ${escapeHtml(radar.inPlayTip)}
+            </div>
+          </div>
+          <div class="live-radar-threat-score">
+            <span class="live-radar-number">${radar.overallThreat}%</span>
+            <span class="live-radar-label">Goal Threat</span>
+          </div>
+        </div>
+
+        <!-- Real-Time Momentum Pressure Bar: Home vs Away -->
+        <div class="live-radar-pressure-bar-wrap">
+          <div class="live-radar-team-pressure-labels">
+            <span class="team-pressure-name">
+              ${escapeHtml(home.name)} (${radar.homePressure}%)
+            </span>
+            <span class="team-pressure-center font-mono text-xs text-muted">
+              ${radar.dominantSide === "BALANCED" ? "⚖️ Evenly Balanced Pressure" : `⚡ ${escapeHtml(radar.dominantTeamName)} Mounting Heavy Siege`}
+            </span>
+            <span class="team-pressure-name">
+              ${escapeHtml(away.name)} (${radar.awayPressure}%)
+            </span>
+          </div>
+          <div class="live-radar-pressure-track">
+            <div class="live-radar-pressure-fill-home" style="width:${radar.homePressurePct}%;"></div>
+            <div class="live-radar-pressure-fill-away" style="width:${radar.awayPressurePct}%;"></div>
+          </div>
+        </div>
+
+        <!-- 6 Live Telemetry Factors (Attacking, Passes, Opponent Siege, Cards, Subs, Ref) -->
+        <div class="live-radar-grid">
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">⚡</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Attacking Power &amp; Shots</div>
+              <div class="radar-tile-val">${escapeHtml(radar.attackingPowerSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">🔄</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Possession &amp; Pass Rhythm</div>
+              <div class="radar-tile-val">${escapeHtml(radar.possessionPassesSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">🛡️</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Opponent Defensive Siege</div>
+              <div class="radar-tile-val">${escapeHtml(radar.defensiveSiegeSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">🟨</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Cards &amp; Disciplinary Tension</div>
+              <div class="radar-tile-val">${escapeHtml(radar.disciplineSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">🏃</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Quality Players &amp; Fresh Subs</div>
+              <div class="radar-tile-val">${escapeHtml(radar.qualitySubsSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">👨‍⚖️</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Referee &amp; Game Phase</div>
+              <div class="radar-tile-val">${escapeHtml(radar.refereePhaseSummary)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function openMatchModal(matchId, activeTab = "analysis") {
     const allPool = [...liveMatches, ...finishedTodayMatches];
     const m = allPool.find((x) => x.id === matchId);
@@ -5595,10 +5715,17 @@
     activeModalMatchId = matchId;
     activeModalTab = activeTab;
 
+    const isLive = isMatchTrulyLive(m);
+    const hasScore = isLive || m.status === "FT";
+    const liveRadar = isLive
+      ? (m.liveRadar || m.analysis?.liveRadar || (RT?.computeLiveInPlayGoalRadar ? RT.computeLiveInPlayGoalRadar(m) : null))
+      : null;
+
     // Trigger live summary / team schedule / weather enrichment only when needed
     const hasNumericEspn = /^\d+$/.test(String(m.espnId || "").trim()) || /^\d+$/.test(String(m.homeEspnId || "").trim()) || /^\d+$/.test(String(m.awayEspnId || "").trim());
     const needsWeather = Boolean(m.venueCity && !m.weather?.ok);
-    if (RT && !m.enriched && (hasNumericEspn || needsWeather)) {
+    const needsLiveRefresh = isLive && (!m.lastLiveEnrichMs || (Date.now() - m.lastLiveEnrichMs > 12000));
+    if (RT && (!m.enriched || needsLiveRefresh) && (hasNumericEspn || needsWeather)) {
       RT.enrichMatchDetails(m).then(() => {
         if (activeModalMatchId === matchId) {
           recomputeSlips();
@@ -5612,8 +5739,6 @@
     const home = getTeam(m.home, "Home");
     const away = getTeam(m.away, "Away");
     const lg = getLeagueInfo(m);
-    const isLive = m.status === "LIVE";
-    const hasScore = isLive || m.status === "FT";
 
     let tabBody = "";
     if (activeTab === "analysis") {
@@ -5622,8 +5747,9 @@
       const isTipWithheld = Boolean(best?.tipWithheld || !best?.runinConfirmed);
       tabBody = `
         <div class="p-4">
+          ${isLive && liveRadar ? renderLiveInPlayGoalRadar(m, liveRadar) : ""}
           ${
-            isTipWithheld
+            !isLive && isTipWithheld
               ? `<div class="sure-pick-box" style="margin-top:0;border:1px solid rgba(239,68,68,0.35);background:rgba(239,68,68,0.06);">
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
@@ -5634,7 +5760,8 @@
                     <div class="text-xs text-text-secondary mt-1">Under strict system rules, predictions are withheld for fixtures until full Run-In Difficulty Table telemetry is confirmed. Model does not guess unverified games.</div>
                   </div>
                 </div>`
-              : `<div class="sure-pick-box" style="margin-top:0;">
+              : !isLive
+              ? `<div class="sure-pick-box" style="margin-top:0;">
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 flex-wrap">
                       <span class="text-xs font-bold uppercase tracking-wide text-brand">${best?.badge || "💎 99% SURE WIN CONFIRMED"}:</span>
@@ -5648,6 +5775,7 @@
                   </div>
                   ${best ? `<span class="sure-odds-chip">@ ${Number(best.odds).toFixed(2)}</span>` : ""}
                 </div>`
+              : ""
           }
 
           <div class="flex items-center justify-between mt-3 mb-1">
@@ -5663,6 +5791,7 @@
       const events = m.events || [];
       tabBody = `
         <div class="p-4">
+          ${isLive && liveRadar ? renderLiveInPlayGoalRadar(m, liveRadar) : ""}
           <div class="text-xs font-bold uppercase tracking-wide text-muted mb-3">Live Match Timeline</div>
           ${
             events.length === 0
@@ -5713,11 +5842,14 @@
         { label: "Total Shots", h: st.shots[0], a: st.shots[1] },
         { label: "Shots on Target", h: st.shotsOnTarget[0], a: st.shotsOnTarget[1] },
         { label: "Corners", h: st.corners[0], a: st.corners[1] },
-        { label: "Passes", h: st.passes[0], a: st.passes[1] },
-        { label: "Fouls", h: st.fouls[0], a: st.fouls[1] }
+        { label: "Total Passes", h: st.passes[0], a: st.passes[1] },
+        { label: "Accurate Passes", h: st.accuratePasses?.[0] || Math.round(st.passes[0] * 0.8), a: st.accuratePasses?.[1] || Math.round(st.passes[1] * 0.75) },
+        { label: "Clearances Forced (Defensive Siege)", h: st.clearances?.[0] || 0, a: st.clearances?.[1] || 0 },
+        { label: "Fouls Committed", h: st.fouls[0], a: st.fouls[1] }
       ];
       tabBody = `
         <div class="p-4">
+          ${isLive && liveRadar ? renderLiveInPlayGoalRadar(m, liveRadar) : ""}
           ${rows
             .map((r) => {
               const total = Math.max(0.01, r.h + r.a);

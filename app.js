@@ -483,6 +483,42 @@
   let runinCatalogClient = [];
   let expandedRuninTeam = null;
   const runinDrawerBuilders = new Map();
+  const runinFixtureMatchCache = new Map();
+  let runinLiveFixtureMap = null;
+  let runinLiveFixtureWordIndex = null;
+
+  function clearRuninFixtureCaches() {
+    runinLiveFixtureMap = null;
+    runinLiveFixtureWordIndex = null;
+    runinFixtureMatchCache.clear();
+  }
+
+  function getRuninLiveFixtureMap() {
+    if (runinLiveFixtureMap) return runinLiveFixtureMap;
+    runinLiveFixtureMap = new Map();
+    runinLiveFixtureWordIndex = new Map();
+    for (const lm of liveMatches || []) {
+      if ((lm.sport || "football").toLowerCase() !== "football" || lm.status === "FT") continue;
+      const hN = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
+      const aN = lm.awayTeamName || DATA.TEAMS?.[lm.away]?.name || "";
+      if (!hN || !aN) continue;
+      const normH = normSportParticipantKey(hN);
+      const normA = normSportParticipantKey(aN);
+      const key = `${normH}|${normA}`;
+      if (!runinLiveFixtureMap.has(key)) runinLiveFixtureMap.set(key, lm);
+
+      const wordsH = normH.split(" ").filter((w) => w.length >= 3);
+      for (const w of wordsH) {
+        let arr = runinLiveFixtureWordIndex.get(w);
+        if (!arr) {
+          arr = [];
+          runinLiveFixtureWordIndex.set(w, arr);
+        }
+        arr.push(lm);
+      }
+    }
+    return runinLiveFixtureMap;
+  }
   let lastNavigatedHash = null;
   let lastModalInteractionMs = 0;
   let modalCleanupRaf = null;
@@ -628,10 +664,16 @@
         if (data.league?.code) runinLeagueCacheClient.set(data.league.code, data);
         if (Array.isArray(data.leagues) && data.leagues.length > 0) runinCatalogClient = data.leagues;
         if (RT?.buildMatchAnalysis && Array.isArray(liveMatches)) {
-          liveMatches.forEach((m) => {
-            if (m.analysis?.bestPick?.tipWithheld) m.analysis = RT.buildMatchAnalysis(m);
+          scheduleUiUpdate(() => {
+            let changed = false;
+            for (const m of liveMatches) {
+              if (m.analysis?.bestPick?.tipWithheld) {
+                m.analysis = RT.buildMatchAnalysis(m);
+                changed = true;
+              }
+            }
+            if (changed && typeof recomputeSlips === "function") recomputeSlips();
           });
-          if (typeof recomputeSlips === "function") recomputeSlips();
         }
         return data;
       }
@@ -639,10 +681,16 @@
       if (fb?.ok && Array.isArray(fb.table) && fb.table.length > 0) {
         runinLeagueCacheClient.set(code, fb);
         if (RT?.buildMatchAnalysis && Array.isArray(liveMatches)) {
-          liveMatches.forEach((m) => {
-            if (m.analysis?.bestPick?.tipWithheld) m.analysis = RT.buildMatchAnalysis(m);
+          scheduleUiUpdate(() => {
+            let changed = false;
+            for (const m of liveMatches) {
+              if (m.analysis?.bestPick?.tipWithheld) {
+                m.analysis = RT.buildMatchAnalysis(m);
+                changed = true;
+              }
+            }
+            if (changed && typeof recomputeSlips === "function") recomputeSlips();
           });
-          if (typeof recomputeSlips === "function") recomputeSlips();
         }
         return fb;
       }
@@ -730,6 +778,7 @@
   }
 
   function recomputeSlips() {
+    clearRuninFixtureCaches();
     if (!RT) return;
     const cleanMatches = liveMatches.filter((m) => !isNcaaOrWomenMatch(m));
     sureSlips = RT.buildSureOddsSlips(cleanMatches, state.slipSeed);
@@ -3414,17 +3463,8 @@
     const inlineLimit = opts.inlineLimit || 5;
 
     // Enrich Football Run-In upcoming chips with exact real kickoff date/time & FB#ID when matched to live/upcoming fixtures
-    const liveFixtureByTeams = new Map();
-    for (const lm of liveMatches || []) {
-      if ((lm.sport || "football").toLowerCase() !== "football" || lm.status === "FT") continue;
-      const hN = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
-      const aN = lm.awayTeamName || DATA.TEAMS?.[lm.away]?.name || "";
-      if (!hN || !aN) continue;
-      const key = `${normSportParticipantKey(hN)}|${normSportParticipantKey(aN)}`;
-      if (!liveFixtureByTeams.has(key)) liveFixtureByTeams.set(key, lm);
-    }
+    const liveFixtureByTeams = getRuninLiveFixtureMap();
 
-    const fixtureMatchCache = new Map();
     const enrichUpcomingWithTime = (teamName, remList, maxItems = null) => {
       if (!Array.isArray(remList) || remList.length === 0) return remList;
       const targetList = maxItems ? remList.slice(0, maxItems) : remList;
@@ -3433,8 +3473,8 @@
         const hTeam = op.venue === "H" ? teamName : op.opponent;
         const aTeam = op.venue === "H" ? op.opponent : teamName;
         const cacheKey = `${hTeam}|${aTeam}`;
-        if (fixtureMatchCache.has(cacheKey)) {
-          const cachedMatched = fixtureMatchCache.get(cacheKey);
+        if (runinFixtureMatchCache.has(cacheKey)) {
+          const cachedMatched = runinFixtureMatchCache.get(cacheKey);
           if (!cachedMatched) return op;
           const kp = formatKickoffCompact(cachedMatched);
           return {
@@ -3447,8 +3487,18 @@
         const normH = normSportParticipantKey(hTeam);
         const normA = normSportParticipantKey(aTeam);
         let matched = liveFixtureByTeams.get(`${normH}|${normA}`) || null;
-        if (!matched && RT?.matchTeamsSimilar) {
-          for (const lm of liveFixtureByTeams.values()) {
+        if (!matched && RT?.matchTeamsSimilar && runinLiveFixtureWordIndex) {
+          const hWords = normH.split(" ").filter((w) => w.length >= 3);
+          let candidates = null;
+          for (const w of hWords) {
+            const list = runinLiveFixtureWordIndex.get(w);
+            if (list && list.length > 0) {
+              candidates = list;
+              break;
+            }
+          }
+          const pool = candidates || (liveFixtureByTeams.size <= 150 ? liveFixtureByTeams.values() : []);
+          for (const lm of pool) {
             const lh = lm.homeTeamName || DATA.TEAMS?.[lm.home]?.name || "";
             const la = lm.awayTeamName || DATA.TEAMS?.[lm.away]?.name || "";
             if (RT.matchTeamsSimilar(lh, hTeam) && RT.matchTeamsSimilar(la, aTeam)) {
@@ -3457,7 +3507,7 @@
             }
           }
         }
-        fixtureMatchCache.set(cacheKey, matched);
+        runinFixtureMatchCache.set(cacheKey, matched);
         if (!matched) return op;
         const kp = formatKickoffCompact(matched);
         return {
@@ -7069,13 +7119,19 @@
     // Select Sure Odds Tier (2, 5, 10, 80, 100, 200, 500, 1000000)
     const tierBtn = e.target.closest("[data-select-tier]");
     if (tierBtn) {
-      state.activeSureTier = tierBtn.getAttribute("data-select-tier");
+      const tierId = tierBtn.getAttribute("data-select-tier");
+      state.activeSureTier = tierId;
       saveState();
+      // Fast-path: immediate visual feedback for zero INP (<1ms)
+      document.querySelectorAll(".sure-tier-btn").forEach((b) => {
+        if (b.getAttribute("data-select-tier") === tierId) b.classList.add("is-active");
+        else b.classList.remove("is-active");
+      });
       scheduleUiUpdate(() => {
         if (tierBtn.hasAttribute("data-go-sure")) {
           navigate("/sure-odds");
         } else {
-          renderAll();
+          scheduleRenderMainContent();
         }
       });
       return;
@@ -7302,7 +7358,7 @@
       state.slipSeed = (state.slipSeed || 0) + 1;
       scheduleUiUpdate(() => {
         recomputeSlips();
-        renderAll();
+        scheduleRenderMainContent();
         showToast("Refreshed Sure Odds slip with alternative real-time fixtures.");
       });
       return;
@@ -7362,7 +7418,7 @@
             if (activeModalMatchId === mId) {
               openMatchModal(mId, activeModalTab);
             } else {
-              renderAll();
+              scheduleRenderMainContent();
             }
             showToast("Synced live H2H, Home/Away splits & Run-in schedule.");
           }).catch(() => {

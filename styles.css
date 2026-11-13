@@ -3812,6 +3812,8 @@ ul {
 .sure-leg-card {
   border-bottom: 1px solid var(--line);
   padding: 14px 16px;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 140px;
 }
 
 .sure-leg-card:last-child {
@@ -4167,6 +4169,8 @@ ul {
   border-bottom: 1px solid var(--line-soft);
   cursor: pointer;
   transition: background-color 0.15s;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 110px;
 }
 
 .intel-row-card:last-child {

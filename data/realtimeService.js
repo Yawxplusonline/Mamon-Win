@@ -4469,11 +4469,13 @@ window.MAMON_REALTIME = (() => {
     return match;
   }
 
-  async function fetchStandingsAndInjuries() {
-    const standingsTargets = ESPN_LEAGUES.slice(0, 18);
-    const newsTargets = ESPN_LEAGUES.slice(0, 6);
+  let deferredStandingsLoaded = false;
+  async function fetchStandingsAndInjuries(initialFast = true) {
+    // Cold start fast-path: Only fetch top 4 flagship domestic leagues to prevent HTTP socket exhaustion
+    const standingsTargets = initialFast ? ESPN_LEAGUES.slice(0, 4) : ESPN_LEAGUES.slice(0, 18);
+    const newsTargets = initialFast ? [] : ESPN_LEAGUES.slice(0, 6);
 
-    const newsPromise = Promise.all(
+    const newsPromise = newsTargets.length === 0 ? Promise.resolve() : Promise.all(
       newsTargets.map(async (lgMeta) => {
         try {
           const nRes = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${lgMeta.code}/news?limit=25`, 4500);
@@ -4568,6 +4570,14 @@ window.MAMON_REALTIME = (() => {
     );
 
     await Promise.all([newsPromise, standingsPromiseAll]);
+
+    // Schedule remaining deferred standings after cold start so main thread and network are free
+    if (initialFast && !deferredStandingsLoaded && typeof setTimeout !== "undefined") {
+      deferredStandingsLoaded = true;
+      setTimeout(() => {
+        fetchStandingsAndInjuries(false).catch(() => {});
+      }, 4000);
+    }
   }
 
   function buildTodayPowerRankings(matches = []) {
@@ -5784,16 +5794,10 @@ window.MAMON_REALTIME = (() => {
       })
     ];
 
-    // Step 1: Fetch standings + key today scoreboards + global 3-day all/scoreboard + OneFootball real matches in parallel
-    const standingsPromise = fetchStandingsAndInjuries();
-    const priorityLeagues = ESPN_LEAGUES.slice(0, 10);
-
-    const priorityPromise = Promise.all(
-      priorityLeagues.map((lgMeta) =>
-        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/${lgMeta.code}/scoreboard?dates=${datesToFetch[0].ymd}`, 5000)
-          .then((json) => ({ code: lgMeta.code, json }))
-      )
-    );
+    // Step 1: Fetch standings + global 3-day all/scoreboard + OneFootball real matches in parallel
+    // (all/scoreboard already aggregates all leagues globally; skipping 10 separate priority requests saves TCP socket pool)
+    const standingsPromise = fetchStandingsAndInjuries(true);
+    const priorityPromise = Promise.resolve([]);
 
     const allScoreboardPromise = Promise.all(
       datesToFetch.map((dt) =>

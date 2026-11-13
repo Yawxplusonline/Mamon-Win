@@ -1711,6 +1711,12 @@
                 ? `<div class="match-mobile-meta">
                     <span class="ppg-chip live-threat-chip ${liveRadar.threatClass}">${escapeHtml(liveRadar.threatShortLabel)}</span>
                     <span class="ppg-chip" style="font-size:10px;">${escapeHtml(liveRadar.dominantSide === "BALANCED" ? "⚖️ Balanced" : `⚡ ${liveRadar.dominantTeamName}`)}</span>
+                    ${
+                      liveRadar.secondHalfInsights
+                        ? `<span class="ppg-chip live-2h-chip" title="${escapeHtml(liveRadar.secondHalfInsights.highestScoringHalf.tip)}">🎯 2H High: ${liveRadar.secondHalfInsights.highestScoringHalf.prob2ndHalf}%</span>
+                           <span class="ppg-chip live-2h-chip is-high" title="${escapeHtml(liveRadar.secondHalfInsights.secondHalfGoals.primaryTip)}">⚽ 2H O0.5: ${liveRadar.secondHalfInsights.secondHalfGoals.probOver05}%</span>`
+                        : ""
+                    }
                     ${periodSubScore ? `<span class="ppg-chip">${escapeHtml(periodSubScore)}</span>` : ""}
                   </div>`
                 : (dropChipHtml || ppgText || sosBadge || runinBadgeHtml || periodSubScore)
@@ -1752,7 +1758,13 @@
               ${
                 isLive && liveRadar
                   ? `<span class="ppg-chip live-threat-chip ${liveRadar.threatClass}" title="${escapeHtml(liveRadar.inPlayTip)}">${escapeHtml(liveRadar.verdictBadge)}</span>
-                     <span class="ppg-chip" style="font-size:10px;">${escapeHtml(liveRadar.dominantSide === "BALANCED" ? "⚖️ Balanced" : `⚡ ${liveRadar.dominantTeamName}`)}</span>`
+                     <span class="ppg-chip" style="font-size:10px;">${escapeHtml(liveRadar.dominantSide === "BALANCED" ? "⚖️ Balanced" : `⚡ ${liveRadar.dominantTeamName}`)}</span>
+                     ${
+                       liveRadar.secondHalfInsights
+                         ? `<span class="ppg-chip live-2h-chip" title="${escapeHtml(liveRadar.secondHalfInsights.highestScoringHalf.tip)}">🎯 2H High: ${liveRadar.secondHalfInsights.highestScoringHalf.prob2ndHalf}%</span>
+                            <span class="ppg-chip live-2h-chip is-high" title="${escapeHtml(liveRadar.secondHalfInsights.secondHalfGoals.primaryTip)}">⚽ 2H O0.5: ${liveRadar.secondHalfInsights.secondHalfGoals.probOver05}%</span>`
+                         : ""
+                     }`
                   : `${runinBadgeHtml}
                      ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
                      ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
@@ -5655,6 +5667,7 @@
     const home = getTeam(m.home, "Home");
     const away = getTeam(m.away, "Away");
     const threatClass = radar.threatClass || "is-steady";
+    const sh = radar.secondHalfInsights || null;
 
     return `
       <div class="live-radar-card ${threatClass}">
@@ -5702,48 +5715,172 @@
           </div>
         </div>
 
-        <!-- 6 Live Telemetry Factors (Attacking, Passes, Opponent Siege, Cards, Subs, Ref) -->
+        <!-- REAL-TIME 2ND HALF INSIGHTS: HIGHEST SCORING HALF & 2H GOAL PROJECTIONS -->
+        ${
+          sh
+            ? `
+          <div class="live-sh-container">
+            <!-- Card 1: Highest Scoring Half Prediction & Tip -->
+            <div class="live-sh-card ${sh.highestScoringHalf.tipClass}">
+              <div class="live-sh-header">
+                <div class="live-sh-title">
+                  <span>🎯</span>
+                  <span>Highest Scoring Half Prediction</span>
+                </div>
+                <span class="live-sh-badge ${sh.highestScoringHalf.tipClass}">
+                  ${escapeHtml(sh.highestScoringHalf.tipBadge)}
+                </span>
+              </div>
+
+              <!-- Actionable Betting Tip Box -->
+              <div class="live-sh-tip-box">
+                <div class="live-sh-tip-primary">${escapeHtml(sh.highestScoringHalf.tip)}</div>
+                <div class="live-sh-tip-secondary">Market: Highest Scoring Half (2H vs 1H vs Equal)</div>
+              </div>
+
+              <!-- 3-Way Half Distribution Bar -->
+              <div class="live-sh-multi-bar-wrap">
+                <div class="live-sh-multi-labels">
+                  <span style="color:#60A5FA;">2nd Half: ${sh.highestScoringHalf.prob2ndHalf}%</span>
+                  <span style="color:#FBBF24;">1st Half: ${sh.highestScoringHalf.prob1stHalf}%</span>
+                  <span style="color:#94A3B8;">Equal: ${sh.highestScoringHalf.probEqual}%</span>
+                </div>
+                <div class="live-sh-multi-track">
+                  <div class="live-sh-seg-2h" style="width:${sh.highestScoringHalf.prob2ndHalf}%;"></div>
+                  <div class="live-sh-seg-1h" style="width:${sh.highestScoringHalf.prob1stHalf}%;"></div>
+                  <div class="live-sh-seg-eq" style="width:${sh.highestScoringHalf.probEqual}%;"></div>
+                </div>
+              </div>
+
+              <div class="live-sh-context-line">
+                1H Score: <strong>${sh.firstHalfGoals}</strong> · Current 2H: <strong>${sh.secondHalfGoalsCurrent}</strong> · Rem. 2H xG: <strong>${sh.projectedRemaining2hXg.toFixed(2)}</strong>
+              </div>
+
+              <div class="live-sh-tactical-note">
+                ${escapeHtml(sh.highestScoringHalf.tacticalReason)}
+              </div>
+            </div>
+
+            <!-- Card 2: Second Half Goals Expectancy (Possible Goals in 2H) -->
+            <div class="live-sh-card ${sh.secondHalfGoals.probOver05 >= 75 ? "is-imminent" : sh.secondHalfGoals.probOver05 >= 50 ? "is-elevated" : "is-steady"}">
+              <div class="live-sh-header">
+                <div class="live-sh-title">
+                  <span>⚽</span>
+                  <span>Second Half Goals Projection</span>
+                </div>
+                <span class="live-sh-badge ${sh.secondHalfGoals.probOver05 >= 75 ? "is-imminent" : sh.secondHalfGoals.probOver05 >= 50 ? "is-elevated" : "is-steady"}">
+                  ${escapeHtml(sh.secondHalfGoals.verdictBadge)}
+                </span>
+              </div>
+
+              <!-- Actionable Betting Tip Box -->
+              <div class="live-sh-tip-box">
+                <div class="live-sh-tip-primary">${escapeHtml(sh.secondHalfGoals.primaryTip)}</div>
+                <div class="live-sh-tip-secondary">Alternative / Value: ${escapeHtml(sh.secondHalfGoals.secondaryTip)}</div>
+              </div>
+
+              <!-- Gauges for Over 0.5, Over 1.5, Under 0.5 -->
+              <div>
+                <div class="live-sh-gauge-row">
+                  <div class="live-sh-gauge-meta">
+                    <span>Over 0.5 2H Goals</span>
+                    <span style="color:#10B981;">${sh.secondHalfGoals.probOver05}%</span>
+                  </div>
+                  <div class="live-sh-gauge-track">
+                    <div class="live-sh-gauge-fill high" style="width:${sh.secondHalfGoals.probOver05}%;"></div>
+                  </div>
+                </div>
+
+                <div class="live-sh-gauge-row">
+                  <div class="live-sh-gauge-meta">
+                    <span>Over 1.5 2H Goals</span>
+                    <span style="color:#3B82F6;">${sh.secondHalfGoals.probOver15}%</span>
+                  </div>
+                  <div class="live-sh-gauge-track">
+                    <div class="live-sh-gauge-fill mod" style="width:${sh.secondHalfGoals.probOver15}%;"></div>
+                  </div>
+                </div>
+
+                <div class="live-sh-gauge-row">
+                  <div class="live-sh-gauge-meta">
+                    <span>Clean 2H / Under 0.5 2H</span>
+                    <span style="color:#94A3B8;">${sh.secondHalfGoals.probUnder05}%</span>
+                  </div>
+                  <div class="live-sh-gauge-track">
+                    <div class="live-sh-gauge-fill low" style="width:${sh.secondHalfGoals.probUnder05}%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="live-sh-context-line">
+                Total Projected 2H Goals: <strong>${sh.secondHalfGoals.expectedGoals.toFixed(2)}</strong> (${sh.projectedRemaining2hXg.toFixed(2)} remaining)
+              </div>
+
+              <div class="live-sh-tactical-note" style="border-left-color:#10B981;">
+                ${escapeHtml(sh.secondHalfGoals.tacticalReason)}
+              </div>
+            </div>
+          </div>
+          `
+            : ""
+        }
+
+        <!-- 8 Live Telemetry Factors: Attacking, Passes, Opponent Siege, Cards, Subs, Fouls, Ref, Momentum -->
         <div class="live-radar-grid">
           <div class="live-radar-tile">
             <div class="radar-tile-icon">⚡</div>
             <div class="radar-tile-content">
               <div class="radar-tile-label">Attacking Power &amp; Shots</div>
-              <div class="radar-tile-val">${escapeHtml(radar.attackingPowerSummary)}</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.attacking?.summary || radar.attackingPowerSummary)}</div>
             </div>
           </div>
           <div class="live-radar-tile">
             <div class="radar-tile-icon">🔄</div>
             <div class="radar-tile-content">
-              <div class="radar-tile-label">Possession &amp; Pass Rhythm</div>
-              <div class="radar-tile-val">${escapeHtml(radar.possessionPassesSummary)}</div>
+              <div class="radar-tile-label">Possession &amp; Teamwork Sync</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.passing?.summary || radar.possessionPassesSummary)}</div>
             </div>
           </div>
           <div class="live-radar-tile">
             <div class="radar-tile-icon">🛡️</div>
             <div class="radar-tile-content">
               <div class="radar-tile-label">Opponent Defensive Siege</div>
-              <div class="radar-tile-val">${escapeHtml(radar.defensiveSiegeSummary)}</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.pressure?.summary || radar.defensiveSiegeSummary)}</div>
             </div>
           </div>
           <div class="live-radar-tile">
             <div class="radar-tile-icon">🟨</div>
             <div class="radar-tile-content">
               <div class="radar-tile-label">Cards &amp; Disciplinary Tension</div>
-              <div class="radar-tile-val">${escapeHtml(radar.disciplineSummary)}</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.cards?.summary || radar.disciplineSummary)}</div>
             </div>
           </div>
           <div class="live-radar-tile">
             <div class="radar-tile-icon">🏃</div>
             <div class="radar-tile-content">
               <div class="radar-tile-label">Quality Players &amp; Fresh Subs</div>
-              <div class="radar-tile-val">${escapeHtml(radar.qualitySubsSummary)}</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.qualityPlayers?.summary || radar.qualitySubsSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">⚠️</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Fouls &amp; Set-Piece Danger</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.fouls?.summary || "Fouls & set-piece pressure active")}</div>
             </div>
           </div>
           <div class="live-radar-tile">
             <div class="radar-tile-icon">👨‍⚖️</div>
             <div class="radar-tile-content">
               <div class="radar-tile-label">Referee &amp; Game Phase</div>
-              <div class="radar-tile-val">${escapeHtml(radar.refereePhaseSummary)}</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.referee?.summary || radar.refereePhaseSummary)}</div>
+            </div>
+          </div>
+          <div class="live-radar-tile">
+            <div class="radar-tile-icon">📈</div>
+            <div class="radar-tile-content">
+              <div class="radar-tile-label">Player Momentum &amp; Urgency</div>
+              <div class="radar-tile-val">${escapeHtml(sh?.factorBreakdown?.momentum?.summary || "Scoreline momentum active")}</div>
             </div>
           </div>
         </div>

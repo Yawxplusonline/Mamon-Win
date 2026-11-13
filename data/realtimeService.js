@@ -3884,6 +3884,240 @@ window.MAMON_REALTIME = (() => {
       : `Core starting attackers leading forward momentum · High stamina`;
     const refereePhaseSummary = `Official: ${referee} · Min ${minute}' (${match.halfLabel || "In Play"}) · ${minute >= 75 ? "Late match frantic urgency" : minute >= 45 ? "Post-HT tactical adjustments" : "First half establishing rhythm"}`;
 
+    // ============ SECOND HALF HIGHEST SCORING HALF & 2H GOALS PROJECTION ENGINE ============
+    const isHalfTime = /\b(HT|Half)\b|HALFTIME/i.test(`${match.halfLabel || ""} ${match.displayTime || ""}`) || minute === 45;
+    const isSecondHalf = minute > 45 || /2nd|second/i.test(match.halfLabel || "");
+
+    let firstHalfGoals = 0;
+    let secondHalfGoalsCurrent = 0;
+    const totalCurrentGoals = homeScore + awayScore;
+
+    if (match.linescores?.home && match.linescores?.away && match.linescores.home.length >= 1) {
+      firstHalfGoals = (match.linescores.home[0] || 0) + (match.linescores.away[0] || 0);
+      secondHalfGoalsCurrent = Math.max(0, (match.linescores.home[1] || 0) + (match.linescores.away[1] || 0));
+    } else {
+      const goalEvents = (match.events || []).filter((e) => e.type === "goal" || /goal/i.test(e.type?.text || ""));
+      if (goalEvents.length > 0) {
+        firstHalfGoals = goalEvents.filter((e) => {
+          const mNum = parseInt(String(e.min || "0").replace(/\D/g, ""), 10);
+          return mNum <= 45;
+        }).length;
+        secondHalfGoalsCurrent = Math.max(0, totalCurrentGoals - firstHalfGoals);
+      } else if (!isSecondHalf || isHalfTime) {
+        firstHalfGoals = totalCurrentGoals;
+        secondHalfGoalsCurrent = 0;
+      } else {
+        firstHalfGoals = match.htScore ? (Number(match.htScore.home || 0) + Number(match.htScore.away || 0)) : Math.min(totalCurrentGoals, Math.round(totalCurrentGoals * 0.45));
+        secondHalfGoalsCurrent = Math.max(0, totalCurrentGoals - firstHalfGoals);
+      }
+    }
+
+    const fullSecondHalfBaseXg = 1.48;
+    const remainingTimeFraction = isSecondHalf ? Math.min(1.0, Math.max(0.08, (95 - minute) / 50)) : 1.0;
+
+    const totalShots = hShots + aShots;
+    const totalSot = hSot + aSot;
+    const totalCorners = hCorners + aCorners;
+    const totalClear = hClear + aClear;
+    let attackPowerMult = 1.0;
+    if (totalSot >= 8) attackPowerMult += 0.35;
+    else if (totalSot >= 5) attackPowerMult += 0.20;
+    else if (totalSot <= 1 && minute >= 40) attackPowerMult -= 0.25;
+
+    if (totalShots >= 18) attackPowerMult += 0.20;
+    else if (totalShots >= 12) attackPowerMult += 0.10;
+    else if (totalShots <= 4 && minute >= 40) attackPowerMult -= 0.15;
+
+    if (totalCorners >= 8) attackPowerMult += 0.12;
+    if (totalClear >= 12) attackPowerMult += 0.10;
+
+    const combinedPressure = homePressure + awayPressure;
+    let pressureMult = 1.0;
+    if (combinedPressure >= 140) pressureMult += 0.25;
+    else if (combinedPressure >= 110) pressureMult += 0.12;
+    else if (combinedPressure <= 60) pressureMult -= 0.20;
+
+    const avgPassAccuracy = (hPassPct + aPassPct) / 2;
+    if (avgPassAccuracy >= 0.83) pressureMult += 0.08;
+
+    const totalYellows = hYellow + aYellow;
+    const totalReds = hRed + aRed;
+    let disciplineMult = 1.0;
+    if (totalReds > 0) disciplineMult += 0.40;
+    if (totalYellows >= 4) disciplineMult += 0.18;
+    else if (totalYellows >= 2) disciplineMult += 0.08;
+
+    let qualitySubsMult = 1.0;
+    if (hasRecentSubHome || hasRecentSubAway) qualitySubsMult += 0.18;
+    if (match.analysis?.factors?.starPlayers?.homeStarST || match.analysis?.factors?.starPlayers?.awayStarST) {
+      qualitySubsMult += 0.12;
+    }
+
+    let urgencyMult = 1.0;
+    const scoreDiff = Math.abs(homeScore - awayScore);
+    if (scoreDiff === 1) {
+      urgencyMult += 0.25;
+    } else if (scoreDiff === 0) {
+      urgencyMult += 0.15;
+    } else if (scoreDiff >= 3) {
+      urgencyMult -= 0.15;
+    }
+
+    let refereeMult = 1.0;
+    if (minute >= 70) {
+      refereeMult += 0.10;
+    }
+
+    const combinedFactor = Math.max(0.45, Math.min(2.35, attackPowerMult * pressureMult * disciplineMult * qualitySubsMult * urgencyMult * refereeMult));
+    const projectedRemaining2hXg = Math.max(0.10, Math.round(fullSecondHalfBaseXg * remainingTimeFraction * combinedFactor * 100) / 100);
+    const projectedTotal2hGoals = Math.round((secondHalfGoalsCurrent + projectedRemaining2hXg) * 100) / 100;
+
+    const lambda = projectedRemaining2hXg;
+    const p0 = Math.exp(-lambda);
+    const p1 = lambda * p0;
+    const p2 = (Math.pow(lambda, 2) / 2) * p0;
+    const p3 = (Math.pow(lambda, 3) / 6) * p0;
+
+    let probOver05_2H = 0;
+    let probOver15_2H = 0;
+    let probUnder05_2H = 0;
+
+    if (secondHalfGoalsCurrent >= 2) {
+      probOver05_2H = 99;
+      probOver15_2H = 99;
+      probUnder05_2H = 1;
+    } else if (secondHalfGoalsCurrent === 1) {
+      probOver05_2H = 99;
+      probOver15_2H = Math.min(98, Math.max(30, Math.round((1 - p0) * 100)));
+      probUnder05_2H = 1;
+    } else {
+      probOver05_2H = Math.min(98, Math.max(12, Math.round((1 - p0) * 100)));
+      probOver15_2H = Math.min(92, Math.max(8, Math.round((1 - p0 - p1) * 100)));
+      probUnder05_2H = Math.min(88, Math.max(2, Math.round(p0 * 100)));
+    }
+
+    let p2H_Wins = 0;
+    let pEqual = 0;
+    let p1H_Wins = 0;
+    const pTable = [p0, p1, p2, p3, Math.max(0, 1 - p0 - p1 - p2 - p3)];
+
+    for (let k = 0; k < pTable.length; k++) {
+      const total2H = secondHalfGoalsCurrent + k;
+      if (total2H > firstHalfGoals) {
+        p2H_Wins += pTable[k];
+      } else if (total2H === firstHalfGoals) {
+        pEqual += pTable[k];
+      } else {
+        p1H_Wins += pTable[k];
+      }
+    }
+
+    const sumP = (p2H_Wins + pEqual + p1H_Wins) || 1;
+    let rawProb2H = Math.round((p2H_Wins / sumP) * 100);
+    let rawProb1H = Math.round((p1H_Wins / sumP) * 100);
+    let rawProbEqual = 100 - rawProb2H - rawProb1H;
+    if (rawProbEqual < 0) { rawProb2H += rawProbEqual; rawProbEqual = 0; }
+
+    let predictedHalf = "2ND_HALF";
+    let predictedHalfLabel = "2nd Half Highest Scoring";
+    let highestHalfConfidence = rawProb2H;
+    let highestHalfTipClass = "is-imminent";
+    let highestHalfTip = `🎯 Highest Scoring Half: 2ND HALF (${rawProb2H}% Prob)`;
+    let highestHalfReason = "";
+
+    if (rawProb2H >= rawProb1H && rawProb2H >= rawProbEqual) {
+      predictedHalf = "2ND_HALF";
+      predictedHalfLabel = "2nd Half Highest Scoring";
+      highestHalfConfidence = rawProb2H;
+      highestHalfTipClass = rawProb2H >= 70 ? "is-imminent" : "is-elevated";
+      highestHalfTip = `🎯 Highest Scoring Half: 2ND HALF (${rawProb2H}% Confidence)`;
+      highestHalfReason = `${firstHalfGoals === 0 ? "First half finished goalless (0-0)" : `First half produced only ${firstHalfGoals} goal(s)`}. 2nd half attack pressure is surging (${combinedPressure}% index, ${totalSot} shots on target) with ${hasRecentSubHome || hasRecentSubAway ? "fresh attacking substitutes active" : "fatigued defenders facing cards"}.`;
+    } else if (rawProb1H > rawProb2H && rawProb1H >= rawProbEqual) {
+      predictedHalf = "1ST_HALF";
+      predictedHalfLabel = "1st Half Highest Scoring";
+      highestHalfConfidence = rawProb1H;
+      highestHalfTipClass = "is-steady";
+      highestHalfTip = `🛡️ Highest Scoring Half: 1ST HALF (${rawProb1H}% Confidence)`;
+      highestHalfReason = `First half established a heavy tally of ${firstHalfGoals} goal(s). 2nd half tactical dynamics show game-management, low-block containment, and lower offensive risk.`;
+    } else {
+      predictedHalf = "EQUAL";
+      predictedHalfLabel = "Equal Scoring in Both Halves";
+      highestHalfConfidence = rawProbEqual;
+      highestHalfTipClass = "is-elevated";
+      highestHalfTip = `⚖️ Highest Scoring Half: EQUAL (${rawProbEqual}% Confidence)`;
+      highestHalfReason = `Balanced goal trajectory across halves. 2nd half projected to closely mirror the ${firstHalfGoals} first-half goal count.`;
+    }
+
+    let goalVerdict = "HIGH_2H_GOALS";
+    let goalVerdictBadge = `⚽ 2H GOALS EXPECTED (${probOver05_2H}%)`;
+    let primaryGoalTip = `⚽ Over 0.5 Second Half Goals (${probOver05_2H}% Prob)`;
+    let secondaryGoalTip = `⚡ Over 1.5 Second Half Goals (${probOver15_2H}% Prob)`;
+    let goalTacticalReason = "";
+
+    if (probOver05_2H >= 75) {
+      goalVerdict = "HIGH_2H_GOALS";
+      goalVerdictBadge = `⚽ 2H GOALS EXPECTED (${probOver05_2H}%)`;
+      primaryGoalTip = `⚽ Over 0.5 Second Half Goals (${probOver05_2H}% Prob)`;
+      secondaryGoalTip = probOver15_2H >= 55 ? `⚡ Over 1.5 Second Half Goals (${probOver15_2H}% Prob)` : `🛡️ Next Goal: ${dominantTeamName}`;
+      goalTacticalReason = `High 2nd half xG (${projectedRemaining2hXg.toFixed(2)} projected) driven by ${totalShots} total shots, ${totalCorners} corners, ${dominantTeamName} pressure dominance, and carded backline vulnerabilities.`;
+    } else if (probOver05_2H >= 52) {
+      goalVerdict = "MODERATE_2H_GOALS";
+      goalVerdictBadge = `📈 2H GOAL POSSIBLE (${probOver05_2H}%)`;
+      primaryGoalTip = `📈 Lean: Over 0.5 Second Half Goals (${probOver05_2H}% Prob)`;
+      secondaryGoalTip = `⏳ In-Play Under ${totalCurrentGoals + 1.5} Match Goals`;
+      goalTacticalReason = `Moderate chance creation (${totalSot} shots on target). Breakthrough depends on late tactical substitutions and referee added time.`;
+    } else {
+      goalVerdict = "LOW_2H_GOALS";
+      goalVerdictBadge = `🔒 2H LOW SCORING (${probUnder05_2H}%)`;
+      primaryGoalTip = `🔒 Under 1.5 Second Half Goals / Clean 2H (${probUnder05_2H}% Prob)`;
+      secondaryGoalTip = `🛡️ Under ${totalCurrentGoals + 1.5} Total In-Play Goals`;
+      goalTacticalReason = `Defensive low-block stalemate with low shooting accuracy (${totalSot} shots on target) and disciplined shape preventing 2nd half openings.`;
+    }
+
+    const secondHalfInsights = {
+      isSecondHalf,
+      isHalfTime,
+      firstHalfGoals,
+      secondHalfGoalsCurrent,
+      totalCurrentGoals,
+      projectedRemaining2hXg,
+      projectedTotal2hGoals,
+      highestScoringHalf: {
+        predictedHalf,
+        predictedHalfLabel,
+        prob2ndHalf: rawProb2H,
+        prob1stHalf: rawProb1H,
+        probEqual: rawProbEqual,
+        confidencePct: highestHalfConfidence,
+        tipBadge: `🎯 ${predictedHalfLabel} (${highestHalfConfidence}%)`,
+        tipClass: highestHalfTipClass,
+        tip: highestHalfTip,
+        tacticalReason: highestHalfReason
+      },
+      secondHalfGoals: {
+        expectedGoals: projectedTotal2hGoals,
+        remainingXg: projectedRemaining2hXg,
+        probOver05: probOver05_2H,
+        probOver15: probOver15_2H,
+        probUnder05: probUnder05_2H,
+        verdict: goalVerdict,
+        verdictBadge: goalVerdictBadge,
+        primaryTip: primaryGoalTip,
+        secondaryTip: secondaryGoalTip,
+        tacticalReason: goalTacticalReason
+      },
+      factorBreakdown: {
+        pressure: { home: homePressure, away: awayPressure, dominant: dominantTeamName, summary: `Pressure Index: ${homeName} ${homePressure}% vs ${awayPressure}% ${awayName} (${dominantSide === "BALANCED" ? "Even balance" : `${dominantTeamName} offensive siege`})` },
+        cards: { yellows: totalYellows, reds: totalReds, summary: disciplineSummary },
+        attacking: { shots: totalShots, sot: totalSot, corners: totalCorners, clearances: totalClear, summary: attackingPowerSummary },
+        passing: { possession: `${Math.round(hPoss)}% - ${Math.round(aPoss)}%`, teamworkAccuracy: `${Math.round(hPassPct * 100)}% - ${Math.round(aPassPct * 100)}%`, summary: possessionPassesSummary },
+        fouls: { totalFouls: hFouls + aFouls, summary: `${hFouls + aFouls} Fouls committed · Setting up tactical set-pieces into the penalty box` },
+        qualityPlayers: { freshSubs: hasRecentSubHome || hasRecentSubAway, summary: qualitySubsSummary },
+        referee: { official: referee, summary: refereePhaseSummary },
+        momentum: { urgency, scoreMargin: scoreDiff, summary: scoreDiff === 1 ? `1-goal margin deficit: Trailing side pushing forward, leaving counter-attack pockets` : scoreDiff === 0 ? `Level scoreline: Both teams playing aggressively for late winner` : `Multi-goal margin: Leading side managing clock` }
+      }
+    };
+
     return {
       isLive: true,
       minute,
@@ -3911,7 +4145,8 @@ window.MAMON_REALTIME = (() => {
       defensiveSiegeSummary,
       disciplineSummary,
       qualitySubsSummary,
-      refereePhaseSummary
+      refereePhaseSummary,
+      secondHalfInsights
     };
   }
 

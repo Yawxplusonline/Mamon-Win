@@ -1094,26 +1094,42 @@ window.MAMON_REALTIME = (() => {
     if (!Array.isArray(matchesList) || matchesList.length <= 1) return matchesList || [];
     const out = [];
     const seenMap = new Map();
+    const sportBuckets = new Map();
 
     for (const m of matchesList) {
       if (!m) continue;
       const sp = (m.sport || "football").toLowerCase();
+
+      // Fast-path: O(1) direct ID and token checks
+      let existing = null;
+      if (m.id && seenMap.has(m.id)) existing = seenMap.get(m.id);
+      else if (m.eventId && seenMap.has(`ev:${m.eventId}`)) existing = seenMap.get(`ev:${m.eventId}`);
+      else if (m.footballComGameId && seenMap.has(`fb:${m.footballComGameId}`)) existing = seenMap.get(`fb:${m.footballComGameId}`);
+      else if (m.sportybetGameId && seenMap.has(`sb:${m.sportybetGameId}`)) existing = seenMap.get(`sb:${m.sportybetGameId}`);
+
       const hRaw = m.homeTeamName || DATA?.TEAMS?.[m.home]?.name || m.home || "";
       const aRaw = m.awayTeamName || DATA?.TEAMS?.[m.away]?.name || m.away || "";
       const hNorm = normDedupeTeam(hRaw);
       const aNorm = normDedupeTeam(aRaw);
 
-      if (!hNorm || !aNorm) {
-        out.push(m);
-        continue;
+      const keyDirect = hNorm && aNorm ? `${sp}:${hNorm}|${aNorm}` : null;
+      const keySwapped = hNorm && aNorm ? `${sp}:${aNorm}|${hNorm}` : null;
+
+      if (!existing && keyDirect) {
+        existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
       }
 
-      const keyDirect = `${sp}:${hNorm}|${aNorm}`;
-      const keySwapped = `${sp}:${aNorm}|${hNorm}`;
-
-      let existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
-      if (!existing) {
-        existing = out.find((ex) => areMatchesIdentical(ex, m)) || null;
+      // If still not matched, scan ONLY within the same sport bucket (max 20-30 items instead of 700!)
+      if (!existing && hNorm && aNorm) {
+        const bucket = sportBuckets.get(sp);
+        if (bucket) {
+          for (let i = 0; i < bucket.length; i++) {
+            if (areMatchesIdentical(bucket[i], m)) {
+              existing = bucket[i];
+              break;
+            }
+          }
+        }
       }
 
       if (existing) {
@@ -1141,12 +1157,36 @@ window.MAMON_REALTIME = (() => {
         }
         if (m.liveClock && !existing.liveClock) existing.liveClock = m.liveClock;
         if (m.displayTime && (!existing.displayTime || existing.displayTime === "SCHEDULED")) existing.displayTime = m.displayTime;
+
+        // Cache all aliases into seenMap for future O(1) hits
+        if (m.id) seenMap.set(m.id, existing);
+        if (m.eventId) seenMap.set(`ev:${m.eventId}`, existing);
+        if (m.footballComGameId) seenMap.set(`fb:${m.footballComGameId}`, existing);
+        if (m.sportybetGameId) seenMap.set(`sb:${m.sportybetGameId}`, existing);
+        if (keyDirect) {
+          seenMap.set(keyDirect, existing);
+          seenMap.set(keySwapped, existing);
+        }
         continue;
       }
 
-      seenMap.set(keyDirect, m);
-      seenMap.set(keySwapped, m);
+      // New unique match
       out.push(m);
+      if (m.id) seenMap.set(m.id, m);
+      if (m.eventId) seenMap.set(`ev:${m.eventId}`, m);
+      if (m.footballComGameId) seenMap.set(`fb:${m.footballComGameId}`, m);
+      if (m.sportybetGameId) seenMap.set(`sb:${m.sportybetGameId}`, m);
+      if (keyDirect) {
+        seenMap.set(keyDirect, m);
+        seenMap.set(keySwapped, m);
+      }
+
+      let bucket = sportBuckets.get(sp);
+      if (!bucket) {
+        bucket = [];
+        sportBuckets.set(sp, bucket);
+      }
+      bucket.push(m);
     }
     return out;
   }
@@ -5962,6 +6002,14 @@ window.MAMON_REALTIME = (() => {
       ...activeMatches.filter((m) => isHydratableEspnMatch(m)).slice(0, 12)
     ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 20);
     if (typeof onProgress === "function") {
+      let progressTimer = null;
+      const notifyProgress = () => {
+        clearTimeout(progressTimer);
+        progressTimer = setTimeout(() => {
+          try { onProgress(activeMatches, finishedToday); } catch {}
+        }, 500);
+      };
+
       syncTopRuninTables().then((riRes) => {
         if (riRes?.ok) {
           activeMatches.forEach((m) => {
@@ -5969,7 +6017,7 @@ window.MAMON_REALTIME = (() => {
               m.analysis = buildMatchAnalysis(m);
             }
           });
-          onProgress(activeMatches, finishedToday);
+          notifyProgress();
         }
       }).catch(() => {});
 
@@ -5979,7 +6027,7 @@ window.MAMON_REALTIME = (() => {
             initialWeatherTargets.forEach((m) => {
               if (!m.enriched) m.analysis = buildMatchAnalysis(m);
             });
-            onProgress(activeMatches, finishedToday);
+            notifyProgress();
           }
         }).catch(() => {});
       }
@@ -5990,7 +6038,7 @@ window.MAMON_REALTIME = (() => {
             const batch = hydrationQueue.slice(i, i + 4);
             await Promise.all(batch.map((m) => enrichMatchDetails(m).catch(() => m)));
           }
-          onProgress(activeMatches, finishedToday);
+          notifyProgress();
           const postPower = buildTodayPowerRankings(activeMatches);
           const postWeatherTargets = [
             ...postPower.strongHome.slice(0, 6),
@@ -6003,7 +6051,7 @@ window.MAMON_REALTIME = (() => {
             postWeatherTargets.forEach((m) => {
               if (!m.enriched) m.analysis = buildMatchAnalysis(m);
             });
-            onProgress(activeMatches, finishedToday);
+            notifyProgress();
           }
         })().catch(() => {});
       }

@@ -1452,6 +1452,8 @@ ul {
   border-bottom: 1px solid var(--line-soft);
   transition: background 0.15s;
   cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 54px;
 }
 
 .match-row:last-child {
@@ -5282,6 +5284,8 @@ ul {
 .runin-row {
   cursor: pointer;
   transition: background 0.12s ease;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 42px;
 }
 .runin-row:hover td {
   background: var(--ground-subtle);
@@ -5687,6 +5691,8 @@ ul {
   background: var(--card);
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  content-visibility: auto;
+  contain-intrinsic-size: 0 180px;
 }
 .country-group-header {
   display: flex;

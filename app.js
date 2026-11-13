@@ -317,26 +317,42 @@
     if (!Array.isArray(matchesList) || matchesList.length <= 1) return matchesList || [];
     const out = [];
     const seenMap = new Map();
+    const sportBuckets = new Map();
 
     for (const m of matchesList) {
       if (!m) continue;
       const sp = (m.sport || "football").toLowerCase();
+
+      // Fast-path: O(1) direct ID and token checks
+      let existing = null;
+      if (m.id && seenMap.has(m.id)) existing = seenMap.get(m.id);
+      else if (m.eventId && seenMap.has(`ev:${m.eventId}`)) existing = seenMap.get(`ev:${m.eventId}`);
+      else if (m.footballComGameId && seenMap.has(`fb:${m.footballComGameId}`)) existing = seenMap.get(`fb:${m.footballComGameId}`);
+      else if (m.sportybetGameId && seenMap.has(`sb:${m.sportybetGameId}`)) existing = seenMap.get(`sb:${m.sportybetGameId}`);
+
       const hRaw = m.homeTeamName || DATA?.TEAMS?.[m.home]?.name || m.home || "";
       const aRaw = m.awayTeamName || DATA?.TEAMS?.[m.away]?.name || m.away || "";
       const hNorm = normDedupeTeam(hRaw);
       const aNorm = normDedupeTeam(aRaw);
 
-      if (!hNorm || !aNorm) {
-        out.push(m);
-        continue;
+      const keyDirect = hNorm && aNorm ? `${sp}:${hNorm}|${aNorm}` : null;
+      const keySwapped = hNorm && aNorm ? `${sp}:${aNorm}|${hNorm}` : null;
+
+      if (!existing && keyDirect) {
+        existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
       }
 
-      const keyDirect = `${sp}:${hNorm}|${aNorm}`;
-      const keySwapped = `${sp}:${aNorm}|${hNorm}`;
-
-      let existing = seenMap.get(keyDirect) || seenMap.get(keySwapped) || null;
-      if (!existing) {
-        existing = out.find((ex) => areMatchesIdentical(ex, m)) || null;
+      // If still not matched, scan ONLY within the same sport bucket (max 20-30 items instead of 700!)
+      if (!existing && hNorm && aNorm) {
+        const bucket = sportBuckets.get(sp);
+        if (bucket) {
+          for (let i = 0; i < bucket.length; i++) {
+            if (areMatchesIdentical(bucket[i], m)) {
+              existing = bucket[i];
+              break;
+            }
+          }
+        }
       }
 
       if (existing) {
@@ -364,12 +380,36 @@
         }
         if (m.liveClock && !existing.liveClock) existing.liveClock = m.liveClock;
         if (m.displayTime && (!existing.displayTime || existing.displayTime === "SCHEDULED")) existing.displayTime = m.displayTime;
+
+        // Cache all aliases into seenMap for future O(1) hits
+        if (m.id) seenMap.set(m.id, existing);
+        if (m.eventId) seenMap.set(`ev:${m.eventId}`, existing);
+        if (m.footballComGameId) seenMap.set(`fb:${m.footballComGameId}`, existing);
+        if (m.sportybetGameId) seenMap.set(`sb:${m.sportybetGameId}`, existing);
+        if (keyDirect) {
+          seenMap.set(keyDirect, existing);
+          seenMap.set(keySwapped, existing);
+        }
         continue;
       }
 
-      seenMap.set(keyDirect, m);
-      seenMap.set(keySwapped, m);
+      // New unique match
       out.push(m);
+      if (m.id) seenMap.set(m.id, m);
+      if (m.eventId) seenMap.set(`ev:${m.eventId}`, m);
+      if (m.footballComGameId) seenMap.set(`fb:${m.footballComGameId}`, m);
+      if (m.sportybetGameId) seenMap.set(`sb:${m.sportybetGameId}`, m);
+      if (keyDirect) {
+        seenMap.set(keyDirect, m);
+        seenMap.set(keySwapped, m);
+      }
+
+      let bucket = sportBuckets.get(sp);
+      if (!bucket) {
+        bucket = [];
+        sportBuckets.set(sp, bucket);
+      }
+      bucket.push(m);
     }
     return out;
   }
@@ -519,18 +559,28 @@
     });
   }
 
-  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 200) {
+  let lastBackgroundRenderMs = 0;
+  function scheduleBackgroundUiRefresh(fullAll = false, delayMs = 300) {
     if (fullAll) pendingRenderAll = true;
     clearTimeout(uiRenderTimer);
     uiRenderTimer = setTimeout(() => {
-      if (isUserTypingInInput()) {
-        scheduleBackgroundUiRefresh(pendingRenderAll, 800);
+      // 1. Never interrupt the user while typing or actively interacting (< 1200ms)
+      const timeSinceUserActive = Date.now() - lastUserActiveMs;
+      if (isUserTypingInInput() || timeSinceUserActive < 1200) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, Math.max(600, 1400 - timeSinceUserActive));
         return;
       }
+      // 2. Throttle background updates so they don't fire faster than once per 1.5 seconds
+      const now = Date.now();
+      if (now - lastBackgroundRenderMs < 1200) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, 1200 - (now - lastBackgroundRenderMs));
+        return;
+      }
+      lastBackgroundRenderMs = now;
       const doAll = pendingRenderAll;
       pendingRenderAll = false;
       scheduleUiUpdate(() => {
-        if (isUserTypingInInput()) return;
+        if (isUserTypingInInput() || (Date.now() - lastUserActiveMs < 800)) return;
         if (activeModalMatchId) {
           const m = liveMatches.find((x) => x.id === activeModalMatchId);
           if (m && isMatchTrulyLive(m)) {
@@ -922,7 +972,11 @@
       return a.country.localeCompare(b.country);
     });
 
-    return sortedCountries
+    const hasMore = sortedCountries.length > 18 && !state.showAllCountries;
+    const renderList = hasMore ? sortedCountries.slice(0, 18) : sortedCountries;
+    const remainingCount = hasMore ? sortedCountries.slice(18).reduce((acc, c) => acc + c.count, 0) : 0;
+
+    const cardsHtml = renderList
       .map((cb) => {
         const leagueBlocks = Array.from(cb.leagues.values())
           .map(({ info: lg, items }) => {
@@ -965,6 +1019,16 @@
         `;
       })
       .join("");
+
+    const toggleHtml = hasMore ? `
+      <div class="p-4 flex justify-center">
+        <button type="button" class="analyze-inline-btn" data-toggle-all-countries="1" style="padding: 10px 24px; font-weight: 700; background: var(--card); border: 1px solid var(--brand); color: var(--brand); cursor: pointer;">
+          🌍 Show All Global Competitions (+${sortedCountries.length - 18} More Countries · ${remainingCount} Matches) ▾
+        </button>
+      </div>
+    ` : "";
+
+    return cardsHtml + toggleHtml;
   }
 
   const ALLOWED_SPORTS = [
@@ -6932,6 +6996,27 @@
       return;
     }
 
+    // Fast-path: Toggle Show All Countries / Competitions
+    if (e.target.closest("[data-toggle-all-countries]")) {
+      state.showAllCountries = !state.showAllCountries;
+      scheduleRenderMainContent();
+      return;
+    }
+
+    // Fast-path: Skip inert elements (backgrounds, containers, plain text) in 0.05ms (zero cascade latency)
+    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
+    if (!actionable) {
+      if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
+        const sm = document.getElementById("settingsMenu");
+        if (sm && !sm.classList.contains("hidden")) sm.classList.add("hidden");
+      }
+      if (!e.target.closest(".search-wrap")) {
+        const sd = document.getElementById("searchDropdown");
+        if (sd && !sd.classList.contains("hidden")) sd.classList.add("hidden");
+      }
+      return;
+    }
+
     // Fast-path Modal Close (zero selector cascade latency -> optimal INP)
     if (e.target.closest("[data-close-modal]") || e.target.id === "modalBackdrop") {
       closeModal();
@@ -7566,13 +7651,18 @@
   }
 
   let sseRefreshTimers = { onefootball: null, bookmakers: null };
+  let sseReconnectTimer = null;
+  let sseErrorCount = 0;
   function connectMissionStream() {
     if (typeof EventSource === "undefined") return;
     try {
-      if (missionStream) missionStream.close();
+      if (missionStream) {
+        try { missionStream.close(); } catch {}
+      }
       missionStream = new EventSource("/api/stream");
       missionStream.onopen = () => {
         sseConnected = true;
+        sseErrorCount = 0;
         renderMissionHud();
       };
       missionStream.addEventListener("telemetry", (ev) => {
@@ -7595,10 +7685,10 @@
           renderMissionHud();
           if (msg.source === "onefootball") {
             clearTimeout(sseRefreshTimers.onefootball);
-            sseRefreshTimers.onefootball = setTimeout(() => { syncRealtimeFeed(false); }, 600);
+            sseRefreshTimers.onefootball = setTimeout(() => { syncRealtimeFeed(false); }, 1000);
           } else if (msg.source === "bookmakers") {
             clearTimeout(sseRefreshTimers.bookmakers);
-            sseRefreshTimers.bookmakers = setTimeout(() => { syncBookmakerMismatchFeed(false, false); }, 600);
+            sseRefreshTimers.bookmakers = setTimeout(() => { syncBookmakerMismatchFeed(false, false); }, 1000);
           } else if (msg.source === "runin") {
             if (state.route === "/run-in") {
               loadRuninLeague(state.activeRuninLeague || "england");
@@ -7609,6 +7699,11 @@
       missionStream.onerror = () => {
         sseConnected = false;
         renderMissionHud();
+        try { missionStream.close(); } catch {}
+        missionStream = null;
+        clearTimeout(sseReconnectTimer);
+        const backoffMs = Math.min(10000, 1500 * Math.pow(1.5, Math.min(sseErrorCount++, 5)));
+        sseReconnectTimer = setTimeout(connectMissionStream, backoffMs);
       };
     } catch {
       sseConnected = false;

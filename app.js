@@ -5282,6 +5282,18 @@
             </div>
             <span class="text-xs font-mono text-muted">Game ID: ${escapeHtml(String(tip.gameId || "-"))}</span>
           </div>
+
+          ${tip.mastermind ? `
+          <div class="mt-2 p-2.5 rounded text-xs" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.22);">
+            <div class="font-bold mb-1" style="color:#059669;">🧠 8-PILLAR MASTERMIND HANDICAP VERDICT: ${escapeHtml(tip.mastermind.decision)}</div>
+            <div class="grid gap-1 text-text-secondary">
+              <div><strong>📐 Logic &amp; Data:</strong> ${escapeHtml(tip.mastermind.logic)} (${escapeHtml(tip.mastermind.dataAnalysis)})</div>
+              <div><strong>🕵️ Deceive Judgment:</strong> ${escapeHtml(tip.mastermind.deceiveJudgment)}</div>
+              <div><strong>🔬 Critical Thinking:</strong> ${escapeHtml(tip.mastermind.criticalThinking)}</div>
+              <div style="color:#047857;"><strong>😄 Wit &amp; Humor:</strong> <em>"${escapeHtml(tip.mastermind.humor)}"</em></div>
+            </div>
+          </div>
+          ` : ""}
         </div>
       `;
     };
@@ -5540,6 +5552,17 @@
                     <strong class="text-text" style="display:block; margin-bottom:3px;">Tactical Defense Breakdown:</strong>
                     ${escapeHtml(tip.tacticalReason)}
                   </div>
+                  ${tip.mastermind ? `
+                  <div class="mt-2 p-2.5 rounded text-xs" style="background:rgba(6,182,212,0.06);border:1px solid rgba(6,182,212,0.24);">
+                    <div class="font-bold mb-1" style="color:${is5Min ? '#0891B2' : '#059669'};">🧠 8-PILLAR MASTERMIND VERDICT: ${escapeHtml(tip.mastermind.decision)}</div>
+                    <div class="grid gap-1 text-text-secondary">
+                      <div><strong>📐 Logic &amp; Data:</strong> ${escapeHtml(tip.mastermind.logic)}</div>
+                      <div><strong>🕵️ Deceive Judgment:</strong> ${escapeHtml(tip.mastermind.deceiveJudgment)}</div>
+                      <div><strong>🔬 Critical Thinking:</strong> ${escapeHtml(tip.mastermind.criticalThinking)}</div>
+                      <div style="color:${is5Min ? '#0E7490' : '#047857'};"><strong>😄 Wit &amp; Humor:</strong> <em>"${escapeHtml(tip.mastermind.humor)}"</em></div>
+                    </div>
+                  </div>
+                  ` : ""}
                 </div>
 
                 <div class="flex items-center justify-between text-xs text-muted pt-2 mt-3" style="border-top: 1px dashed var(--line);">
@@ -5957,6 +5980,18 @@
             <span class="live-radar-label">Goal Threat</span>
           </div>
         </div>
+
+        ${radar.mastermind ? `
+        <div class="mt-2 mb-2 p-2.5 rounded text-xs" style="background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.25);">
+          <div class="font-bold mb-1" style="color:#059669;">🧠 8-PILLAR IN-PLAY &amp; 2H MASTERMIND VERDICT: ${escapeHtml(radar.mastermind.decision)}</div>
+          <div class="grid gap-1 text-text-secondary">
+            <div><strong>📐 Logic &amp; Data:</strong> ${escapeHtml(radar.mastermind.logic)} (${escapeHtml(radar.mastermind.dataAnalysis)})</div>
+            <div><strong>🕵️ Deceive Judgment:</strong> ${escapeHtml(radar.mastermind.deceiveJudgment)}</div>
+            <div><strong>🔬 Critical Thinking:</strong> ${escapeHtml(radar.mastermind.criticalThinking)}</div>
+            <div style="color:#047857;"><strong>😄 Wit &amp; Humor:</strong> <em>"${escapeHtml(radar.mastermind.humor)}"</em></div>
+          </div>
+        </div>
+        ` : ""}
 
         <!-- Real-Time Momentum Pressure Bar: Home vs Away -->
         <div class="live-radar-pressure-bar-wrap">

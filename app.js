@@ -1561,6 +1561,16 @@
                     <span class="text-text-secondary">${f.sureWinShield?.applied ? "Anti-Draw Double Chance / O15 Cushion Deployed" : "Multi-factor Safety Criteria Verified"}</span>
                   </div>
                   <div class="text-text-secondary mt-0.5">${escapeHtml(f.sureWinShield?.reason || "")}</div>
+                  ${
+                    f.sureWinShield?.mastermind
+                      ? `<div class="mt-2 pt-2" style="border-top:1px dashed rgba(16,185,129,0.3); display:grid; gap:4px; font-size:11.5px;">
+                          <div><strong style="color:#047857;">🧠 Logic &amp; Critical Thinking:</strong> ${escapeHtml(f.sureWinShield.mastermind.logic)} ${escapeHtml(f.sureWinShield.mastermind.criticalThinking)}</div>
+                          <div><strong style="color:#0369A1;">🕵️ Deceive Judgment (Bookie Trap Radar):</strong> ${escapeHtml(f.sureWinShield.mastermind.deceiveJudgment)}</div>
+                          <div><strong style="color:#7C3AED;">🎯 Mastermind Decision Across All Lines:</strong> ${escapeHtml(f.sureWinShield.mastermind.decision)}</div>
+                          <div style="font-style:italic; color:var(--text-secondary);"><strong style="color:#B45309; font-style:normal;">😄 Street-Smart Wit:</strong> "${escapeHtml(f.sureWinShield.mastermind.humor)}"</div>
+                        </div>`
+                      : ""
+                  }
                 `
             }
           </div>

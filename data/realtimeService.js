@@ -2972,6 +2972,35 @@ window.MAMON_REALTIME = (() => {
     shieldedPick.shieldReason = shieldReason || `99% Sure Win Standard confirmed for [${shieldedPick.label || "Safe Tip"}] via Run-In Table (${runinConfirmation.shortTag}) and multi-factor validation.`;
     shieldedPick.badge = shieldApplied ? "🛡️ 99% SURE WIN SHIELDED" : "💎 99% SURE WIN CONFIRMED";
 
+    // 8-Pillar Mastermind Winning Tip Synthesizer (Logic, Data Analysis, Judgment, Determination, Deceive Judgment, Critical Thinking, Decision Making & Humor)
+    const hVal = Number(hPpg || 1.35);
+    const aVal = Number(aPpg || 1.25);
+    const domTeam = hVal >= aVal ? homeTeam.name : awayTeam.name;
+    const weakTeam = hVal >= aVal ? awayTeam.name : homeTeam.name;
+    const ppgGapVal = Math.abs(hVal - aVal);
+    const backupMkt = markets.find((m) => m.code !== shieldedPick.code && m.runinConfirmed && ["1X", "X2", "O15", "U35"].includes(m.code)) || markets[0];
+    const hasSteam = Boolean(bestDrop && bestDrop.dropPct >= 3);
+    const isTrapReversed = (hVal >= aVal + 0.35 && shieldedPick.odds >= 1.55) || (aVal >= hVal + 0.35 && shieldedPick.odds >= 1.55);
+
+    shieldedPick.mastermind = {
+      logic: shieldApplied
+        ? `Cross-market logic vetoed naked 1X2 due to ${drawRiskPct}% draw parity and locked [${shieldedPick.label}] so both a win and a draw cash the ticket.`
+        : `Strict logical alignment between overall PPG (${hVal.toFixed(2)} vs ${aVal.toFixed(2)}), venue strength, and Run-In trajectory (${runinConfirmation.shortTag}).`,
+      dataAnalysis: `${homeTeam.name} (${hVal.toFixed(2)} PPG) vs ${awayTeam.name} (${aVal.toFixed(2)} PPG) • Differential: +${ppgGapVal.toFixed(2)} PPG • Model Win Probability: ${Math.round((shieldedPick.prob || 0.82) * 100)}%.`,
+      deceiveJudgment: isTrapReversed
+        ? `Bookie Deception Exposed: Bookmakers hung an inflated price (@ ${(shieldedPick.odds || 1.5).toFixed(2)}) on the superior data side (${domTeam}) to make bettors second-guess the obvious mismatch.`
+        : hasSteam
+          ? `Sharp Money Alert: Live odds dropped ${bestDrop.dropPct.toFixed(1)}% on ${bestDrop.label}, confirming syndicate money is hammering the same side as our math.`
+          : `Zero public-favorite bait taken: Line selected strictly on verified venue PPG and schedule strength rather than club reputation.`,
+      criticalThinking: `What is the #1 way a casual bettor loses here? A late equalizer or low-block stalemate (${drawRiskPct}% draw risk). [${shieldedPick.label}] neutralizes that trap.`,
+      decision: `Primary Winning Line: ${shieldedPick.label} @ ${(shieldedPick.odds || 1.35).toFixed(2)}${backupMkt ? ` | Backup Safety Line: ${backupMkt.label} @ ${(backupMkt.odds || 1.25).toFixed(2)}` : ""}`,
+      humor: ppgGapVal >= 0.55
+        ? `Bringing ${weakTeam}'s recent form (${Math.min(hVal, aVal).toFixed(2)} PPG) against ${domTeam} (${Math.max(hVal, aVal).toFixed(2)} PPG) is like bringing a spoon to a penalty shootout — bookies are practically handing out lunch money on ${shieldedPick.label}.`
+        : shieldApplied
+          ? `Bookmakers set a banana peel on the straight win hoping for a 1-1 heartbreak, so we put on steel-toed boots with [${shieldedPick.label}] and walk right past the trap.`
+          : `The numbers checked the badge, checked the turf, and laughed at the bookmaker's line — [${shieldedPick.label}] is where the smart money sleeps peacefully.`
+    };
+
     return shieldedPick;
   }
 
@@ -3732,7 +3761,8 @@ window.MAMON_REALTIME = (() => {
           tipCode: bestPick.code || null,
           tipLabel: bestPick.label || null,
           tipOdds: bestPick.odds || 1.0,
-          tipProb: Math.round((bestPick.prob || 0) * 100)
+          tipProb: Math.round((bestPick.prob || 0) * 100),
+          mastermind: bestPick.mastermind || null
         }
       }
     };

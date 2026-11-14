@@ -532,10 +532,16 @@ function evaluateGameMismatch(game, hStats, aStats, h2h) {
 
   const isTwoWay = game.sport === "tennis" || game.sport === "basketball" || game.sport === "darts";
 
-  const hs = deriveParticipantStats(game, "home", hStats || game.homeStats);
-  const as = deriveParticipantStats(game, "away", aStats || game.awayStats);
+  const rawHomeStats = hStats || game.homeStats;
+  const rawAwayStats = aStats || game.awayStats;
+  const hasVerifiedStats = Boolean(
+    rawHomeStats && typeof rawHomeStats.ppg === "number" && rawHomeStats.uid &&
+    rawAwayStats && typeof rawAwayStats.ppg === "number" && rawAwayStats.uid
+  );
 
-  const hasVerifiedStats = true;
+  const hs = deriveParticipantStats(game, "home", rawHomeStats);
+  const as = deriveParticipantStats(game, "away", rawAwayStats);
+
   const h2hData = h2h || game.h2h || { meetings: 0, homeWins: 0, draws: 0, awayWins: 0, avgGoals: 2.5, lastMeeting: "" };
 
   // Compute statistical model probabilities (independent of bookmaker mistake)
@@ -1103,9 +1109,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
         })
         .filter(Boolean);
 
-      // Strict 5-Hour Pre-Kickoff + Football.com Verification Gate for ALL Mistake-Odds Tips (Zero in-play games)
+      // Strict 5-Hour Pre-Kickoff + Football.com + Verified Sportradar Stats Gate for ALL Mistake-Odds Tips
       const preMatch5hPool = evaluated
-        .filter((g) => g.isPreMatch5h && g.onFootballCom)
+        .filter((g) => g.isPreMatch5h && g.onFootballCom && g.hasVerifiedStats)
         .sort((a, b) => (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0) || a.estimateStartTime - b.estimateStartTime);
 
       // 1. STRONG TEAMS/PLAYERS PLAYING HOME TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)

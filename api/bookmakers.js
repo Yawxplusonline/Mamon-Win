@@ -654,55 +654,66 @@ function evaluateGameMismatch(game, hStats, aStats, h2h) {
     )
   );
 
-  // Strength of Schedule & PPG Trajectory (Soft vs Hard Opponents: Blue/Red Indicators)
+  // Strength of Schedule & PPG Trajectory (Venue-Aware + Form-Verified Blue/Red Indicators)
   const homeOppPpg = as.ppg || 1.30;
   const awayOppPpg = hs.ppg || 1.30;
-  const homeFacingHard = homeOppPpg >= 1.55;
-  const homeFacingSoft = homeOppPpg <= 1.35 || hs.ppg >= homeOppPpg + 0.20;
+  const homeVenuePpg = hs.homePpg || hs.ppg || 1.35;
+  const awayVenuePpg = as.awayPpg || as.ppg || 1.15;
+  const homeResilient = homeVenuePpg >= 1.50 || hs.formPts >= 9 || (hs.ppg >= 1.45 && homeVenuePpg >= awayVenuePpg - 0.05);
+  const awayResilient = awayVenuePpg >= 1.45 || as.formPts >= 9 || (as.ppg >= 1.45 && awayVenuePpg >= homeVenuePpg - 0.05);
+
+  const homeFacingHard = homeOppPpg >= 1.65 && awayVenuePpg >= 1.48 && awayVenuePpg >= homeVenuePpg + 0.22;
+  const homeFacingSoft =
+    (homeOppPpg <= 1.32 && awayVenuePpg <= 1.25) ||
+    hs.ppg >= homeOppPpg + 0.25 ||
+    homeVenuePpg >= awayVenuePpg + 0.30;
 
   let homeTrajectory = "NEUTRAL";
   let homeSosBadge = "⚪ BALANCED PPG";
   let homeSosReason = "";
-  if (hs.ppg >= 1.40 && homeFacingSoft) {
+  if (hs.ppg >= 1.42 && homeVenuePpg >= 1.45 && homeFacingSoft) {
     homeTrajectory = "GAIN_BLUE";
     homeSosBadge = "🔵 GAIN POINTS SURGE";
-    homeSosReason = `Battle-tested squad (${hs.ppg.toFixed(2)} PPG · Form ${hs.form.join("-")}) facing soft defense (${game.awayTeamName} @ ${homeOppPpg.toFixed(2)} PPG) — primed to gain points.`;
-  } else if ((hs.ppg >= 1.40 && homeFacingHard && hs.ppg <= homeOppPpg + 0.10) || (hs.ppg <= 1.25 && homeFacingHard)) {
+    homeSosReason = `Battle-tested squad (${hs.ppg.toFixed(2)} PPG · ${homeVenuePpg.toFixed(2)} Home PPG · Form ${hs.form.join("-")}) facing soft visitor (${game.awayTeamName} @ ${awayVenuePpg.toFixed(2)} Away PPG) — primed to gain points.`;
+  } else if (!homeResilient && hs.ppg <= 1.24 && homeVenuePpg <= 1.30 && homeFacingHard && hs.formPts <= 6) {
     homeTrajectory = "DROP_RED";
     homeSosBadge = "🔴 DROP POINTS RISK";
-    homeSosReason = `Past points built on soft opposition; now facing difficult test (${game.awayTeamName} @ ${homeOppPpg.toFixed(2)} PPG) — high danger of dropping points.`;
-  } else if (hs.ppg <= 1.20) {
+    homeSosReason = `Past points built on soft opposition (${hs.ppg.toFixed(2)} PPG · ${homeVenuePpg.toFixed(2)} Home PPG); now facing elite road opponent (${game.awayTeamName} @ ${awayVenuePpg.toFixed(2)} Away PPG) — high danger of dropping points.`;
+  } else if (!homeResilient && hs.ppg <= 1.12 && homeVenuePpg <= 1.18 && hs.formPts <= 5 && awayVenuePpg >= 1.35) {
     homeTrajectory = "DROP_RED";
     homeSosBadge = "🔴 DROP POINTS RISK";
-    homeSosReason = `Low PPG (${hs.ppg.toFixed(2)}) host vulnerable to dropping points.`;
+    homeSosReason = `Low PPG (${hs.ppg.toFixed(2)} · ${homeVenuePpg.toFixed(2)} Home PPG) host vulnerable against ${game.awayTeamName} (${awayVenuePpg.toFixed(2)} Away PPG).`;
   } else {
     homeTrajectory = "NEUTRAL";
     homeSosBadge = "⚪ BALANCED PPG";
-    homeSosReason = `Balanced past schedule against comparable opponents (${hs.ppg.toFixed(2)} PPG).`;
+    homeSosReason = `Balanced schedule & resilient Home PPG (${homeVenuePpg.toFixed(2)} Home PPG · ${hs.ppg.toFixed(2)} Overall).`;
   }
 
-  const awayFacingHard = awayOppPpg >= 1.55;
-  const awayFacingSoft = awayOppPpg <= 1.35 || as.ppg >= awayOppPpg + 0.20;
+  const awayFacingHard = awayOppPpg >= 1.60 && homeVenuePpg >= 1.55 && homeVenuePpg >= awayVenuePpg + 0.25;
+  const awayFacingSoft =
+    (awayOppPpg <= 1.30 && homeVenuePpg <= 1.28) ||
+    as.ppg >= awayOppPpg + 0.25 ||
+    awayVenuePpg >= homeVenuePpg + 0.25;
 
   let awayTrajectory = "NEUTRAL";
   let awaySosBadge = "⚪ BALANCED PPG";
   let awaySosReason = "";
-  if (as.ppg >= 1.40 && awayFacingSoft) {
+  if (as.ppg >= 1.42 && awayVenuePpg >= 1.35 && awayFacingSoft) {
     awayTrajectory = "GAIN_BLUE";
     awaySosBadge = "🔵 GAIN POINTS SURGE";
-    awaySosReason = `Tested away traveler (${as.ppg.toFixed(2)} PPG · Form ${as.form.join("-")}) visiting soft opponent (${game.homeTeamName} @ ${awayOppPpg.toFixed(2)} PPG) — primed to gain points.`;
-  } else if ((as.ppg >= 1.40 && awayFacingHard && as.ppg <= awayOppPpg + 0.10) || (as.ppg <= 1.25 && awayFacingHard)) {
+    awaySosReason = `Tested away traveler (${as.ppg.toFixed(2)} PPG · ${awayVenuePpg.toFixed(2)} Away PPG · Form ${as.form.join("-")}) visiting vulnerable host (${game.homeTeamName} @ ${homeVenuePpg.toFixed(2)} Home PPG) — primed to gain points.`;
+  } else if (!awayResilient && as.ppg <= 1.24 && awayVenuePpg <= 1.18 && awayFacingHard && as.formPts <= 6) {
     awayTrajectory = "DROP_RED";
     awaySosBadge = "🔴 DROP POINTS RISK";
-    awaySosReason = `Away record built on soft opponents; facing difficult host (${game.homeTeamName} @ ${awayOppPpg.toFixed(2)} PPG) — risk of dropping points.`;
-  } else if (as.ppg <= 1.20) {
+    awaySosReason = `Away record built on soft opponents (${as.ppg.toFixed(2)} PPG · ${awayVenuePpg.toFixed(2)} Away PPG); facing fortress host (${game.homeTeamName} @ ${homeVenuePpg.toFixed(2)} Home PPG) — high danger of dropping points.`;
+  } else if (!awayResilient && as.ppg <= 1.12 && awayVenuePpg <= 1.08 && as.formPts <= 5 && homeVenuePpg >= 1.45) {
     awayTrajectory = "DROP_RED";
     awaySosBadge = "🔴 DROP POINTS RISK";
-    awaySosReason = `Low PPG (${as.ppg.toFixed(2)}) traveler vulnerable to dropping points.`;
+    awaySosReason = `Low PPG (${as.ppg.toFixed(2)} · ${awayVenuePpg.toFixed(2)} Away PPG) traveler vulnerable at ${game.homeTeamName} (${homeVenuePpg.toFixed(2)} Home PPG).`;
   } else {
     awayTrajectory = "NEUTRAL";
     awaySosBadge = "⚪ BALANCED PPG";
-    awaySosReason = `Normal away schedule balance (${as.ppg.toFixed(2)} PPG).`;
+    awaySosReason = `Normal away schedule balance (${awayVenuePpg.toFixed(2)} Away PPG · ${as.ppg.toFixed(2)} Overall).`;
   }
 
   return {
@@ -1105,17 +1116,17 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
           const homeStronger =
-            hs.ppg >= as.ppg ||
-            hs.homePpg >= as.awayPpg ||
-            hs.formPts >= as.formPts;
+            hs.ppg >= as.ppg + 0.12 &&
+            hs.homePpg >= as.awayPpg + 0.10 &&
+            hs.formPts >= Math.max(6, as.formPts - 2);
           const mistakeBigOddsGiven =
             odd1 >= odd2 ||
-            (odd1 >= 1.50 && odd1 <= 3.40 && (g.model.homeEdgePct >= 0 || hs.ppg >= 1.50 || hs.formPts >= 7));
+            (odd1 >= 1.55 && odd1 <= 3.30 && g.model.homeEdgePct >= 2 && hs.ppg >= 1.55 && hs.formPts >= 7);
           const notDropRisk = g.ppgSchedule?.home?.trajectory !== "DROP_RED";
-          const hasStrongPpg = hs.ppg >= 1.50 && (hs.ppg >= as.ppg + 0.15 || g.ppgSchedule?.home?.trajectory === "GAIN_BLUE");
+          const hasStrongPpg = hs.ppg >= 1.50 && hs.homePpg >= 1.50 && (hs.ppg >= as.ppg + 0.18 || g.ppgSchedule?.home?.trajectory === "GAIN_BLUE");
           return (
-            odd1 >= 1.40 &&
-            odd1 <= 3.40 &&
+            odd1 >= 1.45 &&
+            odd1 <= 3.30 &&
             hasStrongPpg &&
             homeStronger &&
             mistakeBigOddsGiven &&
@@ -1166,17 +1177,17 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
           const awayStronger =
-            as.ppg >= hs.ppg ||
-            as.awayPpg >= hs.homePpg ||
-            as.formPts >= hs.formPts;
+            as.ppg >= hs.ppg + 0.15 &&
+            as.awayPpg >= hs.homePpg &&
+            as.formPts >= Math.max(7, hs.formPts - 1);
           const mistakeBigOddsGiven =
             odd2 >= odd1 ||
-            (odd2 >= 1.50 && odd2 <= 3.50 && (g.model.awayEdgePct >= 0 || as.ppg >= 1.45 || as.formPts >= 7));
+            (odd2 >= 1.55 && odd2 <= 3.40 && g.model.awayEdgePct >= 2 && as.ppg >= 1.55 && as.formPts >= 7);
           const notDropRisk = g.ppgSchedule?.away?.trajectory !== "DROP_RED";
-          const hasStrongPpg = as.ppg >= 1.40 && (as.ppg >= hs.ppg + 0.15 || g.ppgSchedule?.away?.trajectory === "GAIN_BLUE");
+          const hasStrongPpg = as.ppg >= 1.48 && as.awayPpg >= 1.38 && (as.ppg >= hs.ppg + 0.18 || g.ppgSchedule?.away?.trajectory === "GAIN_BLUE");
           return (
-            odd2 >= 1.45 &&
-            odd2 <= 3.50 &&
+            odd2 >= 1.48 &&
+            odd2 <= 3.40 &&
             hasStrongPpg &&
             awayStronger &&
             mistakeBigOddsGiven &&
@@ -1226,17 +1237,22 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const as = g.awayStats;
           const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
-          const homeIsWeaker =
-            hs.ppg <= as.ppg ||
-            hs.formPts <= as.formPts ||
-            hs.homePpg <= as.awayPpg;
+          // Require ALL weakness criteria simultaneously (AND, never OR) so strong/resilient home teams are never falsely faded
+          const homeIsGenuinelyWeaker =
+            hs.ppg <= 1.24 &&
+            hs.homePpg <= 1.28 &&
+            as.ppg >= hs.ppg + 0.25 &&
+            as.awayPpg >= hs.homePpg + 0.12 &&
+            hs.formPts <= 6 &&
+            as.formPts >= 7;
           const mistakeLowOddGivenToWorstHome =
-            odd1 < odd2 || (odd1 <= 2.45 && odd2 >= 2.00);
+            odd1 < odd2 || (odd1 <= 2.40 && odd2 >= 2.05);
           return (
-            homeIsWeaker &&
+            homeIsGenuinelyWeaker &&
             mistakeLowOddGivenToWorstHome &&
-            odd1 <= 2.55 &&
-            odd2 >= 1.70
+            odd1 >= 1.65 &&
+            odd1 <= 2.50 &&
+            odd2 >= 1.80
           );
         })
         .map((g) => {
@@ -1283,17 +1299,22 @@ async function runFullBookmakerScan(forceRefresh = false) {
           const as = g.awayStats;
           const odd1 = g.bestOdds.home || 0;
           const odd2 = g.bestOdds.away || 0;
-          const awayIsWeaker =
-            as.ppg <= hs.ppg ||
-            as.formPts <= hs.formPts ||
-            as.awayPpg <= hs.homePpg;
+          // Require ALL weakness criteria simultaneously (AND, never OR) so strong away favorites are never falsely faded
+          const awayIsGenuinelyWeaker =
+            as.ppg <= 1.24 &&
+            as.awayPpg <= 1.18 &&
+            hs.ppg >= as.ppg + 0.25 &&
+            hs.homePpg >= as.awayPpg + 0.20 &&
+            as.formPts <= 6 &&
+            hs.formPts >= 7;
           const mistakeLowOddGivenToWorstAway =
-            odd2 < odd1 || (odd2 <= 2.60 && odd1 >= 2.00);
+            odd2 < odd1 || (odd2 <= 2.50 && odd1 >= 2.05);
           return (
-            awayIsWeaker &&
+            awayIsGenuinelyWeaker &&
             mistakeLowOddGivenToWorstAway &&
-            odd2 <= 2.65 &&
-            odd1 >= 1.70
+            odd2 >= 1.65 &&
+            odd2 <= 2.60 &&
+            odd1 >= 1.80
           );
         })
         .map((g) => {

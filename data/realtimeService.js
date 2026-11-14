@@ -2267,80 +2267,137 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
-  function computePpgScheduleAnalysis(homeTeam, awayTeam, hPpg, aPpg, hHomePpg, aAwayPpg, stH, stA, factors) {
-    const homeOppPpg = aPpg || 1.30;
-    const awayOppPpg = hPpg || 1.30;
+  function computePpgScheduleAnalysis(homeTeam, awayTeam, hPpg, aPpg, hHomePpg, aAwayPpg, stH, stA, factors, homeRuninStats = null, awayRuninStats = null, droppingOdds = null) {
+    const myHomeVenuePpg = Number.isFinite(Number(hHomePpg)) ? Number(hHomePpg) : hPpg || 1.35;
+    const myAwayVenuePpg = Number.isFinite(Number(aAwayPpg)) ? Number(aAwayPpg) : aPpg || 1.25;
+    const homeOppOverallPpg = aPpg || 1.30;
+    const awayOppOverallPpg = hPpg || 1.30;
+    const homeOppVenuePpg = myAwayVenuePpg; // Visitor's Away PPG
+    const awayOppVenuePpg = myHomeVenuePpg; // Host's Home PPG
 
-    const homeFacingHard = homeOppPpg >= 1.55;
-    const homeFacingSoft = homeOppPpg <= 1.35 || hPpg >= homeOppPpg + 0.20;
+    const hPlayedPpg = Number(homeRuninStats?.playedPpg) || 1.32;
+    const aPlayedPpg = Number(awayRuninStats?.playedPpg) || 1.32;
+    const hFormPts = Number(factors?.currentForm?.homePts ?? 7);
+    const aFormPts = Number(factors?.currentForm?.awayPts ?? 7);
+    const hCsPct = Number(factors?.cleanSheetsHome?.pct ?? 30);
+    const aCsPct = Number(factors?.cleanSheetsAway?.pct ?? 25);
+
+    const homeSteam = Boolean((droppingOdds?.movesByCode?.HOME?.dropPct || 0) >= 3.0);
+    const awaySteam = Boolean((droppingOdds?.movesByCode?.AWAY?.dropPct || 0) >= 3.0);
+
+    // Home team evaluation:
+    // NEVER flag a team with strong Home Venue PPG (>= 1.40), hot form (>= 8 pts), or sharp dropping odds steam as DROP_RED!
+    // Only flag "Past points built on soft opposition" if their actual playedPpg was genuinely soft (<= 1.24) AND today's visitor is a road powerhouse (awayPPG >= 1.55 & overall >= 1.65) that outclasses the host's home PPG by >= 0.25!
+    const homeSoftScheduleTrap =
+      hPlayedPpg <= 1.24 &&
+      homeOppOverallPpg >= 1.65 &&
+      homeOppVenuePpg >= 1.50 &&
+      homeOppVenuePpg >= myHomeVenuePpg + 0.25 &&
+      myHomeVenuePpg < 1.45 &&
+      hFormPts <= 8 &&
+      !homeSteam;
+
+    const homeTrueWeakHost =
+      hPpg <= 1.12 &&
+      myHomeVenuePpg <= 1.18 &&
+      homeOppOverallPpg >= 1.58 &&
+      homeOppVenuePpg >= 1.45 &&
+      hFormPts <= 6 &&
+      hCsPct < 35 &&
+      !homeSteam;
+
+    const homeFacingSoftVisitor =
+      (homeOppVenuePpg <= 1.22 || (myHomeVenuePpg - homeOppVenuePpg >= 0.35 && hPpg - homeOppOverallPpg >= 0.22)) &&
+      homeOppOverallPpg <= 1.42;
 
     let homeStatus = "NEUTRAL";
     let homeBadge = "⚪ BALANCED PPG";
     let homeReason = "";
-    if (hPpg >= 1.40 && homeFacingSoft) {
+    if (hPpg >= 1.45 && myHomeVenuePpg >= 1.50 && hFormPts >= 7 && homeFacingSoftVisitor && !homeSoftScheduleTrap) {
       homeStatus = "GAIN_BLUE";
       homeBadge = "🔵 GAIN POINTS SURGE";
-      homeReason = `Battle-tested squad (${hPpg.toFixed(2)} PPG) facing soft defense (${awayTeam.name || "Away"} @ ${homeOppPpg.toFixed(2)} PPG) — primed to gain points.`;
-    } else if ((hPpg >= 1.40 && homeFacingHard && hPpg <= homeOppPpg + 0.10) || (hPpg <= 1.25 && homeFacingHard)) {
+      homeReason = `Battle-tested host (${hPpg.toFixed(2)} PPG · ${myHomeVenuePpg.toFixed(2)} Home PPG · PLD ${hPlayedPpg.toFixed(2)}) facing vulnerable road defense (${awayTeam.name || "Away"} @ ${homeOppVenuePpg.toFixed(2)} Away PPG) — primed to gain points.`;
+    } else if (homeSoftScheduleTrap) {
       homeStatus = "DROP_RED";
       homeBadge = "🔴 DROP POINTS RISK";
-      homeReason = `Past points built on soft opposition; now facing difficult opponent (${awayTeam.name || "Away"} @ ${homeOppPpg.toFixed(2)} PPG) — high danger of dropping points.`;
-    } else if (hPpg <= 1.20) {
+      homeReason = `Past points built on soft schedule (PLD ${hPlayedPpg.toFixed(2)} PPG); now facing elite road opponent (${awayTeam.name || "Away"} @ ${homeOppOverallPpg.toFixed(2)} PPG / ${homeOppVenuePpg.toFixed(2)} Away PPG) — high danger of dropping points.`;
+    } else if (homeTrueWeakHost) {
       homeStatus = "DROP_RED";
       homeBadge = "🔴 DROP POINTS RISK";
-      homeReason = `Low PPG (${hPpg.toFixed(2)}) host vulnerable to dropping points.`;
+      homeReason = `Weak host (${hPpg.toFixed(2)} PPG · ${myHomeVenuePpg.toFixed(2)} Home PPG · ${hFormPts}/15 form) facing dominant visitor (${awayTeam.name || "Away"} @ ${homeOppOverallPpg.toFixed(2)} PPG) — vulnerable to dropping points.`;
     } else {
       homeStatus = "NEUTRAL";
       homeBadge = "⚪ BALANCED PPG";
-      homeReason = `Balanced past schedule against comparable tier competition (${hPpg.toFixed(2)} PPG).`;
+      homeReason = `Resilient home profile (${hPpg.toFixed(2)} PPG · ${myHomeVenuePpg.toFixed(2)} Home PPG · PLD ${hPlayedPpg.toFixed(2)}) against comparable opposition.`;
     }
 
-    const awayFacingHard = awayOppPpg >= 1.55;
-    const awayFacingSoft = awayOppPpg <= 1.35 || aPpg >= awayOppPpg + 0.20;
+    // Away team evaluation:
+    // NEVER flag an away team with strong Away Venue PPG (>= 1.38), hot form (>= 8 pts), or sharp dropping odds steam as DROP_RED!
+    const awaySoftScheduleTrap =
+      aPlayedPpg <= 1.24 &&
+      awayOppOverallPpg >= 1.65 &&
+      awayOppVenuePpg >= 1.65 &&
+      awayOppVenuePpg >= myAwayVenuePpg + 0.30 &&
+      myAwayVenuePpg < 1.38 &&
+      aFormPts <= 8 &&
+      !awaySteam;
+
+    const awayTrueWeakTraveler =
+      aPpg <= 1.12 &&
+      myAwayVenuePpg <= 1.08 &&
+      awayOppOverallPpg >= 1.55 &&
+      awayOppVenuePpg >= 1.58 &&
+      aFormPts <= 6 &&
+      aCsPct < 35 &&
+      !awaySteam;
+
+    const awayFacingSoftHost =
+      (awayOppVenuePpg <= 1.25 || (myAwayVenuePpg - awayOppVenuePpg >= 0.25 && aPpg - awayOppOverallPpg >= 0.28)) &&
+      awayOppOverallPpg <= 1.35;
 
     let awayStatus = "NEUTRAL";
     let awayBadge = "⚪ BALANCED PPG";
     let awayReason = "";
-    if (aPpg >= 1.40 && awayFacingSoft) {
+    if (aPpg >= 1.48 && myAwayVenuePpg >= 1.38 && aFormPts >= 7 && awayFacingSoftHost && !awaySoftScheduleTrap) {
       awayStatus = "GAIN_BLUE";
       awayBadge = "🔵 GAIN POINTS SURGE";
-      awayReason = `Tested away traveler (${aPpg.toFixed(2)} PPG) visiting soft opponent (${homeTeam.name || "Home"} @ ${awayOppPpg.toFixed(2)} PPG) — primed to gain points.`;
-    } else if ((aPpg >= 1.40 && awayFacingHard && aPpg <= awayOppPpg + 0.10) || (aPpg <= 1.25 && awayFacingHard)) {
+      awayReason = `Battle-tested traveler (${aPpg.toFixed(2)} PPG · ${myAwayVenuePpg.toFixed(2)} Away PPG · PLD ${aPlayedPpg.toFixed(2)}) visiting weak host (${homeTeam.name || "Home"} @ ${awayOppVenuePpg.toFixed(2)} Home PPG) — primed to gain points.`;
+    } else if (awaySoftScheduleTrap) {
       awayStatus = "DROP_RED";
       awayBadge = "🔴 DROP POINTS RISK";
-      awayReason = `Away record built on soft opponents; facing difficult host (${homeTeam.name || "Home"} @ ${awayOppPpg.toFixed(2)} PPG) — risk of dropping points.`;
-    } else if (aPpg <= 1.20) {
+      awayReason = `Away record built on soft schedule (PLD ${aPlayedPpg.toFixed(2)} PPG); visiting fortress host (${homeTeam.name || "Home"} @ ${awayOppOverallPpg.toFixed(2)} PPG / ${awayOppVenuePpg.toFixed(2)} Home PPG) — risk of dropping points.`;
+    } else if (awayTrueWeakTraveler) {
       awayStatus = "DROP_RED";
       awayBadge = "🔴 DROP POINTS RISK";
-      awayReason = `Low PPG (${aPpg.toFixed(2)}) traveler vulnerable to dropping points.`;
+      awayReason = `Struggling road traveler (${aPpg.toFixed(2)} PPG · ${myAwayVenuePpg.toFixed(2)} Away PPG · ${aFormPts}/15 form) visiting strong host (${homeTeam.name || "Home"} @ ${awayOppVenuePpg.toFixed(2)} Home PPG) — vulnerable to dropping points.`;
     } else {
       awayStatus = "NEUTRAL";
       awayBadge = "⚪ BALANCED PPG";
-      awayReason = `Normal away schedule balance (${aPpg.toFixed(2)} PPG).`;
+      awayReason = `Balanced away schedule profile (${aPpg.toFixed(2)} PPG · ${myAwayVenuePpg.toFixed(2)} Away PPG · PLD ${aPlayedPpg.toFixed(2)}).`;
     }
 
     let systemVerdict = "";
     let favoredSide = "NEUTRAL";
     if (homeStatus === "GAIN_BLUE" && awayStatus === "DROP_RED") {
       favoredSide = "HOME";
-      systemVerdict = `SCHEDULE MISMATCH LOCK: ${homeTeam.name || "Home"} is primed to GAIN points (🔵) while ${awayTeam.name || "Away"} faces severe DROP points regression (🔴). Back 1X Double Chance.`;
+      systemVerdict = `SCHEDULE MISMATCH LOCK: ${homeTeam.name || "Home"} (${myHomeVenuePpg.toFixed(2)} Home PPG) is primed to GAIN points (🔵) while ${awayTeam.name || "Away"} (${myAwayVenuePpg.toFixed(2)} Away PPG) faces severe DROP points regression (🔴). Back 1X Double Chance.`;
     } else if (awayStatus === "GAIN_BLUE" && homeStatus === "DROP_RED") {
       favoredSide = "AWAY";
-      systemVerdict = `SCHEDULE MISMATCH LOCK: ${awayTeam.name || "Away"} is battle-tested and set to GAIN points (🔵) against soft host ${homeTeam.name || "Home"} which will DROP points (🔴). Back X2 Double Chance.`;
+      systemVerdict = `SCHEDULE MISMATCH LOCK: ${awayTeam.name || "Away"} (${myAwayVenuePpg.toFixed(2)} Away PPG) is battle-tested and set to GAIN points (🔵) against vulnerable host ${homeTeam.name || "Home"} (🔴). Back X2 Double Chance.`;
     } else if (homeStatus === "GAIN_BLUE") {
       favoredSide = "HOME";
-      systemVerdict = `POINTS GAINER: ${homeTeam.name || "Home"} holds strong schedule advantage (🔵) to harvest points against weak opponent.`;
+      systemVerdict = `POINTS GAINER: ${homeTeam.name || "Home"} holds verified venue & schedule advantage (🔵) over ${awayTeam.name || "Away"}.`;
     } else if (awayStatus === "GAIN_BLUE") {
       favoredSide = "AWAY";
-      systemVerdict = `POINTS GAINER: ${awayTeam.name || "Away"} possesses superior tested quality (🔵) set to gain points on the road.`;
-    } else if (homeStatus === "DROP_RED") {
+      systemVerdict = `POINTS GAINER: ${awayTeam.name || "Away"} possesses superior road quality (🔵) set to gain points at ${homeTeam.name || "Home"}.`;
+    } else if (homeStatus === "DROP_RED" && awayOppOverallPpg <= 1.15 && homeOppOverallPpg >= 1.58) {
       favoredSide = "AWAY_LEAN";
-      systemVerdict = `TRAP ALERT: ${homeTeam.name || "Home"}'s PPG is inflated by soft/cheap opponents (🔴) — danger of dropping points!`;
-    } else if (awayStatus === "DROP_RED") {
+      systemVerdict = `REGRESSION ALERT: ${homeTeam.name || "Home"} faces a major step up in class against ${awayTeam.name || "Away"} (🔴) — prefer X2 Double Chance safeguard.`;
+    } else if (awayStatus === "DROP_RED" && homeOppOverallPpg <= 1.15 && awayOppOverallPpg >= 1.58) {
       favoredSide = "HOME_LEAN";
-      systemVerdict = `TRAP ALERT: ${awayTeam.name || "Away"}'s away form is vulnerable against real opposition (🔴) — likely to drop points.`;
+      systemVerdict = `REGRESSION ALERT: ${awayTeam.name || "Away"} faces a severe road test at fortress ${homeTeam.name || "Home"} (🔴) — prefer 1X Double Chance safeguard.`;
     } else {
-      systemVerdict = `BALANCED CONTEST: Both teams hold comparable schedule-adjusted PPG.`;
+      systemVerdict = `BALANCED CONTEST: Both teams hold competitive venue-adjusted PPG (${myHomeVenuePpg.toFixed(2)} Home vs ${myAwayVenuePpg.toFixed(2)} Away).`;
     }
 
     return {
@@ -2445,6 +2502,8 @@ window.MAMON_REALTIME = (() => {
     awayRuninStats = null,
     homePpg = 1.35,
     awayPpg = 1.30,
+    homeVenuePpg = null,
+    awayVenuePpg = null,
     homeDrop = false,
     awayDrop = false,
     marketCode = "O15",
@@ -2456,6 +2515,8 @@ window.MAMON_REALTIME = (() => {
 
     const hPpg = Number(liveH?.ppg ?? homeRuninStats?.ppg ?? homePpg ?? 1.35);
     const aPpg = Number(liveA?.ppg ?? awayRuninStats?.ppg ?? awayPpg ?? 1.30);
+    const hVenue = Number(homeVenuePpg ?? liveH?.homePpg ?? Math.min(2.85, hPpg + 0.16));
+    const aVenue = Number(awayVenuePpg ?? liveA?.awayPpg ?? Math.max(0.25, aPpg - 0.14));
     const hPlayed = Number(liveH?.playedPpg ?? homeRuninStats?.playedPpg ?? 1.35);
     const aPlayed = Number(liveA?.playedPpg ?? awayRuninStats?.playedPpg ?? 1.35);
     const hRem = Number(liveH?.immediate5Ppg ?? liveH?.remainingPpg ?? homeRuninStats?.remainingPpg ?? aPpg);
@@ -2481,10 +2542,29 @@ window.MAMON_REALTIME = (() => {
       };
     }
 
-    const hDropRisk = Boolean(homeDrop || (hDiff <= -14 && hPpg < 1.55) || (hPpg <= 1.10 && aPpg >= 1.55));
-    const aDropRisk = Boolean(awayDrop || (aDiff <= -14 && aPpg < 1.55) || (aPpg <= 1.10 && hPpg >= 1.55));
-    const hGainSurge = Boolean(liveH ? (hDiff >= 6 && hPpg >= 1.45) : (hPpg >= 1.55 && aPpg <= 1.35));
-    const aGainSurge = Boolean(liveA ? (aDiff >= 6 && aPpg >= 1.45) : (aPpg >= 1.55 && hPpg <= 1.35));
+    // Never penalize a strong host/visitor for a negative 5-game diffPct unless TODAY's opponent is genuinely elite in today's venue!
+    const hDropRisk = Boolean(
+      homeDrop ||
+      (hDiff <= -15 && hPlayed <= 1.24 && hPpg < 1.38 && aPpg >= 1.62 && aVenue >= hVenue + 0.20) ||
+      (hPpg <= 1.08 && hVenue <= 1.18 && aPpg >= 1.60 && aVenue >= 1.45)
+    );
+    const aDropRisk = Boolean(
+      awayDrop ||
+      (aDiff <= -15 && aPlayed <= 1.24 && aPpg < 1.35 && hPpg >= 1.60 && hVenue >= aVenue + 0.25) ||
+      (aPpg <= 1.08 && aVenue <= 1.08 && hPpg >= 1.58 && hVenue >= 1.55)
+    );
+    const hGainSurge = Boolean(
+      !hDropRisk &&
+      hPpg >= 1.50 &&
+      hVenue >= 1.52 &&
+      (aVenue <= 1.25 || (hVenue - aVenue >= 0.35 && hPpg - aPpg >= 0.22))
+    );
+    const aGainSurge = Boolean(
+      !aDropRisk &&
+      aPpg >= 1.52 &&
+      aVenue >= 1.38 &&
+      (hVenue <= 1.25 || (aVenue - hVenue >= 0.25 && aPpg - hPpg >= 0.28))
+    );
 
     const code = String(marketCode || "O15").toUpperCase();
     const isHomeSide = /^(HOME|1X|WIN_1|H_O15|H_NIL|HTFT_H|H_BTTS|SAFE_HOME|DC_HOME|FAV_HOME|BLOWOUT_HOME)/.test(code) || code.includes("HOME") || code === "SPREAD_H";
@@ -2496,24 +2576,30 @@ window.MAMON_REALTIME = (() => {
     if (isHomeSide) {
       if (hDropRisk) {
         confirmed = false;
-        verdictReason = `Rejected: Run-In Table flags ${homeName} with Drop Risk (${hDiff}%)`;
-      } else if (aGainSurge && aPpg > hPpg + 0.15 && hPpg < 1.60) {
+        verdictReason = `Rejected: Run-In Table flags ${homeName} with Drop Risk (${hDiff}% · Home PPG ${hVenue.toFixed(2)} vs ${awayName} ${aVenue.toFixed(2)} Away PPG)`;
+      } else if (aGainSurge && aPpg >= hPpg + 0.20 && aVenue >= hVenue + 0.15) {
         confirmed = false;
-        verdictReason = `Rejected: ${awayName} holds Run-In surge (${aPpg.toFixed(2)} PPG, ${aDiff >= 0 ? "+" : ""}${aDiff}%)`;
+        verdictReason = `Rejected: ${awayName} holds road Run-In surge (${aPpg.toFixed(2)} PPG · ${aVenue.toFixed(2)} Away PPG)`;
       } else {
-        confirmed = hPpg >= aPpg - 0.15 || hGainSurge || (hDiff - aDiff >= 8);
-        verdictReason = `${homeName} (PLD ${hPlayed.toFixed(2)} → REM ${hRem.toFixed(2)}, ${hDiff >= 0 ? "+" : ""}${hDiff}% · ${hPpg.toFixed(2)} PPG) confirmed over ${awayName} (${aPpg.toFixed(2)} PPG)`;
+        // Require legitimate Home PPG & Overall PPG superiority (never confirm a weaker host just because future diffPct is positive)
+        confirmed = (hPpg >= aPpg && hVenue >= aVenue) || (hVenue >= aVenue + 0.20 && hPpg >= aPpg - 0.08) || hGainSurge;
+        verdictReason = confirmed
+          ? `${homeName} (PLD ${hPlayed.toFixed(2)} → REM ${hRem.toFixed(2)}, ${hDiff >= 0 ? "+" : ""}${hDiff}% · ${hPpg.toFixed(2)} PPG / ${hVenue.toFixed(2)} Home PPG) confirmed over ${awayName} (${aPpg.toFixed(2)} PPG / ${aVenue.toFixed(2)} Away PPG)`
+          : `Rejected: ${homeName} (${hPpg.toFixed(2)} PPG / ${hVenue.toFixed(2)} Home) lacks venue PPG edge over ${awayName} (${aPpg.toFixed(2)} PPG / ${aVenue.toFixed(2)} Away)`;
       }
     } else if (isAwaySide) {
       if (aDropRisk) {
         confirmed = false;
-        verdictReason = `Rejected: Run-In Table flags ${awayName} with Drop Risk (${aDiff}%)`;
-      } else if (hGainSurge && hPpg > aPpg + 0.15 && aPpg < 1.55) {
+        verdictReason = `Rejected: Run-In Table flags ${awayName} with Drop Risk (${aDiff}% · Away PPG ${aVenue.toFixed(2)} vs ${homeName} ${hVenue.toFixed(2)} Home PPG)`;
+      } else if (hGainSurge && hPpg >= aPpg + 0.15 && hVenue >= aVenue + 0.20) {
         confirmed = false;
-        verdictReason = `Rejected: ${homeName} holds Run-In surge (${hPpg.toFixed(2)} PPG, ${hDiff >= 0 ? "+" : ""}${hDiff}%)`;
+        verdictReason = `Rejected: ${homeName} holds home Run-In surge (${hPpg.toFixed(2)} PPG · ${hVenue.toFixed(2)} Home PPG)`;
       } else {
-        confirmed = aPpg >= hPpg - 0.15 || aGainSurge || (aDiff - hDiff >= 8);
-        verdictReason = `${awayName} (PLD ${aPlayed.toFixed(2)} → REM ${aRem.toFixed(2)}, ${aDiff >= 0 ? "+" : ""}${aDiff}% · ${aPpg.toFixed(2)} PPG) confirmed at ${homeName} (${hPpg.toFixed(2)} PPG)`;
+        // Playing away requires genuine road & overall superiority over the host's Home PPG!
+        confirmed = (aPpg >= hPpg + 0.12 && aVenue >= hVenue - 0.05) || (aVenue >= hVenue + 0.12 && aPpg >= hPpg) || aGainSurge;
+        verdictReason = confirmed
+          ? `${awayName} (PLD ${aPlayed.toFixed(2)} → REM ${aRem.toFixed(2)}, ${aDiff >= 0 ? "+" : ""}${aDiff}% · ${aPpg.toFixed(2)} PPG / ${aVenue.toFixed(2)} Away PPG) confirmed at ${homeName} (${hPpg.toFixed(2)} PPG / ${hVenue.toFixed(2)} Home PPG)`
+          : `Rejected: ${awayName} (${aPpg.toFixed(2)} PPG / ${aVenue.toFixed(2)} Away) cannot overcome ${homeName}'s home strength (${hPpg.toFixed(2)} PPG / ${hVenue.toFixed(2)} Home)`;
       }
     } else if (isDefenseSpecial) {
       const gap = Math.abs(hPpg - aPpg);
@@ -3366,15 +3452,28 @@ window.MAMON_REALTIME = (() => {
       }
     });
 
-    // Strength of Schedule & PPG Trajectory analysis
-    const ppgScheduleStrength = computePpgScheduleAnalysis(homeTeam, awayTeam, homeOverallPpg, awayOverallPpg, homeHomePpg, awayAwayPpg, stH, stA, { cleanSheetsHome: { pct: homeCsPct }, cleanSheetsAway: { pct: awayCsPct }, currentForm: { homePts: homeFormPts, awayPts: awayFormPts } });
+    // Strength of Schedule & PPG Trajectory analysis (incorporating actual Run-In PLD/REM & Dropping Odds steam)
+    const ppgScheduleStrength = computePpgScheduleAnalysis(
+      homeTeam,
+      awayTeam,
+      homeOverallPpg,
+      awayOverallPpg,
+      homeHomePpg,
+      awayAwayPpg,
+      stH,
+      stA,
+      { cleanSheetsHome: { pct: homeCsPct }, cleanSheetsAway: { pct: awayCsPct }, currentForm: { homePts: homeFormPts, awayPts: awayFormPts } },
+      homeRuninStats,
+      awayRuninStats,
+      match.droppingOdds
+    );
     const homeDrop = ppgScheduleStrength.home?.isDropRed || ppgScheduleStrength.home?.status === "DROP_RED";
     const awayDrop = ppgScheduleStrength.away?.isDropRed || ppgScheduleStrength.away?.status === "DROP_RED";
     const homeGain = ppgScheduleStrength.home?.isGainBlue || ppgScheduleStrength.home?.status === "GAIN_BLUE";
     const awayGain = ppgScheduleStrength.away?.isGainBlue || ppgScheduleStrength.away?.status === "GAIN_BLUE";
 
-    const isHomeStrong = (homeOverallPpg >= 1.60 || homeGain || (homeOverallPpg - awayOverallPpg >= 0.25)) && !homeDrop;
-    const isAwayStrong = (awayOverallPpg >= 1.45 || awayGain || (awayOverallPpg - homeOverallPpg >= 0.25)) && !awayDrop;
+    const isHomeStrong = ((homeOverallPpg >= 1.60 && homeHomePpg >= 1.50) || homeGain || (homeOverallPpg - awayOverallPpg >= 0.25 && homeHomePpg >= awayAwayPpg + 0.15)) && !homeDrop;
+    const isAwayStrong = ((awayOverallPpg >= 1.52 && awayAwayPpg >= 1.35) || awayGain || (awayOverallPpg - homeOverallPpg >= 0.28 && awayAwayPpg >= homeHomePpg + 0.05)) && !awayDrop;
 
     const isHeavyEnv = envMultiplier <= 0.95;
     const isStrongHomeDepleted = hAbsenceLoad >= 0.20 && isHomeStrong;
@@ -3389,6 +3488,8 @@ window.MAMON_REALTIME = (() => {
       awayRuninStats,
       homePpg: homeOverallPpg,
       awayPpg: awayOverallPpg,
+      homeVenuePpg: homeHomePpg,
+      awayVenuePpg: awayAwayPpg,
       homeDrop,
       awayDrop,
       marketCode: mktCode
@@ -4812,6 +4913,8 @@ window.MAMON_REALTIME = (() => {
         awayRuninStats: f.runInAnalysis?.awayStats,
         homePpg: f.ppg?.homeOverall,
         awayPpg: f.ppg?.awayOverall,
+        homeVenuePpg: f.ppg?.homeHomePpg,
+        awayVenuePpg: f.ppg?.awayAwayPpg,
         homeDrop: Boolean(f.ppg?.scheduleStrength?.home?.isDropRed),
         awayDrop: Boolean(f.ppg?.scheduleStrength?.away?.isDropRed),
         marketCode: "HOME"
@@ -4824,24 +4927,62 @@ window.MAMON_REALTIME = (() => {
         awayRuninStats: f.runInAnalysis?.awayStats,
         homePpg: f.ppg?.homeOverall,
         awayPpg: f.ppg?.awayOverall,
+        homeVenuePpg: f.ppg?.homeHomePpg,
+        awayVenuePpg: f.ppg?.awayAwayPpg,
         homeDrop: Boolean(f.ppg?.scheduleStrength?.home?.isDropRed),
         awayDrop: Boolean(f.ppg?.scheduleStrength?.away?.isDropRed),
         marketCode: "AWAY"
       });
 
-      // Strong candidates: MUST be confirmed by the Run-In Difficulty Table + legitimate win edge
-      if (hEntry.winProbPct >= 44 && hEntry.strongScore >= hEntry.worstScore + 4 && hEntry.runinConfirmation.confirmed) {
+      // Strong candidates: MUST be confirmed by the Run-In Difficulty Table + legitimate venue & overall win edge
+      if (
+        hEntry.winProbPct >= 48 &&
+        hEntry.strongScore >= hEntry.worstScore + 8 &&
+        hEntry.criteria.ppg.overall >= 1.50 &&
+        hEntry.criteria.ppg.venue >= 1.50 &&
+        hEntry.criteria.form.pts >= 7 &&
+        hEntry.runinConfirmation.confirmed
+      ) {
         strongHome.push(hEntry);
       }
-      if (aEntry.winProbPct >= 40 && aEntry.strongScore >= aEntry.worstScore + 4 && aEntry.runinConfirmation.confirmed) {
+      if (
+        aEntry.winProbPct >= 44 &&
+        aEntry.strongScore >= aEntry.worstScore + 8 &&
+        aEntry.criteria.ppg.overall >= 1.48 &&
+        aEntry.criteria.ppg.venue >= 1.35 &&
+        aEntry.criteria.form.pts >= 7 &&
+        aEntry.runinConfirmation.confirmed
+      ) {
         strongAway.push(aEntry);
       }
 
-      // Worst candidates: vulnerable sides confirmed by Run-In Difficulty Table regression/weakness (fade -> back opp)
-      if (hEntry.loseProbPct >= 34 && hEntry.worstScore >= hEntry.strongScore + 4 && aEntry.runinConfirmation.confirmed) {
+      // Worst candidates: strictly genuinely vulnerable sides (NEVER flag a home fortress, in-form team, or bookie favorite!)
+      if (
+        hEntry.loseProbPct >= 46 &&
+        hEntry.winProbPct <= 27 &&
+        hEntry.worstScore >= hEntry.strongScore + 14 &&
+        hEntry.criteria.ppg.overall <= 1.22 &&
+        hEntry.criteria.ppg.venue <= 1.28 &&
+        hEntry.criteria.ppg.oppOverall >= 1.50 &&
+        hEntry.criteria.ppg.oppVenue >= 1.38 &&
+        hEntry.criteria.form.pts <= 6 &&
+        hEntry.winOdd >= 2.25 &&
+        aEntry.runinConfirmation.confirmed
+      ) {
         worstHome.push(hEntry);
       }
-      if (aEntry.loseProbPct >= 38 && aEntry.worstScore >= aEntry.strongScore + 4 && hEntry.runinConfirmation.confirmed) {
+      if (
+        aEntry.loseProbPct >= 50 &&
+        aEntry.winProbPct <= 24 &&
+        aEntry.worstScore >= aEntry.strongScore + 14 &&
+        aEntry.criteria.ppg.overall <= 1.24 &&
+        aEntry.criteria.ppg.venue <= 1.15 &&
+        aEntry.criteria.ppg.oppOverall >= 1.50 &&
+        aEntry.criteria.ppg.oppVenue >= 1.55 &&
+        aEntry.criteria.form.pts <= 6 &&
+        aEntry.winOdd >= 2.40 &&
+        hEntry.runinConfirmation.confirmed
+      ) {
         worstAway.push(aEntry);
       }
     }
@@ -6111,9 +6252,12 @@ window.MAMON_REALTIME = (() => {
             matchTip = "🛡️ Caution · +0.5 AH / DNB";
             tipClass = "is-safe";
           }
-        } else if (ppg < 1.20) {
-          matchTip = "🚫 Weak PPG (Fade)";
+        } else if (ppg <= 1.15 && ov >= 1.58 && (ov - ppg) >= 0.45) {
+          matchTip = op.venue === "H" ? "🚫 Fade · Back Opp X2" : "🚫 Fade · Back Opp 1X";
           tipClass = "is-avoid";
+        } else if (ppg < 1.20) {
+          matchTip = "⏭️ Skip (Low PPG Clash)";
+          tipClass = "is-skip";
         }
         return { ...op, matchTip, tipClass };
       });
@@ -6223,15 +6367,16 @@ window.MAMON_REALTIME = (() => {
       };
     }
 
-    if (ppg < 1.20) {
+    if (ppg <= 1.15 && typeof oppV === "number" && oppV >= 1.58 && (oppV - ppg) >= 0.45) {
+      const safeFadeMkt = nextOpp?.venue === "H" ? `Back ${nextOpp.opponent} X2 Double Chance` : `Back ${nextOpp?.opponent || "Host"} 1X Double Chance`;
       return {
         ...immMeta,
         isStrongPpg: false,
         tier: "WEAK_AVOID",
-        badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
-        market: "Avoid Backing (Lay)",
-        nextFixtureTip: `${nextLabel} → Avoid backing ${row.team}`,
-        reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60). Only back >=1.60 PPG opponents.`
+        badge: `🚫 FADE · BACK OPP ${nextOpp?.venue === "H" ? "X2" : "1X"}`,
+        market: safeFadeMkt,
+        nextFixtureTip: `${nextLabel} → ${safeFadeMkt}`,
+        reason: `Weak ${ppg.toFixed(2)} PPG facing Strong PPG opponent (${oppTxt} venue PPG). Protected with Double Chance.`
       };
     }
 
@@ -6241,8 +6386,8 @@ window.MAMON_REALTIME = (() => {
       tier: "MID_SKIP",
       badge: "⏭️ SKIP WIN (<1.60 PPG)",
       market: "No Strong PPG Edge",
-      nextFixtureTip: `${nextLabel} → Skip straight win`,
-      reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold.`
+      nextFixtureTip: `${nextLabel} → Skip straight win (No Fade)`,
+      reason: `Team PPG ${ppg.toFixed(2)} is below 1.60 Strong PPG threshold, and opponent (${oppTxt} venue PPG) is not dominant enough to fade.`
     };
   }
 

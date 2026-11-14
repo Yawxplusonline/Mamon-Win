@@ -340,9 +340,12 @@ function computeRuninTip(row) {
           matchTip = "🛡️ Caution · +0.5 AH / DNB";
           tipClass = "is-safe";
         }
-      } else if (ppg < 1.20) {
-        matchTip = "🚫 Weak PPG (Fade)";
+      } else if (ppg <= 1.15 && typeof oppV === "number" && oppV >= 1.58 && (oppV - ppg) >= 0.45) {
+        matchTip = op.venue === "H" ? "🚫 Fade · Back Opp X2" : "🚫 Fade · Back Opp 1X";
         tipClass = "is-avoid";
+      } else if (ppg < 1.25) {
+        matchTip = "⏭️ Skip (Low PPG Clash)";
+        tipClass = "is-neutral";
       }
       return { ...op, matchTip, tipClass };
     });
@@ -428,14 +431,27 @@ function computeRuninTip(row) {
   }
 
   if (ppg < 1.20) {
+    const oppIsStrong = typeof oppV === "number" && oppV >= 1.58 && (oppV - ppg) >= 0.45;
+    if (oppIsStrong) {
+      const oppDc = nextOpp?.venue === "H" ? "Away or Draw (X2)" : "Home or Draw (1X)";
+      return {
+        ...immMeta,
+        isStrongPpg: false,
+        tier: "WEAK_AVOID",
+        badge: `🚫 FADE (${ppg.toFixed(2)} vs ${nextOppPpgTxt} PPG)`,
+        market: `Opp ${oppDc}`,
+        nextFixtureTip: `${nextLabel} → Back Opp ${oppDc}`,
+        reason: `Weak ${ppg.toFixed(2)} PPG facing strong ${nextOppPpgTxt} venue PPG opponent${next5Tag}.`
+      };
+    }
     return {
       ...immMeta,
       isStrongPpg: false,
-      tier: "WEAK_AVOID",
-      badge: `🚫 FADE / WEAK PPG (${ppg.toFixed(2)})`,
-      market: "Avoid Backing (Lay)",
-      nextFixtureTip: `${nextLabel} → Avoid backing ${row.team}`,
-      reason: `Weak ${ppg.toFixed(2)} PPG breaks Strong PPG rule (>=1.60)${next5Tag}.`
+      tier: "MID_SKIP",
+      badge: `⏭️ SKIP (LOW PPG CLASH ${ppg.toFixed(2)})`,
+      market: "No Fade Edge (Opponent Not Elite)",
+      nextFixtureTip: `${nextLabel} → Skip 1X2 (Low PPG clash)`,
+      reason: `Low ${ppg.toFixed(2)} PPG, but opponent (${nextOppPpgTxt} venue PPG) is not dominant enough to safely fade${next5Tag}.`
     };
   }
 

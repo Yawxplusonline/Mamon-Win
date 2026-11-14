@@ -4442,7 +4442,7 @@
     const scoreLbl = isStrong ? `Power ${scoreVal}/100` : `Risk ${scoreVal}/100`;
     const angleTxt = isStrong
       ? `${entry.team.name} ${entry.isHome ? "Home Win (1)" : "Away Win / X2"} @ ${entry.winOdd.toFixed(2)} (${entry.winProbPct}%)`
-      : `Vulnerable ${entry.isHome ? "Home" : "Away"} Side · Opp ${entry.opponent.name} ${entry.loseProbPct}% win prob @ ${entry.oppOdd.toFixed(2)}`;
+      : `Vulnerable ${entry.isHome ? "Home" : "Away"} Side · Safe Fade: Back ${entry.opponent.name} ${entry.isHome ? "X2" : "1X"} Double Chance (${Math.min(96, entry.loseProbPct + 24)}% DC / ${entry.loseProbPct}% Win @ ${entry.oppOdd.toFixed(2)})`;
 
     const formBadges = `<div class="form-dots">${(c.form.formArr || []).map((x) => `<span class="form-dot ${x}">${x}</span>`).join("")}</div>`;
 

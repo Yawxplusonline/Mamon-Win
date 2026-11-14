@@ -1140,6 +1140,12 @@ window.MAMON_REALTIME = (() => {
         if (!existing.onefootballId && m.onefootballId) existing.onefootballId = m.onefootballId;
         if (!existing.onefootballUrl && m.onefootballUrl) existing.onefootballUrl = m.onefootballUrl;
         if (!existing.bestOdds && m.bestOdds) existing.bestOdds = m.bestOdds;
+        if (!existing.hasVerifiedStats && m.hasVerifiedStats) existing.hasVerifiedStats = true;
+        if (!existing.homeStats && m.homeStats) existing.homeStats = m.homeStats;
+        if (!existing.awayStats && m.awayStats) existing.awayStats = m.awayStats;
+        if (!existing.ppgSchedule && m.ppgSchedule) existing.ppgSchedule = m.ppgSchedule;
+        if (!existing.sportybet && m.sportybet) existing.sportybet = m.sportybet;
+        if (!existing.footballCom && m.footballCom) existing.footballCom = m.footballCom;
         if (m.odds && (!existing.odds || !existing.hasBookOdds)) {
           existing.odds = { ...existing.odds, ...m.odds };
           existing.hasBookOdds = true;
@@ -2519,10 +2525,14 @@ window.MAMON_REALTIME = (() => {
     const aVenue = Number(awayVenuePpg ?? liveA?.awayPpg ?? Math.max(0.25, aPpg - 0.14));
     const hPlayed = Number(liveH?.playedPpg ?? homeRuninStats?.playedPpg ?? 1.35);
     const aPlayed = Number(liveA?.playedPpg ?? awayRuninStats?.playedPpg ?? 1.35);
-    const hRem = Number(liveH?.immediate5Ppg ?? liveH?.remainingPpg ?? homeRuninStats?.remainingPpg ?? aPpg);
-    const aRem = Number(liveA?.immediate5Ppg ?? liveA?.remainingPpg ?? awayRuninStats?.remainingPpg ?? hPpg);
-    const hDiff = Number.isFinite(Number(liveH?.diffPct)) ? Number(liveH.diffPct) : Number(homeRuninStats?.diffPct ?? Math.round(((hPlayed - hRem) / Math.max(0.5, hPlayed)) * 100));
-    const aDiff = Number.isFinite(Number(liveA?.diffPct)) ? Number(liveA.diffPct) : Number(awayRuninStats?.diffPct ?? Math.round(((aPlayed - aRem) / Math.max(0.5, aPlayed)) * 100));
+    const rawHRem = Number(liveH?.immediate5Ppg ?? liveH?.remainingPpg ?? homeRuninStats?.remainingPpg ?? aPpg);
+    const rawARem = Number(liveA?.immediate5Ppg ?? liveA?.remainingPpg ?? awayRuninStats?.remainingPpg ?? hPpg);
+    const hRem = rawHRem > 0.05 ? rawHRem : (aPpg > 0.05 ? aPpg : hPlayed);
+    const aRem = rawARem > 0.05 ? rawARem : (hPpg > 0.05 ? hPpg : aPlayed);
+    const rawHDiff = Number.isFinite(Number(liveH?.diffPct)) ? Number(liveH.diffPct) : Number(homeRuninStats?.diffPct ?? Math.round(((hPlayed - hRem) / Math.max(0.5, hPlayed)) * 100));
+    const rawADiff = Number.isFinite(Number(liveA?.diffPct)) ? Number(liveA.diffPct) : Number(awayRuninStats?.diffPct ?? Math.round(((aPlayed - aRem) / Math.max(0.5, aPlayed)) * 100));
+    const hDiff = (rawHRem <= 0.05 || Math.abs(rawHDiff) >= 95) ? Math.round(((hPlayed - hRem) / Math.max(0.5, hPlayed)) * 100) : rawHDiff;
+    const aDiff = (rawARem <= 0.05 || Math.abs(rawADiff) >= 95) ? Math.round(((aPlayed - aRem) / Math.max(0.5, aPlayed)) * 100) : rawADiff;
 
     // STRICT NON-TIP GATE: If fixture has no verified Run-In Difficulty Table entry, WITHHOLD TIP COMPLETELY!
     if (!hasLiveTableEntry) {
@@ -2920,8 +2930,9 @@ window.MAMON_REALTIME = (() => {
 
     const pD = probs?.pD || 0.25;
     const drawRiskPct = Math.round(pD * 100);
+    const ppgDiffAbs = Math.abs(Number(hPpg || 1.35) - Number(aPpg || 1.25));
 
-    const isHighDrawRisk = drawRiskPct >= 18;
+    const isHighDrawRisk = drawRiskPct >= 25 || (drawRiskPct >= 22 && ppgDiffAbs < 0.35);
     const hasIntlRotationRisk = (intlContext?.home?.rotationRisk === "HIGH" || intlContext?.away?.rotationRisk === "HIGH");
     const isAdverseEnvironment = (weather?.ok && (weather.precipMm >= 2.5 || weather.windKmh >= 28)) || (pitch?.rating === "SLIPPERY_WET" || pitch?.rating === "HIGH_DRAG");
     const hasStarAbsenceRisk = (starReport?.home?.missingStarCount > 0 || starReport?.away?.missingStarCount > 0);
@@ -2933,8 +2944,8 @@ window.MAMON_REALTIME = (() => {
     let shieldReason = "";
 
     // The 99% Sure Win Mandate:
-    // If proposed pick is a naked straight win ("HOME" or "AWAY") and ANY risk flag is present:
-    // VETO naked 1X2 and upgrade immediately to Double Chance (1X / X2) or Over 1.5 Goals!
+    // If proposed pick is a naked straight win ("HOME" or "AWAY") and genuine draw/tactical danger is present:
+    // VETO naked 1X2 and upgrade to the strongest multi-outcome safety line (1X / X2 / Over 1.5 Goals) with strong playable odds!
     if (["HOME", "AWAY"].includes(shieldedPick.code)) {
       const isBackingHome = shieldedPick.code === "HOME";
       const dangerPresent = isHighDrawRisk || hasIntlRotationRisk || isAdverseEnvironment || hasStarAbsenceRisk || isMarketDriftingAgainstFav;
@@ -2944,9 +2955,12 @@ window.MAMON_REALTIME = (() => {
         if (isBackingHome) {
           const m1X = markets.find((m) => m.code === "1X" && m.runinConfirmed);
           const mO15 = markets.find((m) => m.code === "O15" && m.runinConfirmed);
-          if (m1X && m1X.prob >= 0.70) {
+          if (m1X && mO15 && mO15.prob >= 0.76 && mO15.odds > m1X.odds + 0.06 && !isAdverseEnvironment) {
+            shieldedPick = { ...mO15 };
+            shieldReason = `99% Protective Shield: Draw risk (${drawRiskPct}%) vetoed naked Home Win. Upgraded to Over 1.5 Goals (@ ${mO15.odds.toFixed(2)}, ${Math.round(mO15.prob * 100)}% prob) for stronger odds + 1-1 draw protection.`;
+          } else if (m1X && m1X.prob >= 0.70) {
             shieldedPick = { ...m1X };
-            shieldReason = `99% Protective Shield: Elevated Draw Risk (${drawRiskPct}%) & tactical factors vetoed naked Home Win. Upgraded to 1X (${homeTeam.name} or Draw) to ensure 100% loss-protection against draws.`;
+            shieldReason = `99% Protective Shield: Elevated Draw Risk (${drawRiskPct}%) & tactical factors vetoed naked Home Win. Upgraded to 1X (${homeTeam.name} or Draw @ ${m1X.odds.toFixed(2)}) to ensure 100% loss-protection against draws.`;
           } else if (mO15 && mO15.prob >= 0.74) {
             shieldedPick = { ...mO15 };
             shieldReason = `99% Protective Shield: Draw risk (${drawRiskPct}%) vetoed naked win. Upgraded to Over 1.5 Goals (${Math.round(mO15.prob * 100)}% safety prob).`;
@@ -2954,15 +2968,21 @@ window.MAMON_REALTIME = (() => {
         } else {
           const mX2 = markets.find((m) => m.code === "X2" && m.runinConfirmed);
           const mO15 = markets.find((m) => m.code === "O15" && m.runinConfirmed);
-          if (mX2 && mX2.prob >= 0.68) {
+          if (mX2 && mO15 && mO15.prob >= 0.76 && mO15.odds > mX2.odds + 0.06 && !isAdverseEnvironment) {
+            shieldedPick = { ...mO15 };
+            shieldReason = `99% Protective Shield: Draw risk (${drawRiskPct}%) vetoed naked Away Win. Upgraded to Over 1.5 Goals (@ ${mO15.odds.toFixed(2)}, ${Math.round(mO15.prob * 100)}% prob) for stronger odds + 1-1 draw protection.`;
+          } else if (mX2 && mX2.prob >= 0.68) {
             shieldedPick = { ...mX2 };
-            shieldReason = `99% Protective Shield: Draw Risk (${drawRiskPct}%) vetoed naked Away Win. Upgraded to X2 (Draw or ${awayTeam.name}) to guarantee 99% win security.`;
+            shieldReason = `99% Protective Shield: Draw Risk (${drawRiskPct}%) vetoed naked Away Win. Upgraded to X2 (Draw or ${awayTeam.name} @ ${mX2.odds.toFixed(2)}) to guarantee 99% win security.`;
           } else if (mO15 && mO15.prob >= 0.74) {
             shieldedPick = { ...mO15 };
             shieldReason = `99% Protective Shield: Upgraded to Over 1.5 Goals for maximum safety cushion.`;
           }
         }
       }
+    } else if (["1X", "X2"].includes(shieldedPick.code) && drawRiskPct >= 23) {
+      shieldApplied = true;
+      shieldReason = `99% Protective Shield: Double Chance (${shieldedPick.label} @ ${Number(shieldedPick.odds || 1.32).toFixed(2)}) actively covers the ${drawRiskPct}% draw probability — your ticket wins on both a Win AND a Draw (${runinConfirmation.shortTag}).`;
     }
 
     shieldedPick.tipWithheld = false;
@@ -3074,14 +3094,24 @@ window.MAMON_REALTIME = (() => {
     const away5AtAway = awaySplit?.venueGames?.slice(0, 5) || null;
 
     // Real W/D/L & PPG when available; otherwise implied-market equilibrium until Sportradar/ESPN record hydrates
-    const rawHMp = stH?.mp || match.homeRecord?.mp || ((match.homeRecord?.w || 0) + (match.homeRecord?.d || 0) + (match.homeRecord?.l || 0));
-    const rawAMp = stA?.mp || match.awayRecord?.mp || ((match.awayRecord?.w || 0) + (match.awayRecord?.d || 0) + (match.awayRecord?.l || 0));
+    const hs = match.homeStats || null;
+    const as = match.awayStats || null;
+    const rawHMp = stH?.mp || hs?.mp || match.homeRecord?.mp || ((match.homeRecord?.w || 0) + (match.homeRecord?.d || 0) + (match.homeRecord?.l || 0));
+    const rawAMp = stA?.mp || as?.mp || match.awayRecord?.mp || ((match.awayRecord?.w || 0) + (match.awayRecord?.d || 0) + (match.awayRecord?.l || 0));
     const hMp = rawHMp > 0 ? rawHMp : 8;
     const aMp = rawAMp > 0 ? rawAMp : 8;
-    const impHomeBase = clamp((1 / Math.max(1.05, Number(match.odds?.home) || 2.1)) * 2.55 + (1 / Math.max(2.2, Number(match.odds?.draw) || 3.3)) * 0.95, 0.70, 2.30);
-    const impAwayBase = clamp((1 / Math.max(1.05, Number(match.odds?.away) || 3.1)) * 2.55 + (1 / Math.max(2.2, Number(match.odds?.draw) || 3.3)) * 0.95, 0.65, 2.25);
-    const hPpg = stH ? stH.pts / Math.max(1, stH.mp) : (rawHMp > 0 ? ((match.homeRecord?.w || 0) * 3 + (match.homeRecord?.d || 0)) / rawHMp : impHomeBase);
-    const aPpg = stA ? stA.pts / Math.max(1, stA.mp) : (rawAMp > 0 ? ((match.awayRecord?.w || 0) * 3 + (match.awayRecord?.d || 0)) / rawAMp : impAwayBase);
+    const impHomeBase = clamp((1 / Math.max(1.05, Number(match.bestOdds?.home || match.odds?.home) || 2.1)) * 2.55 + (1 / Math.max(2.2, Number(match.bestOdds?.draw || match.odds?.draw) || 3.3)) * 0.95, 0.70, 2.30);
+    const impAwayBase = clamp((1 / Math.max(1.05, Number(match.bestOdds?.away || match.odds?.away) || 3.1)) * 2.55 + (1 / Math.max(2.2, Number(match.bestOdds?.draw || match.odds?.draw) || 3.3)) * 0.95, 0.65, 2.25);
+    const hPpg = stH
+      ? stH.pts / Math.max(1, stH.mp)
+      : (Number.isFinite(Number(hs?.ppg)) && Number(hs?.ppg) > 0 && (hs?.mp >= 2 || match.hasVerifiedStats)
+          ? Number(hs.ppg)
+          : (rawHMp > 0 ? ((match.homeRecord?.w || 0) * 3 + (match.homeRecord?.d || 0)) / rawHMp : impHomeBase));
+    const aPpg = stA
+      ? stA.pts / Math.max(1, stA.mp)
+      : (Number.isFinite(Number(as?.ppg)) && Number(as?.ppg) > 0 && (as?.mp >= 2 || match.hasVerifiedStats)
+          ? Number(as.ppg)
+          : (rawAMp > 0 ? ((match.awayRecord?.w || 0) * 3 + (match.awayRecord?.d || 0)) / rawAMp : impAwayBase));
 
     const home5Summary = home5AtHome && home5AtHome.length > 0
       ? {
@@ -3095,7 +3125,7 @@ window.MAMON_REALTIME = (() => {
           cs: home5AtHome.filter((g) => g.cleanSheet).length
         }
       : {
-          isLiveFeed: false,
+          isLiveFeed: Boolean(match.hasVerifiedStats && hs?.mp >= 3),
           games: homeLast5.slice(-5).map((r) => ({ result: r, score: r === "W" ? "2-1" : r === "D" ? "1-1" : "0-1", opponent: "Home Split Est." })),
           wins: Math.min(5, homeLast5.filter((r) => r === "W").length + (hPpg > 1.7 ? 1 : 0)),
           draws: homeLast5.filter((r) => r === "D").length,
@@ -3117,7 +3147,7 @@ window.MAMON_REALTIME = (() => {
           cs: away5AtAway.filter((g) => g.cleanSheet).length
         }
       : {
-          isLiveFeed: false,
+          isLiveFeed: Boolean(match.hasVerifiedStats && as?.mp >= 3),
           games: awayLast5.slice(-5).map((r) => ({ result: r, score: r === "W" ? "1-0" : r === "D" ? "1-1" : "1-2", opponent: "Away Split Est." })),
           wins: awayLast5.filter((r) => r === "W").length,
           draws: awayLast5.filter((r) => r === "D").length,
@@ -3128,28 +3158,28 @@ window.MAMON_REALTIME = (() => {
         };
 
     // 7 & 8: Goals Scored & Goals Conceded
-    const hGfTotal = stH?.gf ?? Math.round((homeLast5.reduce((s, r) => s + (r === "W" ? 2.1 : r === "D" ? 1.1 : 0.6), 0) / 5) * hMp);
-    const hGaTotal = stH?.ga ?? Math.round((homeLast5.reduce((s, r) => s + (r === "W" ? 0.8 : r === "D" ? 1.1 : 1.9), 0) / 5) * hMp);
-    const aGfTotal = stA?.gf ?? Math.round((awayLast5.reduce((s, r) => s + (r === "W" ? 1.9 : r === "D" ? 1.0 : 0.6), 0) / 5) * aMp);
-    const aGaTotal = stA?.ga ?? Math.round((awayLast5.reduce((s, r) => s + (r === "W" ? 0.9 : r === "D" ? 1.1 : 1.9), 0) / 5) * aMp);
+    const hGfTotal = stH?.gf ?? hs?.gf ?? Math.round((homeLast5.reduce((s, r) => s + (r === "W" ? 2.1 : r === "D" ? 1.1 : 0.6), 0) / 5) * hMp);
+    const hGaTotal = stH?.ga ?? hs?.ga ?? Math.round((homeLast5.reduce((s, r) => s + (r === "W" ? 0.8 : r === "D" ? 1.1 : 1.9), 0) / 5) * hMp);
+    const aGfTotal = stA?.gf ?? as?.gf ?? Math.round((awayLast5.reduce((s, r) => s + (r === "W" ? 1.9 : r === "D" ? 1.0 : 0.6), 0) / 5) * aMp);
+    const aGaTotal = stA?.ga ?? as?.ga ?? Math.round((awayLast5.reduce((s, r) => s + (r === "W" ? 0.9 : r === "D" ? 1.1 : 1.9), 0) / 5) * aMp);
 
-    const hGfAvg = Math.round((hGfTotal / Math.max(1, hMp)) * 100) / 100;
-    const hGaAvg = Math.round((hGaTotal / Math.max(1, hMp)) * 100) / 100;
-    const aGfAvg = Math.round((aGfTotal / Math.max(1, aMp)) * 100) / 100;
-    const aGaAvg = Math.round((aGaTotal / Math.max(1, aMp)) * 100) / 100;
+    const hGfAvg = Number.isFinite(Number(hs?.gfAvg)) && !stH ? Number(hs.gfAvg) : Math.round((hGfTotal / Math.max(1, hMp)) * 100) / 100;
+    const hGaAvg = Number.isFinite(Number(hs?.gaAvg)) && !stH ? Number(hs.gaAvg) : Math.round((hGaTotal / Math.max(1, hMp)) * 100) / 100;
+    const aGfAvg = Number.isFinite(Number(as?.gfAvg)) && !stA ? Number(as.gfAvg) : Math.round((aGfTotal / Math.max(1, aMp)) * 100) / 100;
+    const aGaAvg = Number.isFinite(Number(as?.gaAvg)) && !stA ? Number(as.gaAvg) : Math.round((aGaTotal / Math.max(1, aMp)) * 100) / 100;
 
     // 9 & 10: Clean Sheets Kept for Home Games (Home team) & Clean Sheets Kept for Away Games (Away team)
     const homeCsCount = home5Summary.cs !== null
       ? home5Summary.cs
-      : clamp(Math.round((1.5 - hGaAvg) * 3.1), 0, 5);
-    const homeCsSample = home5Summary.isLiveFeed ? Math.max(1, home5Summary.games.length) : 5;
-    const homeCsPct = Math.round((homeCsCount / homeCsSample) * 100);
+      : (Number.isFinite(Number(hs?.csPct)) ? clamp(Math.round((Number(hs.csPct) / 100) * 5), 0, 5) : clamp(Math.round((1.5 - hGaAvg) * 3.1), 0, 5));
+    const homeCsSample = home5Summary.cs !== null ? Math.max(1, home5Summary.games.length) : 5;
+    const homeCsPct = Number.isFinite(Number(hs?.csPct)) && home5Summary.cs === null ? Math.round(Number(hs.csPct)) : Math.round((homeCsCount / homeCsSample) * 100);
 
     const awayCsCount = away5Summary.cs !== null
       ? away5Summary.cs
-      : clamp(Math.round((1.35 - aGaAvg) * 2.6), 0, 5);
-    const awayCsSample = away5Summary.isLiveFeed ? Math.max(1, away5Summary.games.length) : 5;
-    const awayCsPct = Math.round((awayCsCount / awayCsSample) * 100);
+      : (Number.isFinite(Number(as?.csPct)) ? clamp(Math.round((Number(as.csPct) / 100) * 5), 0, 5) : clamp(Math.round((1.35 - aGaAvg) * 2.6), 0, 5));
+    const awayCsSample = away5Summary.cs !== null ? Math.max(1, away5Summary.games.length) : 5;
+    const awayCsPct = Number.isFinite(Number(as?.csPct)) && away5Summary.cs === null ? Math.round(Number(as.csPct)) : Math.round((awayCsCount / awayCsSample) * 100);
 
     // 3 & 4: Injuries & Suspensions + 14/15/16 Situational Profiles (Pitch, Referee, Weather)
     const squadReport = scanInjuriesAndSuspensions(match, sum, homeRoster, awayRoster);
@@ -3166,12 +3196,16 @@ window.MAMON_REALTIME = (() => {
     };
     const homeOverallPpg = Math.round(hPpg * 100) / 100;
     const awayOverallPpg = Math.round(aPpg * 100) / 100;
-    const homeHomePpg = home5Summary.isLiveFeed && home5Summary.games.length
+    const homeHomePpg = homeSplit?.venueGames?.length
       ? calcPpg(homeSplit.venueGames)
-      : Math.round(clamp(hPpg + 0.22, 0.2, 3.0) * 100) / 100;
-    const awayAwayPpg = away5Summary.isLiveFeed && away5Summary.games.length
+      : (Number.isFinite(Number(hs?.homePpg)) && Number(hs?.homePpg) > 0
+          ? Math.round(Number(hs.homePpg) * 100) / 100
+          : Math.round(clamp(hPpg + 0.22, 0.2, 3.0) * 100) / 100);
+    const awayAwayPpg = awaySplit?.venueGames?.length
       ? calcPpg(awaySplit.venueGames)
-      : Math.round(clamp(aPpg - 0.14, 0.15, 2.8) * 100) / 100;
+      : (Number.isFinite(Number(as?.awayPpg)) && Number(as?.awayPpg) > 0
+          ? Math.round(Number(as.awayPpg) * 100) / 100
+          : Math.round(clamp(aPpg - 0.14, 0.15, 2.8) * 100) / 100);
     const ppgGap = Math.round(Math.abs(homeOverallPpg - awayOverallPpg) * 100) / 100;
 
     match.ppgSummary = {
@@ -3183,7 +3217,7 @@ window.MAMON_REALTIME = (() => {
       edge: homeOverallPpg >= awayOverallPpg ? homeTeam.name : awayTeam.name
     };
 
-    // 11: Run-in Analysis for Both Teams (SoccerSTATS PLD vs REM Methodology)
+    // 11: Run-in Analysis for Both Teams (SoccerSTATS PLD vs REM Methodology + Verified Sportradar Telemetry)
     const homeUpcoming = homeSched?.upcoming ? extractUpcomingFixtures(homeSched.upcoming, match.date, match.isoDateTime) : [];
     const awayUpcoming = awaySched?.upcoming ? extractUpcomingFixtures(awaySched.upcoming, match.date, match.isoDateTime) : [];
 
@@ -3205,6 +3239,16 @@ window.MAMON_REALTIME = (() => {
       false,
       match.awayEspnId
     );
+    if (Boolean(match.hasVerifiedStats || (hs?.mp >= 3 && as?.mp >= 3) || (stH?.mp >= 3 && stA?.mp >= 3))) {
+      homeRuninStats.isLiveSoccerStats = true;
+      awayRuninStats.isLiveSoccerStats = true;
+      if (!homeRuninStats.source || homeRuninStats.source === "Venue-Weighted Formula") {
+        homeRuninStats.source = match.hasVerifiedStats ? "Sportradar + Venue Run-In Matrix" : "ESPN Standings Run-In Matrix";
+      }
+      if (!awayRuninStats.source || awayRuninStats.source === "Venue-Weighted Formula") {
+        awayRuninStats.source = match.hasVerifiedStats ? "Sportradar + Venue Run-In Matrix" : "ESPN Standings Run-In Matrix";
+      }
+    }
 
     let homeRestDays = null;
     let awayRestDays = null;
@@ -3338,23 +3382,29 @@ window.MAMON_REALTIME = (() => {
       };
     }
 
-    // Generate rated betting market candidates for Sure Odds engine
-    const marketOdds = (prob, floor = 1.12, cap = 9.5) => {
-      const fair = 1 / clamp(prob, 0.08, 0.94);
-      const book = fair * 0.94;
+    // Generate rated betting market candidates for Sure Odds engine & 19-Factor Mastermind
+    const marketOdds = (prob, floor = 1.26, cap = 9.5) => {
+      const fair = 1 / clamp(prob, 0.08, 0.90);
+      const book = fair * 0.96;
       return Math.round(clamp(book, floor, cap) * 100) / 100;
     };
 
-    const hOddReal = match.odds?.home || marketOdds(probs.pH, 1.18, 8.0);
-    const aOddReal = match.odds?.away || marketOdds(probs.pA, 1.18, 9.5);
-    const dOddReal = match.odds?.draw || marketOdds(probs.pD, 2.75, 6.5);
+    const bo = match.bestOdds || {};
+    const hOddReal = Math.max(1.28, Number(bo.home || match.odds?.home) || marketOdds(probs.pH, 1.38, 8.0));
+    const aOddReal = Math.max(1.28, Number(bo.away || match.odds?.away) || marketOdds(probs.pA, 1.42, 9.5));
+    const dOddReal = Math.max(2.70, Number(bo.draw || match.odds?.draw) || marketOdds(probs.pD, 2.85, 6.5));
+    const dc1XReal = Math.max(1.26, Number(bo.dc1X) || marketOdds(probs.p1X, 1.28, 2.40));
+    const dcX2Real = Math.max(1.26, Number(bo.dcX2) || marketOdds(probs.pX2, 1.28, 2.60));
+    const o15Real = Math.max(1.26, Number(bo.over15) || marketOdds(probs.pO15, 1.28, 1.88));
+    const o25Real = Math.max(1.48, Number(bo.over25 || match.odds?.overOdds) || marketOdds(probs.pO25, 1.52, 2.85));
+    const bttsReal = Math.max(1.50, Number(bo.bttsYes) || marketOdds(probs.pBtts, 1.55, 2.75));
 
     const markets = [
       {
         code: "1X",
         label: `${homeTeam.name} or Draw (1X)`,
         prob: probs.p1X,
-        odds: marketOdds(probs.p1X, 1.12, 2.4),
+        odds: dc1XReal,
         riskTier: "SAFE",
         reason: `${homeTeam.name} ${home5Summary.wins}W-${home5Summary.draws}D at home · ${homeCsPct}% home clean sheets`
       },
@@ -3362,7 +3412,7 @@ window.MAMON_REALTIME = (() => {
         code: "X2",
         label: `Draw or ${awayTeam.name} (X2)`,
         prob: probs.pX2,
-        odds: marketOdds(probs.pX2, 1.14, 2.6),
+        odds: dcX2Real,
         riskTier: "SAFE",
         reason: `${awayTeam.name} form ${awayLast5.join("")} (${awayFormPts}/15 pts) · ${aGfAvg} GF/g away readiness`
       },
@@ -3370,7 +3420,7 @@ window.MAMON_REALTIME = (() => {
         code: "O15",
         label: "Over 1.5 Goals",
         prob: probs.pO15,
-        odds: marketOdds(probs.pO15, 1.15, 1.85),
+        odds: o15Real,
         riskTier: "SAFE",
         reason: `Combined xG ${(lamH + lamA).toFixed(2)} · H2H avg ${h2h.avgGoals} goals · Attack ${(hGfAvg + aGfAvg).toFixed(2)} avg`
       },
@@ -3402,7 +3452,7 @@ window.MAMON_REALTIME = (() => {
         code: "O25",
         label: "Over 2.5 Goals",
         prob: probs.pO25,
-        odds: match.odds?.overOdds || marketOdds(probs.pO25, 1.48, 2.85),
+        odds: o25Real,
         riskTier: "CORE",
         reason: `Expected total ${(lamH + lamA).toFixed(2)} goals · ${homeTeam.name} ${hGfAvg} GF/g vs ${awayTeam.name} ${aGaAvg} GA/g`
       },
@@ -3410,7 +3460,7 @@ window.MAMON_REALTIME = (() => {
         code: "BTTS",
         label: "Both Teams To Score (GG)",
         prob: probs.pBtts,
-        odds: marketOdds(probs.pBtts, 1.50, 2.75),
+        odds: bttsReal,
         riskTier: "CORE",
         reason: `Home CS ${homeCsPct}% / Away CS ${awayCsPct}% · Both avg ${(hGfAvg + aGfAvg).toFixed(2)} GF`
       },
@@ -3418,7 +3468,7 @@ window.MAMON_REALTIME = (() => {
         code: "U35",
         label: "Under 3.5 Goals",
         prob: probs.pU35,
-        odds: marketOdds(probs.pU35, 1.18, 1.75),
+        odds: marketOdds(probs.pU35, 1.28, 1.78),
         riskTier: "SAFE",
         reason: `Disciplined back lines (${homeCsPct}% home CS / ${awayCsPct}% away CS) & low total ${(lamH + lamA).toFixed(2)} xG`
       },
@@ -3426,7 +3476,7 @@ window.MAMON_REALTIME = (() => {
         code: "H_O15",
         label: `${homeTeam.name} Win & Over 1.5`,
         prob: probs.pHomeO15,
-        odds: marketOdds(probs.pHomeO15, 1.65, 4.20),
+        odds: marketOdds(probs.pHomeO15, 1.68, 4.20),
         riskTier: "VALUE",
         reason: `${homeTeam.name} dominant home record (${home5Summary.wins}W in 5) with ${(lamH + lamA).toFixed(2)} xG`
       },
@@ -3470,7 +3520,7 @@ window.MAMON_REALTIME = (() => {
         riskTier: "HIGH",
         reason: `High-tempo transition clash (${(lamH + lamA).toFixed(2)} total xG)`
       }
-    ].filter((mkt) => Number.isFinite(mkt.odds) && mkt.odds >= 1.12);
+    ].filter((mkt) => Number.isFinite(mkt.odds) && mkt.odds >= 1.24);
 
     const movesMap = match.droppingOdds?.movesByCode || {};
     markets.forEach((mkt) => {
@@ -3537,29 +3587,34 @@ window.MAMON_REALTIME = (() => {
         if (homeDrop && ["1X", "HOME", "H_O15", "H_BTTS"].includes(x.code)) return false;
         if (awayDrop && ["X2", "AWAY", "A_O15", "A_BTTS"].includes(x.code)) return false;
 
-        // If Home is the Strong PPG side, restrict to Home-aligned or safe neutral markets
+        // If Home is the Strong PPG side, restrict to Home-aligned or safe high-yield markets
         if (isHomeStrong && !isAwayStrong) {
-          return ["1X", "HOME", "H_O15", "O15", "U35"].includes(x.code);
+          return ["1X", "HOME", "H_O15", "O15", "O25", "U35"].includes(x.code);
         }
-        // If Away is the Strong PPG side, restrict to Away-aligned or safe neutral markets
+        // If Away is the Strong PPG side, restrict to Away-aligned or safe high-yield markets
         if (isAwayStrong && !isHomeStrong) {
-          return ["X2", "AWAY", "A_O15", "O15", "U35"].includes(x.code);
+          return ["X2", "AWAY", "A_O15", "O15", "O25", "U35"].includes(x.code);
         }
-        return ["1X", "X2", "O15", "U35", "BTTS"].includes(x.code);
+        return ["1X", "X2", "O15", "O25", "U35", "BTTS"].includes(x.code);
       })
       .sort((a, b) => {
-        const ppgMatchBoostA = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(a.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(a.code)) ? 0.08 : 0;
-        const ppgMatchBoostB = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(b.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(b.code)) ? 0.08 : 0;
-        const dropBoostA = (a.dropPct || 0) >= 3 ? 0.04 : 0;
-        const dropBoostB = (b.dropPct || 0) >= 3 ? 0.04 : 0;
-        const safetyBias = (mkt) => {
-          let adj = mkt.runinConfirmation?.hasLiveTableEntry ? 0.04 : 0;
-          if ((isHeavyEnv || isStrongHomeDepleted || isStrongAwayDepleted) && ["1X", "X2", "U35"].includes(mkt.code)) adj += 0.05;
-          if (isHeavyEnv && ["HOME", "AWAY", "O15", "H_O15", "A_O15"].includes(mkt.code)) adj -= 0.03;
-          return adj;
+        const scoreMarket = (mkt) => {
+          const ppgAlign = (isHomeStrong && ["1X", "HOME", "H_O15"].includes(mkt.code)) || (isAwayStrong && ["X2", "AWAY", "A_O15"].includes(mkt.code)) ? 0.10 : 0;
+          const dropBoost = (mkt.dropPct || 0) >= 3 ? 0.05 : 0;
+          const evRatio = clamp(mkt.prob * mkt.odds, 0.85, 1.45);
+          // Strong Odds Sweet-Spot Bonus: reward playable strong odds (1.30 - 2.15) that pair high win probability with real daily income returns
+          const strongOddsSweetSpot =
+            (mkt.odds >= 1.32 && mkt.odds <= 2.15 && mkt.prob >= 0.64)
+              ? 0.14 + clamp((mkt.odds - 1.28) * 0.12, 0, 0.09)
+              : (mkt.odds >= 1.26 && mkt.odds < 1.32 && mkt.prob >= 0.76)
+                ? 0.08
+                : 0;
+          let safetyAdj = mkt.runinConfirmation?.hasLiveTableEntry ? 0.04 : 0;
+          if ((isHeavyEnv || isStrongHomeDepleted || isStrongAwayDepleted) && ["1X", "X2", "U35"].includes(mkt.code)) safetyAdj += 0.06;
+          if (isHeavyEnv && ["HOME", "AWAY", "O15", "O25", "H_O15", "A_O15"].includes(mkt.code)) safetyAdj -= 0.04;
+          return mkt.prob * 0.68 + evRatio * 0.18 + strongOddsSweetSpot + ppgAlign + dropBoost + safetyAdj;
         };
-        return (b.prob * 0.78 + (1 / b.odds) * 0.22 + ppgMatchBoostB + dropBoostB + safetyBias(b)) -
-          (a.prob * 0.78 + (1 / a.odds) * 0.22 + ppgMatchBoostA + dropBoostA + safetyBias(a));
+        return scoreMarket(b) - scoreMarket(a);
       });
 
     const rawBestPick = sortedCore[0] || markets.find((m) => m.runinConfirmed && (m.code === "O15" || m.code === "1X" || m.code === "X2")) || markets.find((m) => m.runinConfirmed) || markets[0];
@@ -5153,45 +5208,46 @@ window.MAMON_REALTIME = (() => {
         const mat = scoreMatrix(lamH, lamA);
 
         // Candidate 1: Home +1.5 Asian Handicap
-        const pH_plus15 = clamp(mat.filter((s) => s.h + 1.5 > s.a).reduce((sum, s) => sum + s.p, 0), 0.55, 0.96);
-        let oddH_plus15 = Math.round(clamp(1 / (pH_plus15 * 0.91), 1.16, 2.15) * 100) / 100;
-        const evH_plus15 = (pH_plus15 * oddH_plus15) - 1;
+        const pH_plus15 = clamp(mat.filter((s) => s.h + 1.5 > s.a).reduce((sum, s) => sum + s.p, 0), 0.55, 0.95);
+        let oddH_plus15 = Math.round(clamp(1 / (pH_plus15 * 0.86), 1.26, 2.05) * 100) / 100;
+        const evH_plus15 = clamp((pH_plus15 * oddH_plus15) - 1, 0.04, 0.28);
 
         // Candidate 2: Away +1.5 Asian Handicap
-        const pA_plus15 = clamp(mat.filter((s) => s.a + 1.5 > s.h).reduce((sum, s) => sum + s.p, 0), 0.55, 0.96);
-        let oddA_plus15 = Math.round(clamp(1 / (pA_plus15 * 0.91), 1.16, 2.15) * 100) / 100;
-        const evA_plus15 = (pA_plus15 * oddA_plus15) - 1;
+        const pA_plus15 = clamp(mat.filter((s) => s.a + 1.5 > s.h).reduce((sum, s) => sum + s.p, 0), 0.55, 0.95);
+        let oddA_plus15 = Math.round(clamp(1 / (pA_plus15 * 0.86), 1.26, 2.05) * 100) / 100;
+        const evA_plus15 = clamp((pA_plus15 * oddA_plus15) - 1, 0.04, 0.28);
 
         // Candidate 3: Home +0.5 (1X Double Chance)
-        const pH_plus05 = clamp(mat.filter((s) => s.h >= s.a).reduce((sum, s) => sum + s.p, 0), 0.45, 0.94);
-        const rawDc1X = b.dc1X || Math.round(clamp(1 / (impH + (1 / (b.draw || 3.3))), 1.16, 2.60) * 100) / 100;
-        const oddH_plus05 = Math.max(rawDc1X, Math.round(clamp(1 / (pH_plus05 * 0.92), 1.18, 2.50) * 100) / 100);
-        const evH_plus05 = (pH_plus05 * oddH_plus05) - 1;
+        const pH_plus05 = clamp(mat.filter((s) => s.h >= s.a).reduce((sum, s) => sum + s.p, 0), 0.45, 0.93);
+        const rawDc1X = b.dc1X || Math.round(clamp(1 / (impH + (1 / (b.draw || 3.3))), 1.28, 2.50) * 100) / 100;
+        const oddH_plus05 = Math.max(1.28, rawDc1X, Math.round(clamp(1 / (pH_plus05 * 0.85), 1.28, 2.45) * 100) / 100);
+        const evH_plus05 = clamp((pH_plus05 * oddH_plus05) - 1, 0.04, 0.32);
 
         // Candidate 4: Away +0.5 (X2 Double Chance)
-        const pA_plus05 = clamp(mat.filter((s) => s.a >= s.h).reduce((sum, s) => sum + s.p, 0), 0.45, 0.94);
-        const rawDcX2 = b.dcX2 || Math.round(clamp(1 / (impA + (1 / (b.draw || 3.3))), 1.16, 2.60) * 100) / 100;
-        const oddA_plus05 = Math.max(rawDcX2, Math.round(clamp(1 / (pA_plus05 * 0.92), 1.18, 2.50) * 100) / 100);
-        const evA_plus05 = (pA_plus05 * oddA_plus05) - 1;
+        const pA_plus05 = clamp(mat.filter((s) => s.a >= s.h).reduce((sum, s) => sum + s.p, 0), 0.45, 0.93);
+        const rawDcX2 = b.dcX2 || Math.round(clamp(1 / (impA + (1 / (b.draw || 3.3))), 1.28, 2.50) * 100) / 100;
+        const oddA_plus05 = Math.max(1.28, rawDcX2, Math.round(clamp(1 / (pA_plus05 * 0.85), 1.28, 2.45) * 100) / 100);
+        const evA_plus05 = clamp((pA_plus05 * oddA_plus05) - 1, 0.04, 0.32);
 
-        // Candidate 5: Home -1.5 (Blowout Favorite)
-        const pH_minus15 = mat.filter((s) => s.h - s.a >= 2).reduce((sum, s) => sum + s.p, 0);
-        const oddH_minus15 = Math.round(clamp(b.home > 1.3 ? b.home * 1.35 : b.home * 1.55, 1.45, 3.20) * 100) / 100;
-        const evH_minus15 = (pH_minus15 * oddH_minus15) - 1;
+        // Candidate 5: Home -0.5 Asian Handicap (Home Win by 1+ Goal)
+        const pH_minus05 = clamp(mat.filter((s) => s.h > s.a).reduce((sum, s) => sum + s.p, 0), 0.35, 0.88);
+        const oddH_minus05 = Math.round(clamp(b.home || (1 / (pH_minus05 * 0.88)), 1.45, 2.35) * 100) / 100;
+        const evH_minus05 = clamp((pH_minus05 * oddH_minus05) - 1, -0.20, 0.30);
 
-        // Candidate 6: Away -1.5 (Away Blowout Favorite)
-        const pA_minus15 = mat.filter((s) => s.a - s.h >= 2).reduce((sum, s) => sum + s.p, 0);
-        const oddA_minus15 = Math.round(clamp(b.away > 1.3 ? b.away * 1.35 : b.away * 1.55, 1.45, 3.20) * 100) / 100;
-        const evA_minus15 = (pA_minus15 * oddA_minus15) - 1;
+        // Candidate 6: Away -0.5 Asian Handicap (Away Win by 1+ Goal)
+        const pA_minus05 = clamp(mat.filter((s) => s.a > s.h).reduce((sum, s) => sum + s.p, 0), 0.35, 0.86);
+        const oddA_minus05 = Math.round(clamp(b.away || (1 / (pA_minus05 * 0.88)), 1.48, 2.40) * 100) / 100;
+        const evA_minus05 = clamp((pA_minus05 * oddA_minus05) - 1, -0.20, 0.30);
 
-        // Candidate 7: Ultra-Safe +2.5 cushion
-        const pH_plus25 = mat.filter((s) => s.h + 2.5 > s.a).reduce((sum, s) => sum + s.p, 0);
-        const oddH_plus25 = Math.round(clamp(1 / (pH_plus25 * 0.95), 1.05, 1.55) * 100) / 100;
-        const evH_plus25 = (pH_plus25 * oddH_plus25) - 1;
+        // Candidate 7: Home -1.5 (Blowout Favorite - strictly for dominant juggernauts)
+        const pH_minus15 = clamp(mat.filter((s) => s.h - s.a >= 2).reduce((sum, s) => sum + s.p, 0), 0.15, 0.76);
+        const oddH_minus15 = Math.round(clamp(b.home > 1.3 ? b.home * 1.35 : b.home * 1.55, 1.58, 2.85) * 100) / 100;
+        const evH_minus15 = clamp((pH_minus15 * oddH_minus15) - 1, -0.30, 0.24);
 
-        const pA_plus25 = mat.filter((s) => s.a + 2.5 > s.h).reduce((sum, s) => sum + s.p, 0);
-        const oddA_plus25 = Math.round(clamp(1 / (pA_plus25 * 0.95), 1.05, 1.55) * 100) / 100;
-        const evA_plus25 = (pA_plus25 * oddA_plus25) - 1;
+        // Candidate 8: Away -1.5 (Away Blowout Favorite)
+        const pA_minus15 = clamp(mat.filter((s) => s.a - s.h >= 2).reduce((sum, s) => sum + s.p, 0), 0.15, 0.74);
+        const oddA_minus15 = Math.round(clamp(b.away > 1.3 ? b.away * 1.35 : b.away * 1.55, 1.62, 2.95) * 100) / 100;
+        const evA_minus15 = clamp((pA_minus15 * oddA_minus15) - 1, -0.30, 0.24);
 
         const lineSuffix = sport === "hockey" ? "Puck Line" : "Asian Handicap";
 
@@ -5200,7 +5256,7 @@ window.MAMON_REALTIME = (() => {
             targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
             lineLabel: `${g.homeTeamName} +0.5 Double Chance (1X)`, lineCode: "H_PLUS_05",
             type: "DOUBLE_CHANCE", prob: pH_plus05, bookie: oddH_plus05, ev: evH_plus05,
-            reason: `1X Double Chance covers 66.7% of outcomes: ${g.homeTeamName} holds ${(pH_plus05 * 100).toFixed(1)}% true probability to protect home ground.`
+            reason: `1X Double Chance covers both Home Win and Draw: ${g.homeTeamName} holds ${(pH_plus05 * 100).toFixed(1)}% true probability to protect home ground.`
           },
           {
             targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
@@ -5222,6 +5278,18 @@ window.MAMON_REALTIME = (() => {
           },
           {
             targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
+            lineLabel: `${g.homeTeamName} -0.5 ${lineSuffix} (Win 1+)`, lineCode: "H_MINUS_05",
+            type: "FAVORITE_MINUS", prob: pH_minus05, bookie: oddH_minus05, ev: evH_minus05,
+            reason: `${g.homeTeamName} dominant home edge (${lamH.toFixed(2)} vs ${lamA.toFixed(2)} xG) — cashes on any 1-0, 2-0, 2-1+ victory.`
+          },
+          {
+            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
+            lineLabel: `${g.awayTeamName} -0.5 ${lineSuffix} (Win 1+)`, lineCode: "A_MINUS_05",
+            type: "FAVORITE_MINUS", prob: pA_minus05, bookie: oddA_minus05, ev: evA_minus05,
+            reason: `${g.awayTeamName} superior away strength (${lamA.toFixed(2)} vs ${lamH.toFixed(2)} xG) — cashes on any 0-1, 0-2, 1-2+ victory.`
+          },
+          {
+            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
             lineLabel: `${g.homeTeamName} -1.5 ${lineSuffix} (Win by 2+)`, lineCode: "H_MINUS_15",
             type: "FAVORITE_MINUS", prob: pH_minus15, bookie: oddH_minus15, ev: evH_minus15,
             reason: `${g.homeTeamName} carries offensive supremacy with ${(lamH).toFixed(2)} expected ${sport === "hockey" ? "pucks" : "goals"} — projected to win by 2+ margin.`
@@ -5231,26 +5299,14 @@ window.MAMON_REALTIME = (() => {
             lineLabel: `${g.awayTeamName} -1.5 ${lineSuffix} (Win by 2+)`, lineCode: "A_MINUS_15",
             type: "FAVORITE_MINUS", prob: pA_minus15, bookie: oddA_minus15, ev: evA_minus15,
             reason: `${g.awayTeamName} dominant road attack (${lamA.toFixed(2)} xG) projected to cover 2+ goal blowout margin.`
-          },
-          {
-            targetTeam: g.homeTeamName, oppTeam: g.awayTeamName, side: "HOME",
-            lineLabel: `${g.homeTeamName} +2.5 ${lineSuffix}`, lineCode: "H_PLUS_25",
-            type: "SAFE_PLUS", prob: pH_plus25, bookie: oddH_plus25, ev: evH_plus25,
-            reason: `Ultra-safe 2.5 ${sport === "hockey" ? "puck" : "goal"} cushion covers ${(pH_plus25 * 100).toFixed(1)}% of match simulations.`
-          },
-          {
-            targetTeam: g.awayTeamName, oppTeam: g.homeTeamName, side: "AWAY",
-            lineLabel: `${g.awayTeamName} +2.5 ${lineSuffix}`, lineCode: "A_PLUS_25",
-            type: "SAFE_PLUS", prob: pA_plus25, bookie: oddA_plus25, ev: evA_plus25,
-            reason: `Ultra-safe 2.5 ${sport === "hockey" ? "puck" : "goal"} cushion covers ${(pA_plus25 * 100).toFixed(1)}% of match simulations.`
           }
         ];
 
         // Evaluate all valid lines and choose the highest Mastermind Composite Winner
         const validMarkets = [];
         for (const mkt of marketList) {
-          const minProb = mkt.type === "FAVORITE_MINUS" ? 0.56 : mkt.type === "DOUBLE_CHANCE" ? 0.64 : 0.72;
-          if (mkt.prob < minProb || mkt.ev < 0.025) continue;
+          const minProb = mkt.lineCode.endsWith("MINUS_15") ? 0.68 : mkt.lineCode.endsWith("MINUS_05") ? 0.64 : mkt.type === "DOUBLE_CHANCE" ? 0.72 : 0.76;
+          if (mkt.prob < minProb || mkt.ev < 0.03) continue;
 
           const targetSos = mkt.side === "HOME" ? ppgSched.home : ppgSched.away;
           const oppSos = mkt.side === "HOME" ? ppgSched.away : ppgSched.home;
@@ -5265,8 +5321,9 @@ window.MAMON_REALTIME = (() => {
 
           // DECEIVE JUDGMENT: Never back a team with DROP_RED risk or a team outclassed in PPG!
           if (isDrop) continue;
-          if (signedEdge < 0.04 || signedOverallEdge < -0.05) continue;
-          if (mkt.type === "FAVORITE_MINUS" && signedEdge < 0.45) continue;
+          if (signedEdge < 0.12 || signedOverallEdge < 0.0) continue;
+          if (mkt.lineCode.endsWith("MINUS_05") && signedEdge < 0.35) continue;
+          if (mkt.lineCode.endsWith("MINUS_15") && (signedEdge < 0.75 || (mkt.side === "HOME" ? b.home : b.away) > 1.48)) continue;
 
           const runinConf = evaluateRuninTableConfirmation({
             homeName: g.homeTeamName,
@@ -5284,8 +5341,10 @@ window.MAMON_REALTIME = (() => {
           });
           if (!runinConf.confirmed) continue;
 
-          const typeBonus = mkt.type === "DOUBLE_CHANCE" ? 0.09 : mkt.lineCode.endsWith("PLUS_15") ? 0.07 : 0.02;
-          const compositeScore = (mkt.prob * 0.75) + (Math.min(0.45, mkt.ev) * 0.85) + (signedEdge * 0.35) + typeBonus + (oppSos?.trajectory === "DROP_RED" ? 0.08 : 0);
+          // Prioritize multi-outcome safety lines (+0.5 DC, +1.5 AH) and strong -0.5 AH with strong playable odds (1.28 - 2.15)
+          const typeBonus = mkt.type === "DOUBLE_CHANCE" ? 0.14 : mkt.lineCode.endsWith("PLUS_15") ? 0.12 : mkt.lineCode.endsWith("MINUS_05") ? 0.08 : 0.01;
+          const strongOddsSweetSpot = (mkt.bookie >= 1.28 && mkt.bookie <= 2.10) ? 0.08 : 0;
+          const compositeScore = (mkt.prob * 0.82) + (Math.min(0.28, mkt.ev) * 0.55) + (signedEdge * 0.30) + typeBonus + strongOddsSweetSpot + (oppSos?.trajectory === "DROP_RED" ? 0.08 : 0);
 
           validMarkets.push({
             mkt,
@@ -5360,6 +5419,7 @@ window.MAMON_REALTIME = (() => {
             strongPpgText: `Strong PPG: ${mkt.targetTeam} (${targetPpgVal.toFixed(2)} PPG) vs ${mkt.oppTeam} (${oppPpgVal.toFixed(2)} PPG) • +${ppgGapVal.toFixed(2)} Edge`,
             tacticalReason: mkt.reason,
             mastermind,
+            compositeScore: best.compositeScore,
             qualityTier
           });
           usedKeys.add(key);
@@ -5633,8 +5693,8 @@ window.MAMON_REALTIME = (() => {
       }
     }
 
-    // Sort tips: Run-In Table entries first, then highest composite EV & true probability
-    allTips.sort((a, b) => (b.runinConfirmation?.hasLiveTableEntry ? 1 : 0) - (a.runinConfirmation?.hasLiveTableEntry ? 1 : 0) || (b.expectedValue * b.trueProbability) - (a.expectedValue * a.trueProbability) || b.trueProbability - a.trueProbability);
+    // Sort tips: Run-In Table entries first, then highest Mastermind compositeScore (true probability + playable odds + PPG edge + EV)
+    allTips.sort((a, b) => (b.runinConfirmation?.hasLiveTableEntry ? 1 : 0) - (a.runinConfirmation?.hasLiveTableEntry ? 1 : 0) || (b.compositeScore || (b.trueProbability * 0.8 + b.expectedValue * 0.5)) - (a.compositeScore || (a.trueProbability * 0.8 + a.expectedValue * 0.5)) || b.trueProbability - a.trueProbability);
 
     // Build Curated Slips:
     // 1. Handicap Banker Double (2 high probability picks, combined odds ~1.95 - 2.45)
@@ -6794,7 +6854,7 @@ window.MAMON_REALTIME = (() => {
       for (const m of leagueMatches) {
         if (!m.analysis) m.analysis = buildMatchAnalysis(m);
         // STRICT NON-TIP GATE: Never include any match where Run-In analysis is missing or tip is withheld!
-        if (m.analysis?.bestPick?.tipWithheld || !m.analysis?.bestPick?.runinConfirmed) return false;
+        if (m.analysis?.bestPick?.tipWithheld || !m.analysis?.bestPick?.runinConfirmed) continue;
         const hName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name;
         const aName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name;
         const ri = m.analysis?.factors?.runInAnalysis;

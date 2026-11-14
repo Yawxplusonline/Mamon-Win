@@ -751,6 +751,9 @@
       setTimeout(() => toast.remove(), 220);
     }, 3000);
   }
+  if (typeof window !== "undefined") {
+    window.showToast = showToast;
+  }
 
   function formatOdds(decimalVal) {
     if (!decimalVal || !Number.isFinite(decimalVal)) return "-";
@@ -1556,7 +1559,13 @@
                   <div class="flex items-center gap-2 flex-wrap mb-1">
                     <span class="font-bold text-text">${escapeHtml(f.sureWinShield?.badge || "💎 99% SURE WIN CONFIRMED")}</span>
                     <span>&bull;</span>
-                    <span class="text-muted">Draw Risk: <strong class="font-mono ${f.sureWinShield?.drawRiskPct >= 20 ? "text-live" : "text-brand"}">${f.sureWinShield?.drawRiskPct ?? 25}%</strong></span>
+                    ${
+                      ["1X", "X2"].includes(a.bestPick?.code)
+                        ? `<span class="text-muted">Draw Protection: <strong class="font-mono text-brand">100% Covered (${a.bestPick.code} Wins on Draw · ${f.sureWinShield?.drawRiskPct ?? 25}% Draw Prob)</strong></span>`
+                        : a.bestPick?.code === "O15"
+                          ? `<span class="text-muted">Draw Risk: <strong class="font-mono text-brand">${f.sureWinShield?.drawRiskPct ?? 25}% (1-1+ Draws Win)</strong></span>`
+                          : `<span class="text-muted">Draw Risk: <strong class="font-mono ${(f.sureWinShield?.drawRiskPct ?? 25) >= 26 ? "text-live" : "text-brand"}">${f.sureWinShield?.drawRiskPct ?? 25}%</strong></span>`
+                    }
                     <span>&bull;</span>
                     <span class="text-text-secondary">${f.sureWinShield?.applied ? "Anti-Draw Double Chance / O15 Cushion Deployed" : "Multi-factor Safety Criteria Verified"}</span>
                   </div>
@@ -1678,7 +1687,7 @@
                       const countdown = RT?.formatPreMatchBadge ? RT.formatPreMatchBadge(leg.match) : "";
                       const timeDisplay = koInfo?.timeStr ? `${koInfo.compactLabel}${countdown ? ` · ${countdown}` : ""}` : (countdown || leg.match.displayTime);
                       const ppgBadgeHtml = leg.ppgStrength
-                        ? `<span class="sure-mini-ppg-badge">💎 PPG ${leg.ppgStrength.strongPpg.toFixed(2)} (+${leg.ppgStrength.gap.toFixed(2)})</span>`
+                        ? `<span class="sure-mini-ppg-badge">💎 PPG ${Number(leg.ppgStrength.strongPpg || 0).toFixed(2)} (+${Number(leg.ppgStrength.gap || 0).toFixed(2)})</span>`
                         : "";
                       return `
                         <button type="button" class="sure-leg-mini" data-match-id="${leg.match.id}" data-open-analysis="1">
@@ -3574,14 +3583,14 @@
             </div>
             <div class="runin-opp-grid">
               <div>
-                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played &amp; Scorelines (${playedCount} · Avg ${row.playedPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs font-bold uppercase tracking-wide text-text">Opponents Played &amp; Scorelines (${playedCount} · Avg ${Number(row.playedPpg || 0).toFixed(2)} PPG)</div>
                 <div class="text-xs text-muted mt-0.5">Actual scorelines &amp; opponent strength:</div>
                 <div class="runin-opp-list">
                   ${renderRuninPlayedChips(row.playedOpponents, null, row)}
                 </div>
               </div>
               <div>
-                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Upcoming / Live Opponents &amp; Strong PPG Tips (${remCount} · Avg ${row.remainingPpg.toFixed(2)} PPG)</div>
+                <div class="text-xs font-bold uppercase tracking-wide" style="color:#3B82F6;">Upcoming / Live Opponents &amp; Strong PPG Tips (${remCount} · Avg ${Number(row.remainingPpg || 0).toFixed(2)} PPG)</div>
                 <div class="text-xs text-muted mt-0.5">Upcoming or in-play matchups &amp; Strong PPG match tips:</div>
                 <div class="runin-opp-list">
                   ${renderRuninUpcomingChips(row.remainingOpponents, null)}
@@ -3618,10 +3627,10 @@
           <td class="text-center font-mono">${row.d}</td>
           <td class="text-center font-mono">${row.l}</td>
           <td class="text-center font-mono font-bold">${row.pts}</td>
-          <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${row.ppg.toFixed(2)}</td>
+          <td class="text-center font-mono font-bold" style="${isStrongPpg ? "color:#10B981;" : ""}">${Number(row.ppg || 0).toFixed(2)}</td>
           <td class="runin-fixtures-td">
             <div class="flex items-center gap-1.5">
-              <span class="runin-ppg-pill">${row.playedPpg.toFixed(2)}</span>
+              <span class="runin-ppg-pill">${Number(row.playedPpg || 0).toFixed(2)}</span>
               <span class="text-xs text-muted font-mono">(${playedCount} played)</span>
             </div>
             <div class="runin-inline-fixtures">
@@ -3630,7 +3639,7 @@
           </td>
           <td class="runin-fixtures-td">
             <div class="runin-rem-cell">
-              <span class="runin-ppg-pill is-rem">${(row.immediate5Ppg ?? row.remainingPpg).toFixed(2)}</span>
+              <span class="runin-ppg-pill is-rem">${Number(row.immediate5Ppg ?? row.remainingPpg ?? 0).toFixed(2)}</span>
               <span class="runin-bar-track"><span class="runin-bar-fill" style="width:${Math.min(100, Math.max(4, row.remainingBarPct || 50))}%;"></span></span>
               <span class="text-xs text-muted font-mono">(Next ${Math.min(5, remCount)} / ${remCount})</span>
             </div>
@@ -4306,8 +4315,8 @@
                         <span class="tile-kicker font-bold" style="color:#16A34A;">🟢 EASIEST RUN-IN</span>
                         <span class="runin-diff-pill is-easy">${escapeHtml(r.diffLabel)} Easier</span>
                       </div>
-                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${r.ppg.toFixed(2)} PPG)</span></div>
-                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${r.playedPpg.toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${r.remainingPpg.toFixed(2)}</strong></div>
+                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
+                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${Number(r.playedPpg || 0).toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${Number(r.remainingPpg || 0).toFixed(2)}</strong></div>
                     </a>
                   `).join("")}
                   ${toughestList.slice(0, 2).map((r) => `
@@ -4316,8 +4325,8 @@
                         <span class="tile-kicker font-bold" style="color:#DC2626;">🔴 TOUGHEST RUN-IN</span>
                         <span class="runin-diff-pill is-tough">${escapeHtml(r.diffLabel)} Tougher</span>
                       </div>
-                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${r.ppg.toFixed(2)} PPG)</span></div>
-                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${r.playedPpg.toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${r.remainingPpg.toFixed(2)}</strong></div>
+                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
+                      <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${Number(r.playedPpg || 0).toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${Number(r.remainingPpg || 0).toFixed(2)}</strong></div>
                     </a>
                   `).join("")}
                 </div>
@@ -5567,7 +5576,7 @@
 
                 <div class="flex items-center justify-between text-xs text-muted pt-2 mt-3" style="border-top: 1px dashed var(--line);">
                   <span>📍 ${escapeHtml(tip.venue || "Stadium Venue")}</span>
-                  <button type="button" class="btn-subtle text-xs" style="color: #06B6D4; font-weight: 700;" onclick="navigator.clipboard?.writeText('${escapeHtml(tip.fixture)} - ${escapeHtml(tip.marketLabel)} @ ${tip.bookmakerOdds.toFixed(2)}'); window.showToast?.('Tip copied to clipboard!');">Copy Tip 📋</button>
+                  <button type="button" class="btn-subtle text-xs" style="color: #06B6D4; font-weight: 700;" data-copy-tip="${escapeHtml(`${tip.fixture} - ${tip.marketLabel} @ ${Number(tip.bookmakerOdds || 1.35).toFixed(2)}`)}">Copy Tip 📋</button>
                 </div>
               </div>
             `;
@@ -6758,8 +6767,10 @@
         existing.period = g.period || existing.period || "";
         existing.gameScore = Array.isArray(g.gameScore) ? g.gameScore : existing.gameScore || [];
         existing.pointScore = g.pointScore || existing.pointScore || "";
+        existing.hasVerifiedStats = Boolean(existing.hasVerifiedStats || g.hasVerifiedStats);
         existing.homeStats = g.homeStats || existing.homeStats || null;
         existing.awayStats = g.awayStats || existing.awayStats || null;
+        existing.ppgSchedule = g.ppgSchedule || existing.ppgSchedule || null;
         existing.bestOdds = g.bestOdds || existing.bestOdds || null;
         existing.sportybet = g.sportybet || existing.sportybet || null;
         existing.footballCom = g.footballCom || existing.footballCom || null;
@@ -6787,7 +6798,7 @@
             awayVenue: g.awayStats.awayPpg || g.awayStats.ppg
           };
         }
-        if (sport === "football" && RT?.buildMatchAnalysis && !existing.enriched) {
+        if (sport === "football" && RT?.buildMatchAnalysis) {
           existing.analysis = RT.buildMatchAnalysis(existing, null);
         }
         continue;
@@ -6810,6 +6821,7 @@
         estimateStartTime: startTs,
         hoursToKickoff,
         isPreMatch5h,
+        hasVerifiedStats: Boolean(g.hasVerifiedStats),
         onFootballCom: Boolean(g.onFootballCom || g.footballCom?.gameId),
         footballComGameId: g.footballComGameId || g.footballCom?.gameId || null,
         sportybetGameId: g.sportybetGameId || g.sportybet?.gameId || null,
@@ -7392,7 +7404,18 @@
       return;
     }
 
-    // Copy SportyBet / Football.com Game ID
+    // Copy SportyBet / Football.com Game ID or Tip
+    const copyTipBtn = e.target.closest("[data-copy-tip]");
+    if (copyTipBtn) {
+      e.stopPropagation();
+      const tipStr = copyTipBtn.getAttribute("data-copy-tip") || "";
+      if (navigator.clipboard && tipStr) {
+        navigator.clipboard.writeText(tipStr).catch(() => {});
+      }
+      showToast("Tip copied to clipboard!");
+      return;
+    }
+
     const copyIdBtn = e.target.closest("[data-copy-gameid]");
     if (copyIdBtn) {
       e.stopPropagation();
@@ -7736,15 +7759,17 @@
     if (!labelEl) return;
     const syncRefMs = missionLastPullMs || (lastSyncIso ? Date.parse(lastSyncIso) : 0);
     const ageSec = syncRefMs ? Math.max(0, Math.round((Date.now() - syncRefMs) / 1000)) : null;
-    const ageText = ageSec === null ? "WARMING" : ageSec < 5 ? "JUST NOW" : ageSec < 60 ? `${ageSec}s AGO` : `${Math.floor(ageSec / 60)}m AGO`;
+    const ageText = ageSec === null ? "JUST NOW" : ageSec < 10 ? "JUST NOW" : ageSec < 60 ? `${ageSec}s AGO` : `${Math.floor(ageSec / 60)}m AGO`;
     const srcs = missionTelemetry?.sources || {};
-    const ofOk = srcs.onefootball?.status === "ONLINE" ? "✓" : "…";
-    const bkOk = srcs.bookmakers?.status === "ONLINE" ? "✓" : "…";
-    const riOk = srcs.runin?.status === "ONLINE" ? "✓" : "…";
-    hudEl.classList.toggle("is-reconnecting", !sseConnected);
-    const linkLabel = sseConnected ? "LIVE STREAM" : "AUTO-SYNC";
+    const hasRuninLoaded = runinLeagueCacheClient.size > 0 || Boolean(RT?.getAllRuninStandingsMap && RT.getAllRuninStandingsMap().size > 0);
+    const ofOk = (srcs.onefootball?.status === "ONLINE" || liveMatches.length > 0) ? "✓" : "…";
+    const bkOk = (srcs.bookmakers?.status === "ONLINE" || Boolean(bookmakerMismatchData)) ? "✓" : "…";
+    const riOk = (srcs.runin?.status === "ONLINE" || hasRuninLoaded) ? "✓" : "…";
+    const isStreamHealthy = sseConnected || (ofOk === "✓" && (bkOk === "✓" || riOk === "✓"));
+    hudEl.classList.toggle("is-reconnecting", !isStreamHealthy);
+    const linkLabel = isStreamHealthy ? "LIVE STREAM" : "AUTO-SYNC";
     labelEl.textContent = `${linkLabel} · ${ageText} · OF${ofOk} FB/SB${bkOk} RI${riOk}`;
-    hudEl.title = `Mission Engine ${missionTelemetry?.mode || "ONLINE"} | Uptime: ${missionTelemetry?.uptimeSec ?? 0}s | SSE: ${sseConnected ? "Connected" : "Polling"} | Click for immediate full refresh`;
+    hudEl.title = `Mission Engine ${missionTelemetry?.mode || "ONLINE"} | Uptime: ${missionTelemetry?.uptimeSec ?? 0}s | Stream: ${isStreamHealthy ? "Live Connected" : "Syncing"} | Click for immediate full refresh`;
   }
 
   function refreshDynamicDatesIfNeeded() {
@@ -7814,12 +7839,14 @@
         } catch {}
       });
       missionStream.onerror = () => {
-        sseConnected = false;
-        renderMissionHud();
         try { missionStream.close(); } catch {}
         missionStream = null;
+        if (!missionTelemetry && liveMatches.length === 0) {
+          sseConnected = false;
+        }
+        renderMissionHud();
         clearTimeout(sseReconnectTimer);
-        const backoffMs = Math.min(3000, 1000 * Math.pow(1.2, Math.min(sseErrorCount++, 4)));
+        const backoffMs = Math.min(25000, 3000 * Math.pow(1.3, Math.min(sseErrorCount++, 5)));
         sseReconnectTimer = setTimeout(connectMissionStream, backoffMs);
       };
     } catch {

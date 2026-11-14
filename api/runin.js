@@ -181,24 +181,27 @@ function parseRuninHtml(html, leagueMeta) {
     const ppg = parseFloat(stripTags(tds[7])) || (gp > 0 ? Math.round((pts / gp) * 100) / 100 : 0);
 
     // Cell 8: Opponents Played PPG (PLD) + tooltip list
-    const pldRawMatch = tds[8].match(/font-weight:\s*bold[^>]*>([\d.-]+)</i);
-    const playedPpg = pldRawMatch ? parseFloat(pldRawMatch[1]) : parseFloat(cleanCellText(tds[8])) || 0;
+    const pldRawMatch = tds[8].match(/font-weight:\s*bold[^>]*>([\d.]+)</i);
+    const playedPpg = (pldRawMatch ? parseFloat(pldRawMatch[1]) : parseFloat(cleanCellText(tds[8]))) || 0;
     const pldTooltipMatch = tds[8].match(/<div class="ppi-tooltip-content"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i);
     const playedOpponents = parseTooltipOpponents(pldTooltipMatch ? pldTooltipMatch[1] : tds[8]);
 
     // Cell 9: Opponents Remaining PPG (REM) + tooltip list + strength bar width
-    const remRawMatch = tds[9].match(/color:\s*#2563eb[^>]*>([\d.-]+)</i);
-    const remainingPpg = remRawMatch ? parseFloat(remRawMatch[1]) : parseFloat(cleanCellText(tds[9])) || 0;
-    const remBarMatch = tds[9].match(/width:\s*([\d.]+)%;\s*background:\s*#3b82f6/i);
-    const remainingBarPct = remBarMatch ? Math.round(parseFloat(remBarMatch[1]) * 10) / 10 : Math.min(100, Math.round((remainingPpg / 3) * 100));
+    const remRawMatch = tds[9].match(/color:\s*#2563eb[^>]*>([\d.]+)</i);
+    const rawRemPpg = (remRawMatch ? parseFloat(remRawMatch[1]) : parseFloat(cleanCellText(tds[9]))) || 0;
     const remTooltipMatch = tds[9].match(/<div class="ppi-tooltip-content"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/i);
     const remainingOpponents = parseTooltipOpponents(remTooltipMatch ? remTooltipMatch[1] : tds[9]);
+    const hasRemainingGames = rawRemPpg > 0.15 && (remainingOpponents.length > 0 || rawRemPpg < 2.95);
+    const remainingPpg = hasRemainingGames ? rawRemPpg : (playedPpg > 0 ? playedPpg : ppg);
+    const remBarMatch = tds[9].match(/width:\s*([\d.]+)%;\s*background:\s*#3b82f6/i);
+    const remainingBarPct = remBarMatch ? Math.round(parseFloat(remBarMatch[1]) * 10) / 10 : Math.min(100, Math.round((remainingPpg / 3) * 100));
 
-    // Cell 10: Played vs Remaining (%) comparison
+    // Cell 10: Played vs Remaining (%) comparison (guard against +100% when no remaining games)
     const diffText = stripTags(tds[10]);
     const diffMatch = diffText.match(/([+-]?\d+)\s*%/);
-    const computedDiff = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
-    const diffPct = diffMatch ? parseInt(diffMatch[1], 10) : computedDiff;
+    const computedDiff = (playedPpg > 0 && hasRemainingGames) ? Math.max(-65, Math.min(65, Math.round(((playedPpg - remainingPpg) / Math.max(1.10, playedPpg)) * 100))) : 0;
+    const parsedDiff = (diffMatch && Number.isFinite(parseInt(diffMatch[1], 10))) ? parseInt(diffMatch[1], 10) : computedDiff;
+    const diffPct = (!hasRemainingGames || Math.abs(parsedDiff) >= 75) ? computedDiff : parsedDiff;
     const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
     const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
 
@@ -340,7 +343,7 @@ function computeRuninTip(row) {
           matchTip = "🛡️ Caution · +0.5 AH / DNB";
           tipClass = "is-safe";
         }
-      } else if (ppg <= 1.15 && typeof oppV === "number" && oppV >= 1.58 && (oppV - ppg) >= 0.45) {
+      } else if (ppg <= 1.15 && typeof ov === "number" && ov >= 1.58 && (ov - ppg) >= 0.45) {
         matchTip = op.venue === "H" ? "🚫 Fade · Back Opp X2" : "🚫 Fade · Back Opp 1X";
         tipClass = "is-avoid";
       } else if (ppg < 1.25) {
@@ -353,11 +356,11 @@ function computeRuninTip(row) {
 
   // Real-time Big-Data Assessment across the team's IMMEDIATE 5 upcoming matches
   const immediate5 = Array.isArray(row.remainingOpponents) ? row.remainingOpponents.slice(0, 5) : [];
-  const imm5Vals = immediate5.map((op) => op.oppVenuePpg).filter((v) => Number.isFinite(v));
+  const imm5Vals = immediate5.map((op) => op.oppVenuePpg).filter((v) => Number.isFinite(v) && v > 0.05);
   const immediate5Ppg = imm5Vals.length > 0
     ? Math.round((imm5Vals.reduce((s, v) => s + v, 0) / imm5Vals.length) * 100) / 100
-    : remPpg;
-  const immediate5DiffPct = playedPpg > 0 ? Math.round(((playedPpg - immediate5Ppg) / playedPpg) * 100) : diffPct;
+    : (remPpg > 0.05 ? remPpg : playedPpg);
+  const immediate5DiffPct = (playedPpg > 0 && immediate5Ppg > 0.05) ? Math.round(((playedPpg - immediate5Ppg) / playedPpg) * 100) : diffPct;
   const immediate5StrongCount = immediate5.filter((op) => op.tipClass === "is-strong").length;
   row.immediate5Ppg = immediate5Ppg;
   row.immediate5DiffPct = immediate5DiffPct;
@@ -1035,7 +1038,7 @@ async function fetchEspnRuninFallback(meta, options = {}) {
     const playedPpg = avgPpg(playedOpponents, 1.34);
     const remainingPpg = avgPpg(remainingOpponents, 1.32);
     const remainingBarPct = Math.min(100, Math.round((remainingPpg / 3) * 1000) / 10);
-    const diffPct = playedPpg > 0 ? Math.round(((playedPpg - remainingPpg) / playedPpg) * 100) : 0;
+    const diffPct = playedPpg > 0 ? Math.max(-65, Math.min(65, Math.round(((playedPpg - remainingPpg) / Math.max(1.10, playedPpg)) * 100))) : 0;
     const diffLabel = `${diffPct > 0 ? "+" : ""}${diffPct}%`;
     const verdict = diffPct > 0 ? "FAVORABLE" : diffPct < 0 ? "TOUGH" : "BALANCED";
 

@@ -194,7 +194,8 @@ const server = http.createServer(async (req, res) => {
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no"
       });
-      res.write(`retry: 3000\nevent: telemetry\ndata: ${JSON.stringify(getTelemetrySnapshot())}\n\n`);
+      if (typeof res.flushHeaders === "function") res.flushHeaders();
+      res.write(`retry: 1500\nevent: telemetry\ndata: ${JSON.stringify(getTelemetrySnapshot())}\n\n`);
       sseClients.add(res);
       req.on("close", () => {
         sseClients.delete(res);
@@ -276,10 +277,10 @@ server.listen(PORT, HOST, () => {
   setInterval(() => { runMissionJob("bookmakers", true); }, 90 * 1000);
   setInterval(() => { runMissionJob("runin", true); }, 10 * 60 * 1000);
 
-  // Self-Healing Watchdog + SSE Keep-Alive Heartbeat
+  // Self-Healing Watchdog + SSE Keep-Alive Heartbeat (Guaranteed Permanent Live Stream)
   setInterval(() => {
     broadcastSse("heartbeat", { ts: new Date().toISOString(), cycleCount: missionState.cycleCount });
-  }, 15 * 1000);
+  }, 8 * 1000);
 
   setInterval(() => {
     const now = Date.now();

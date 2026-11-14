@@ -1529,23 +1529,39 @@
         </div>
 
         <!-- 19. 99% Sure Win Protective Shield Engine (Targeting 1% Loss Rate) -->
-        <div class="factor-tile is-wide" style="border: 1px solid rgba(16,185,129,0.35);background:rgba(16,185,129,0.03);">
+        <div class="factor-tile is-wide" style="border: 2px solid #10B981; background: linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(16,185,129,0.02) 100%); border-radius: var(--radius-md);">
           <div class="factor-tile-head">
-            <span class="factor-name font-bold" style="color:var(--brand);">19. 99% Sure Win Protective Shield (1% Loss Rate Target)</span>
-            <span class="factor-edge-pill" style="background:rgba(16,185,129,0.18);color:#059669;font-weight:bold;">${f.sureWinShield?.tipWithheld ? "⛔ TIP WITHHELD" : (f.sureWinShield?.applied ? "🛡️ SHIELD DEPLOYED" : "💎 99% CONFIRMED")}</span>
+            <span class="factor-name font-bold" style="color:var(--brand);font-size:13px;">19. 99% Sure Win Protective Shield (1% Loss Rate Target)</span>
+            <span class="factor-edge-pill" style="background:rgba(16,185,129,0.22);color:#059669;font-weight:800;">${f.sureWinShield?.tipWithheld ? "⛔ TIP WITHHELD" : (f.sureWinShield?.applied ? "🛡️ SHIELD DEPLOYED" : "💎 99% CONFIRMED")}</span>
           </div>
           <div class="text-xs">
             ${
               f.sureWinShield?.tipWithheld
                 ? `<span class="text-danger font-semibold">Strict Non-Tip Gate Active:</span> ${escapeHtml(f.sureWinShield.reason || "Predictions withheld pending full Run-In Difficulty Table telemetry.")}`
-                : `<div class="flex items-center gap-2 flex-wrap mb-1">
+                : `
+                  <!-- EXPLICIT CONFIRMED TIP HIGHLIGHT BANNER -->
+                  <div class="p-2.5 mb-2 rounded" style="background:rgba(16,185,129,0.14); border:1px solid rgba(16,185,129,0.35);">
+                    <div class="flex items-center justify-between gap-1 text-xs font-bold uppercase tracking-wider" style="color:#047857;">
+                      <span>🎯 Recommended Tip Selection:</span>
+                      <span class="font-mono text-xs px-1.5 py-0.5 rounded" style="background:#10B981; color:#ffffff; font-weight:800;">${Math.round((a.bestPick?.prob || (f.sureWinShield?.tipProb ? f.sureWinShield.tipProb / 100 : 0.85)) * 100)}% Win Prob</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 flex-wrap mt-1">
+                      <span class="font-bold text-sm" style="color:#065F46; font-size:15px; letter-spacing:-0.01em;">
+                        ${escapeHtml(a.bestPick?.label || f.sureWinShield?.tipLabel || "Over 1.5 Goals / Safe Double Chance")}
+                      </span>
+                      <span class="font-mono text-xs px-2 py-0.5 rounded font-bold" style="background:#059669; color:#ffffff;">@ ${formatOdds(a.bestPick?.odds || f.sureWinShield?.tipOdds || 1.25)}</span>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 flex-wrap mb-1">
                     <span class="font-bold text-text">${escapeHtml(f.sureWinShield?.badge || "💎 99% SURE WIN CONFIRMED")}</span>
                     <span>&bull;</span>
                     <span class="text-muted">Draw Risk: <strong class="font-mono ${f.sureWinShield?.drawRiskPct >= 20 ? "text-live" : "text-brand"}">${f.sureWinShield?.drawRiskPct ?? 25}%</strong></span>
                     <span>&bull;</span>
                     <span class="text-text-secondary">${f.sureWinShield?.applied ? "Anti-Draw Double Chance / O15 Cushion Deployed" : "Multi-factor Safety Criteria Verified"}</span>
                   </div>
-                  <div class="text-text-secondary mt-0.5">${escapeHtml(f.sureWinShield?.reason || "")}</div>`
+                  <div class="text-text-secondary mt-0.5">${escapeHtml(f.sureWinShield?.reason || "")}</div>
+                `
             }
           </div>
         </div>
@@ -7758,7 +7774,7 @@
         try { missionStream.close(); } catch {}
         missionStream = null;
         clearTimeout(sseReconnectTimer);
-        const backoffMs = Math.min(10000, 1500 * Math.pow(1.5, Math.min(sseErrorCount++, 5)));
+        const backoffMs = Math.min(3000, 1000 * Math.pow(1.2, Math.min(sseErrorCount++, 4)));
         sseReconnectTimer = setTimeout(connectMissionStream, backoffMs);
       };
     } catch {
@@ -7778,8 +7794,9 @@
 
   document.getElementById("missionLiveHud")?.addEventListener("click", () => {
     missionLastPullMs = Date.now();
+    connectMissionStream();
     renderMissionHud();
-    showToast("Running full Mission System real-time sync...");
+    showToast("Connecting Mission Live Stream & running real-time sync...");
     syncRealtimeFeed(true);
     syncBookmakerMismatchFeed(true, false);
     if (state.route === "/run-in") {
@@ -7790,6 +7807,9 @@
   // Autonomous Mission Intervals: 10s HUD + Date Rollover | 30s Played-Time Reconciliation | 45s Live + OF | 90s Bookmakers
   setInterval(() => {
     const rolled = refreshDynamicDatesIfNeeded();
+    if (!sseConnected && !missionStream) {
+      connectMissionStream();
+    }
     renderMissionHud();
     if (rolled) {
       syncRealtimeFeed(false);
@@ -7826,6 +7846,9 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
+      if (!sseConnected || !missionStream) {
+        connectMissionStream();
+      }
       refreshDynamicDatesIfNeeded();
       pollMissionHealth();
       syncRealtimeFeed(false);

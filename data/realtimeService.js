@@ -2883,7 +2883,7 @@ window.MAMON_REALTIME = (() => {
     shieldedPick.runinConfirmed = true;
     shieldedPick.drawRiskPct = drawRiskPct;
     shieldedPick.shieldApplied = shieldApplied;
-    shieldedPick.shieldReason = shieldReason || `99% Sure Win Standard confirmed via Run-In Table (${runinConfirmation.shortTag}) and multi-factor validation.`;
+    shieldedPick.shieldReason = shieldReason || `99% Sure Win Standard confirmed for [${shieldedPick.label || "Safe Tip"}] via Run-In Table (${runinConfirmation.shortTag}) and multi-factor validation.`;
     shieldedPick.badge = shieldApplied ? "🛡️ 99% SURE WIN SHIELDED" : "💎 99% SURE WIN CONFIRMED";
 
     return shieldedPick;
@@ -3627,7 +3627,11 @@ window.MAMON_REALTIME = (() => {
           tipWithheld: Boolean(bestPick.tipWithheld),
           drawRiskPct: bestPick.drawRiskPct,
           reason: bestPick.shieldReason || bestPick.reason,
-          badge: bestPick.badge
+          badge: bestPick.badge,
+          tipCode: bestPick.code || null,
+          tipLabel: bestPick.label || null,
+          tipOdds: bestPick.odds || 1.0,
+          tipProb: Math.round((bestPick.prob || 0) * 100)
         }
       }
     };

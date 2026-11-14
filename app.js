@@ -920,15 +920,162 @@
     });
   }
 
-  function getTeam(key, fallbackName = "Club") {
-    return TEAMS[key] || { key, name: fallbackName, short: fallbackName.slice(0, 3).toUpperCase(), color: "#0A7B5C", logo: "" };
+  const TEAM_DISPLAY_NAME_MAP = {
+    "ac goianiense go": "Atlético Goianiense",
+    "atletico goianiense go": "Atlético Goianiense",
+    "america fc mg": "América Mineiro",
+    "america mg": "América Mineiro",
+    "athletic club mg": "Athletic Club-MG",
+    "atletico mineiro mg": "Atlético Mineiro",
+    "avai fc sc": "Avaí",
+    "botafogo fc sp": "Botafogo-SP",
+    "botafogo fr rj": "Botafogo",
+    "ceara sc ce": "Ceará",
+    "chapecoense sc": "Chapecoense",
+    "coritiba fc pr": "Coritiba",
+    "cr brasil al": "CRB",
+    "criciuma ec sc": "Criciúma",
+    "cruzeiro ec mg": "Cruzeiro",
+    "cs alagoano al": "CSA",
+    "cuiaba ec mt": "Cuiabá",
+    "ec bahia ba": "Bahia",
+    "ec juventude rs": "Juventude",
+    "ec vitoria ba": "Vitória",
+    "flamengo rj": "Flamengo",
+    "fluminense fc rj": "Fluminense",
+    "fortaleza ec ce": "Fortaleza",
+    "goias ec go": "Goiás",
+    "gremio fbpa rs": "Grêmio",
+    "guarani fc sp": "Guarani",
+    "internacional rs": "Internacional",
+    "ituano fc sp": "Ituano",
+    "mirassol fc sp": "Mirassol",
+    "novorizontino sp": "Novorizontino",
+    "operario ferroviario ec pr": "Operário Ferroviário",
+    "palmeiras sp": "Palmeiras",
+    "paysandu sc pa": "Paysandu",
+    "ponte preta sp": "Ponte Preta",
+    "red bull bragantino sp": "Red Bull Bragantino",
+    "santos fc sp": "Santos",
+    "sao paulo fc sp": "São Paulo",
+    "sport club do recife pe": "Sport Recife",
+    "vasco da gama rj": "Vasco da Gama",
+    "vila nova fc go": "Vila Nova",
+    "man utd": "Manchester United",
+    "man united": "Manchester United",
+    "man city": "Manchester City",
+    "nottm forest": "Nottingham Forest",
+    "sheff utd": "Sheffield United",
+    "sheff wed": "Sheffield Wednesday",
+    "west brom": "West Bromwich Albion",
+    "wolves": "Wolverhampton Wanderers",
+    "spurs": "Tottenham Hotspur",
+    "qpr": "Queens Park Rangers",
+    "psg": "Paris Saint-Germain",
+    "atletico madrid": "Atlético Madrid",
+    "athletic bilbao": "Athletic Club",
+    "bayern munich": "Bayern Munich",
+    "borussia mgladbach": "Borussia Mönchengladbach",
+    "bayer leverkusen": "Bayer Leverkusen"
+  };
+
+  function cleanTeamDisplayNameClient(rawName) {
+    const s = String(rawName || "").trim();
+    if (!s) return "";
+    const low = s.toLowerCase().replace(/\s+/g, " ");
+    if (TEAM_DISPLAY_NAME_MAP[low]) return TEAM_DISPLAY_NAME_MAP[low];
+    return s.replace(/\s+(AC|AL|AM|AP|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PE|PI|PR|RJ|RN|RO|RR|RS|SC|SE|SP|TO)$/i, "").trim() || s;
+  }
+
+  let teamLogoLookupMap = new Map();
+  let teamLogoLookupStamp = "";
+
+  function normLogoKey(str) {
+    return String(str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/\b(fc|cf|sc|ac|afc|ud|cd|sd|fk|sk|bk|if|ik|nk|sv|vfb|vfl|tsg|bsc|fsv|spvgg|rcd|real|club|deportivo|sporting|atletico|athletic)\b/g, " ")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function resolveTeamLogoByName(teamName, fallbackLogo = "") {
+    if (fallbackLogo && typeof fallbackLogo === "string" && fallbackLogo.startsWith("http") && !fallbackLogo.includes("/tournaments/")) {
+      return fallbackLogo;
+    }
+    const clean = cleanTeamDisplayNameClient(teamName);
+    if (!clean) return fallbackLogo || "";
+
+    const teamKeysCount = Object.keys(TEAMS || {}).length;
+    const bmCount = bookmakerScan?.allGames?.length || 0;
+    const lmCount = liveMatches?.length || 0;
+    const stamp = `${teamKeysCount}:${bmCount}:${lmCount}`;
+
+    if (stamp !== teamLogoLookupStamp) {
+      teamLogoLookupStamp = stamp;
+      teamLogoLookupMap = new Map();
+      const registerLogo = (nm, logoUrl) => {
+        if (!nm || !logoUrl || typeof logoUrl !== "string" || !logoUrl.startsWith("http") || logoUrl.includes("/tournaments/")) return;
+        const rawLow = String(nm).trim().toLowerCase();
+        const clLow = cleanTeamDisplayNameClient(nm).toLowerCase();
+        const nk = normLogoKey(nm);
+        if (rawLow && !teamLogoLookupMap.has(rawLow)) teamLogoLookupMap.set(rawLow, logoUrl);
+        if (clLow && !teamLogoLookupMap.has(clLow)) teamLogoLookupMap.set(clLow, logoUrl);
+        if (nk && !teamLogoLookupMap.has(nk)) teamLogoLookupMap.set(nk, logoUrl);
+      };
+
+      for (const t of Object.values(TEAMS || {})) {
+        if (t?.name && t?.logo) registerLogo(t.name, t.logo);
+      }
+      for (const m of liveMatches || []) {
+        const hT = TEAMS?.[m.home];
+        const aT = TEAMS?.[m.away];
+        if (m.homeTeamName && (m.homeLogo || hT?.logo)) registerLogo(m.homeTeamName, m.homeLogo || hT?.logo);
+        if (m.awayTeamName && (m.awayLogo || aT?.logo)) registerLogo(m.awayTeamName, m.awayLogo || aT?.logo);
+      }
+      for (const g of bookmakerScan?.allGames || []) {
+        const hLogo = g.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : "");
+        const aLogo = g.awayLogo || (g.awayUid ? `https://img.sportradar.com/ls/crest/medium/${g.awayUid}.png` : "");
+        if (g.homeTeamName && hLogo) registerLogo(g.homeTeamName, hLogo);
+        if (g.awayTeamName && aLogo) registerLogo(g.awayTeamName, aLogo);
+      }
+    }
+
+    const rawLow = String(teamName).trim().toLowerCase();
+    const clLow = clean.toLowerCase();
+    const nk = normLogoKey(clean);
+    return (
+      teamLogoLookupMap.get(rawLow) ||
+      teamLogoLookupMap.get(clLow) ||
+      teamLogoLookupMap.get(nk) ||
+      fallbackLogo ||
+      ""
+    );
+  }
+
+  function getTeam(key, fallbackName = "Club", fallbackLogo = "") {
+    const t = TEAMS[key];
+    if (t) {
+      const cleanName = cleanTeamDisplayNameClient(t.name || fallbackName);
+      const bestLogo = (t.logo && !t.logo.includes("/tournaments/")) ? t.logo : resolveTeamLogoByName(cleanName, fallbackLogo || t.logo);
+      return { ...t, name: cleanName, logo: bestLogo };
+    }
+    const cleanFallback = cleanTeamDisplayNameClient(fallbackName);
+    return {
+      key,
+      name: cleanFallback,
+      short: cleanFallback.slice(0, 3).toUpperCase(),
+      color: "#0A7B5C",
+      logo: resolveTeamLogoByName(cleanFallback, fallbackLogo)
+    };
   }
 
   function getLeagueInfo(mOrSlug) {
     if (typeof mOrSlug === "object" && mOrSlug !== null) {
       const staticLg = leagueBySlug.get(mOrSlug.leagueSlug);
-      const rawCountry = mOrSlug.leagueCountry || staticLg?.country || "";
-      const rawName = mOrSlug.leagueName || staticLg?.name || mOrSlug.leagueSlug;
+      const rawCountry = mOrSlug.leagueCountry || mOrSlug.country || staticLg?.country || "";
+      const rawName = mOrSlug.leagueName || mOrSlug.league || staticLg?.name || mOrSlug.leagueSlug;
       const loc = RT?.resolveCanonicalLocation
         ? RT.resolveCanonicalLocation(rawCountry, rawName, mOrSlug.sport || "football")
         : { country: rawCountry || "International", league: rawName, slug: mOrSlug.leagueSlug, flag: "🏳️" };
@@ -962,16 +1109,26 @@
     "United Kingdom": "gb", "Spain": "es", "Germany": "de", "Italy": "it", "France": "fr",
     "Portugal": "pt", "Netherlands": "nl", "Belgium": "be", "Turkey": "tr", "Turkiye": "tr",
     "Brazil": "br", "Argentina": "ar", "Colombia": "co", "Uruguay": "uy", "Venezuela": "ve",
-    "Chile": "cl", "Peru": "pe", "Ecuador": "ec", "Paraguay": "py", "Mexico": "mx",
+    "Chile": "cl", "Peru": "pe", "Ecuador": "ec", "Paraguay": "py", "Bolivia": "bo", "Mexico": "mx",
     "USA": "us", "United States": "us", "Canada": "ca", "El Salvador": "sv", "Costa Rica": "cr",
+    "Guatemala": "gt", "Honduras": "hn", "Panama": "pa", "Jamaica": "jm",
     "Australia": "au", "Japan": "jp", "South Korea": "kr", "Korea Republic": "kr", "China": "cn",
-    "Saudi Arabia": "sa", "Russia": "ru", "Ukraine": "ua", "Poland": "pl", "Sweden": "se",
-    "Norway": "no", "Denmark": "dk", "Finland": "fi", "Austria": "at", "Switzerland": "ch",
-    "Greece": "gr", "Czechia": "cz", "Czech Republic": "cz", "Croatia": "hr", "Serbia": "rs",
+    "Saudi Arabia": "sa", "United Arab Emirates": "ae", "UAE": "ae", "Qatar": "qa",
+    "Iraq": "iq", "Iran": "ir", "India": "in", "Indonesia": "id", "Thailand": "th",
+    "Vietnam": "vn", "Malaysia": "my", "Singapore": "sg",
+    "Russia": "ru", "Ukraine": "ua", "Belarus": "by", "Poland": "pl", "Sweden": "se",
+    "Norway": "no", "Denmark": "dk", "Finland": "fi", "Iceland": "is", "Latvia": "lv",
+    "Estonia": "ee", "Lithuania": "lt", "Austria": "at", "Switzerland": "ch",
+    "Greece": "gr", "Cyprus": "cy", "Czechia": "cz", "Czech Republic": "cz",
+    "Croatia": "hr", "Serbia": "rs", "Bosnia and Herzegovina": "ba", "North Macedonia": "mk",
+    "Albania": "al", "Montenegro": "me", "Kosovo": "xk", "Malta": "mt", "Luxembourg": "lu",
+    "Faroe Islands": "fo", "Republic of Ireland": "ie", "Ireland": "ie",
     "Romania": "ro", "Hungary": "hu", "Bulgaria": "bg", "Slovakia": "sk", "Slovenia": "si",
+    "Georgia": "ge", "Armenia": "am", "Azerbaijan": "az", "Kazakhstan": "kz", "Uzbekistan": "uz",
     "Israel": "il", "Egypt": "eg", "Morocco": "ma", "Nigeria": "ng", "Ghana": "gh",
     "South Africa": "za", "Tunisia": "tn", "Algeria": "dz", "Cameroon": "cm", "Senegal": "sn",
-    "Europe": "eu"
+    "Ivory Coast": "ci", "Kenya": "ke", "Tanzania": "tz", "Uganda": "ug", "Zambia": "zm",
+    "Mali": "ml", "DR Congo": "cd", "Angola": "ao", "Europe": "eu"
   };
 
   function countryFlagBadgeHtml(country, fallbackFlag = "🌐", compact = false) {
@@ -1033,13 +1190,17 @@
         const leagueBlocks = Array.from(cb.leagues.values())
           .map(({ info: lg, items }) => {
             const sortedItems = deduplicateMatches(isCompletedMode ? items : sortMatchesInOrder(items));
+            const displayLeagueTitle = lg.name && lg.name.toLowerCase().includes(cb.country.toLowerCase())
+              ? lg.name
+              : `${cb.country} · ${lg.name}`;
             return `
               <div class="country-league-block">
                 <a class="match-league-header is-centered" href="${escapeHtml(lg.href)}" data-route="${escapeHtml(lg.href)}">
                   <span class="league-hdr-spacer" aria-hidden="true"></span>
                   <span class="league-hdr-center">
+                    ${countryFlagBadgeHtml(cb.country, cb.flag, true)}
                     <span class="crest-backed" style="width:20px;height:20px;">${crestImg(lg.logo, lg.name, "#0A7B5C", 20)}</span>
-                    <span class="league-name">${escapeHtml(lg.name)}</span>
+                    <span class="league-name">${escapeHtml(displayLeagueTitle)}</span>
                   </span>
                   <span class="league-hdr-right">
                     <span class="text-xs font-mono text-muted">${items.length} ${items.length === 1 ? "fixture" : "fixtures"}</span>
@@ -1816,8 +1977,8 @@
             : slip.legs
                 .map((leg, idx) => {
                   const m = leg.match;
-                  const home = getTeam(m.home, "Home");
-                  const away = getTeam(m.away, "Away");
+                  const home = getTeam(m.home, m.homeTeamName || "Home", m.homeLogo);
+                  const away = getTeam(m.away, m.awayTeamName || "Away", m.awayLogo);
                   const lg = getLeagueInfo(m);
                   const conf = Math.round((leg.market.prob || 0.65) * 100);
                   const defaultExpanded = idx < 2 && ["2", "5", "10"].includes(slip.id);
@@ -1827,8 +1988,9 @@
                       <div class="sure-leg-head">
                         <div class="flex items-center gap-2 min-w-0 flex-wrap">
                           <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill bg-brand-soft text-brand">#${idx + 1}</span>
+                          ${countryFlagBadgeHtml(lg.country, lg.flag, true)}
                           ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                          <span class="text-xs font-semibold text-text-secondary truncate">${lg.flag ? `${escapeHtml(lg.flag)} ${escapeHtml(lg.country)} · ` : ""}${escapeHtml(lg.name)}</span>
+                          <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.country)} · ${escapeHtml(lg.name)}</span>
                         </div>
                         <div class="flex items-center gap-1.5 flex-wrap">
                           ${renderVerifyKoPills(m)}
@@ -1886,8 +2048,8 @@
   }
 
   function renderMatchRow(m) {
-    const home = getTeam(m.home, "Home");
-    const away = getTeam(m.away, "Away");
+    const home = getTeam(m.home, m.homeTeamName || "Home", m.homeLogo);
+    const away = getTeam(m.away, m.awayTeamName || "Away", m.awayLogo);
     const isAbandoned = isMatchAbandonedOrInterrupted(m);
     const isLive = !isAbandoned && isMatchTrulyLive(m);
     const isFT = !isAbandoned && m.status === "FT";
@@ -2781,8 +2943,8 @@
       : filteredDrops
           .slice(0, 50)
           .map((m) => {
-            const h = getTeam(m.home, "Home");
-            const a = getTeam(m.away, "Away");
+            const h = getTeam(m.home, m.homeTeamName || "Home", m.homeLogo);
+            const a = getTeam(m.away, m.awayTeamName || "Away", m.awayLogo);
             const lg = getLeagueInfo(m);
             const d = m.droppingOdds.bestDrop;
             const isHeavy = d.dropPct >= 5.0;
@@ -2795,8 +2957,9 @@
               <div class="intel-row-card" data-match-id="${m.id}" style="${isHeavy ? "border-left: 3px solid var(--live);" : ""}">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <div class="flex items-center gap-2 min-w-0">
+                    ${countryFlagBadgeHtml(lg.country, lg.flag, true)}
                     ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.country)} · ${escapeHtml(lg.name)}</span>
                     <span class="text-xs font-mono text-muted">· ${m.status === "LIVE" ? `LIVE ${escapeHtml(m.displayTime)}` : `${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}`}</span>
                   </div>
                   <div class="flex items-center gap-2">
@@ -2905,8 +3068,8 @@
       : filteredPpg
           .slice(0, 45)
           .map((m) => {
-            const h = getTeam(m.home, "Home");
-            const a = getTeam(m.away, "Away");
+            const h = getTeam(m.home, m.homeTeamName || "Home", m.homeLogo);
+            const a = getTeam(m.away, m.awayTeamName || "Away", m.awayLogo);
             const lg = getLeagueInfo(m);
             const ppg = m.analysis?.factors?.ppg || { homeOverall: 1.5, awayOverall: 1.3, homeHomePpg: 1.7, awayAwayPpg: 1.1, gap: 0.2, edge: h.name };
             const best = m.analysis?.bestPick;
@@ -2933,8 +3096,9 @@
               <div class="intel-row-card" data-match-id="${m.id}" style="${isHighGap ? "border-left: 3px solid var(--brand);" : ""}">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <div class="flex items-center gap-2 min-w-0">
+                    ${countryFlagBadgeHtml(lg.country, lg.flag, true)}
                     ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.name)}</span>
+                    <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.country)} · ${escapeHtml(lg.name)}</span>
                     <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
                   </div>
                   <div class="flex items-center gap-1.5 flex-wrap">
@@ -3615,7 +3779,8 @@
           <td class="font-mono font-bold">${row.rank}</td>
           <td>
             <div class="flex items-center gap-1.5">
-              <strong class="text-text">${escapeHtml(row.team)}</strong>
+              ${crestImg(resolveTeamLogoByName(row.team, row.logo), row.team, "#0A7B5C", 18)}
+              <strong class="text-text">${escapeHtml(cleanTeamDisplayNameClient(row.team))}</strong>
               ${isStrongPpg ? `<span title="Strong PPG (>= 1.60)">💎</span>` : ""}
               ${row.hasLiveMatch ? `<span class="live-dot" title="Currently Live In-Play"></span>` : ""}
               ${clickRoute ? "" : `<span class="text-xs text-muted font-mono" data-runin-arrow="1">${isExpanded ? "▲" : "▼"}</span>`}
@@ -4108,13 +4273,24 @@
           <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
             ${topTips.map((tip, i) => {
               const koLabel = formatKickoffCompact(tip).compactLabel;
+              const hName = cleanTeamDisplayNameClient(tip.homeTeamName || (tip.fixture || "").split(" vs ")[0] || "Home");
+              const aName = cleanTeamDisplayNameClient(tip.awayTeamName || (tip.fixture || "").split(" vs ")[1] || "Away");
+              const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
               return `
               <a class="power-preview-tile is-strong" href="/handicap" data-route="/handicap" style="border-left: 3px solid #10B981; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} HANDICAP VALUE PICK</span>
                   <span class="ev-return-pill">${tip.expectedValuePct} EV</span>
                 </div>
-                <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(tip.fixture)}</div>
+                <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                  ${crestImg(hLogo, hName, "#10B981", 18)}
+                  <span class="truncate">${escapeHtml(hName)}</span>
+                  <span class="text-xs text-muted font-normal">vs</span>
+                  <span class="truncate">${escapeHtml(aName)}</span>
+                  ${crestImg(aLogo, aName, "#3B82F6", 18)}
+                </div>
+                <div class="text-xs font-medium text-muted truncate mt-0.5 w-full">${countryFlagBadgeHtml(tip.country || "International", tip.countryFlag || "🏳️", true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}</div>
                 <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
                 <div class="text-xs font-mono text-muted truncate mt-0.5 w-full">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
                 <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
@@ -4153,14 +4329,24 @@
           <div class="grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
             ${top5Min.map((tip, i) => {
               const koLabel = formatKickoffCompact(tip).compactLabel;
+              const hName = cleanTeamDisplayNameClient(tip.homeTeam || (tip.fixture || "").split(" vs ")[0] || "Home");
+              const aName = cleanTeamDisplayNameClient(tip.awayTeam || (tip.fixture || "").split(" vs ")[1] || "Away");
+              const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
               return `
               <a class="power-preview-tile is-strong" href="/special-tips?tab=5MIN_DRAW" data-route="/special-tips?tab=5MIN_DRAW" style="border-left: 3px solid #06B6D4; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#06B6D4;">#${i + 1} 5-MIN DRAW (0-0)</span>
                   <span class="ev-return-pill" style="background:#06B6D4;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
-                <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${escapeHtml(tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
+                <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                  ${crestImg(hLogo, hName, "#06B6D4", 18)}
+                  <span class="truncate">${escapeHtml(hName)}</span>
+                  <span class="text-xs text-muted font-normal">vs</span>
+                  <span class="truncate">${escapeHtml(aName)}</span>
+                  ${crestImg(aLogo, aName, "#3B82F6", 18)}
+                </div>
+                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${countryFlagBadgeHtml(tip.country || "International", tip.flag, true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
                 <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
@@ -4170,14 +4356,24 @@
             `; }).join("")}
             ${topNo3.map((tip, i) => {
               const koLabel = formatKickoffCompact(tip).compactLabel;
+              const hName = cleanTeamDisplayNameClient(tip.homeTeam || (tip.fixture || "").split(" vs ")[0] || "Home");
+              const aName = cleanTeamDisplayNameClient(tip.awayTeam || (tip.fixture || "").split(" vs ")[1] || "Away");
+              const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
               return `
               <a class="power-preview-tile is-strong" href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW" style="border-left: 3px solid #10B981; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
                   <span class="tile-kicker font-bold" style="color:#10B981;">#${i + 1} NO 3+ GOALS IN A ROW</span>
                   <span class="ev-return-pill" style="background:#10B981;color:#042F2E;">${tip.expectedValuePct} EV</span>
                 </div>
-                <div class="font-bold text-sm truncate mt-1 w-full">${tip.flag} ${escapeHtml(tip.fixture)}</div>
-                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${escapeHtml(tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
+                <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                  ${crestImg(hLogo, hName, "#10B981", 18)}
+                  <span class="truncate">${escapeHtml(hName)}</span>
+                  <span class="text-xs text-muted font-normal">vs</span>
+                  <span class="truncate">${escapeHtml(aName)}</span>
+                  ${crestImg(aLogo, aName, "#3B82F6", 18)}
+                </div>
+                <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${countryFlagBadgeHtml(tip.country || "International", tip.flag, true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
                 <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
                   <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
@@ -4208,7 +4404,7 @@
       const footballLive = activeSportKey === "all"
         ? sortedLive.filter((m) => (m.sport || "football").toLowerCase() === "football")
         : sortedLive;
-      const shownFootball = footballLive.slice(0, 8).map(renderMatchRow).join("");
+      const shownFootball = footballLive.length > 0 ? renderCountryGroupedLeagues(footballLive.slice(0, 8), false) : "";
       const nonFootballLiveHtml = activeSportKey === "all"
         ? nonFootballSports
             .map((spKey) => renderNonFootballRuninSection(spKey, { mode: "LIVE", scopePrefix: "homelive" }))
@@ -4315,7 +4511,7 @@
                         <span class="tile-kicker font-bold" style="color:#16A34A;">🟢 EASIEST RUN-IN</span>
                         <span class="runin-diff-pill is-easy">${escapeHtml(r.diffLabel)} Easier</span>
                       </div>
-                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
+                      <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">${crestImg(resolveTeamLogoByName(r.team, r.logo), r.team, "#16A34A", 18)} <span class="truncate">${escapeHtml(cleanTeamDisplayNameClient(r.team))}</span> <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
                       <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${Number(r.playedPpg || 0).toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${Number(r.remainingPpg || 0).toFixed(2)}</strong></div>
                     </a>
                   `).join("")}
@@ -4325,7 +4521,7 @@
                         <span class="tile-kicker font-bold" style="color:#DC2626;">🔴 TOUGHEST RUN-IN</span>
                         <span class="runin-diff-pill is-tough">${escapeHtml(r.diffLabel)} Tougher</span>
                       </div>
-                      <div class="font-bold text-sm truncate mt-1 w-full">${escapeHtml(r.team)} <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
+                      <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">${crestImg(resolveTeamLogoByName(r.team, r.logo), r.team, "#DC2626", 18)} <span class="truncate">${escapeHtml(cleanTeamDisplayNameClient(r.team))}</span> <span class="text-xs font-mono text-muted">(${Number(r.ppg || 0).toFixed(2)} PPG)</span></div>
                       <div class="text-xs font-mono text-muted mt-1">PLD PPG: <strong class="text-text">${Number(r.playedPpg || 0).toFixed(2)}</strong> &rarr; REM PPG: <strong style="color:#3B82F6;">${Number(r.remainingPpg || 0).toFixed(2)}</strong></div>
                     </a>
                   `).join("")}
@@ -4470,8 +4666,9 @@
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0 flex-wrap">
             <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
+            ${countryFlagBadgeHtml(lg.country, lg.flag, true)}
             ${crestImg(lg.logo, lg.name, "#0A7B5C", 18)}
-            <span class="text-xs font-semibold text-text-secondary truncate">${lg.flag ? `${escapeHtml(lg.flag)} ${escapeHtml(lg.country)} · ` : ""}${escapeHtml(lg.name)}</span>
+            <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(lg.country)} · ${escapeHtml(lg.name)}</span>
             <span class="text-xs font-mono text-muted">· ${escapeHtml(m.date)} ${escapeHtml(m.displayTime)}</span>
           </div>
           <div class="flex items-center gap-1.5 flex-wrap">
@@ -4482,10 +4679,10 @@
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
           <div class="flex items-center gap-2.5 min-w-0">
-            ${crestImg(entry.team.logo, entry.team.name, entry.team.color, 26)}
+            ${crestImg(resolveTeamLogoByName(entry.team.name, entry.team.logo), entry.team.name, entry.team.color, 26)}
             <div class="min-w-0">
-              <div class="font-bold text-base truncate">${escapeHtml(entry.team.name)} <span class="text-xs font-normal text-muted">${entry.isHome ? "(Home)" : "(Away)"}</span></div>
-              <div class="text-xs text-text-secondary truncate">${entry.isHome ? "vs" : "@"} ${escapeHtml(entry.opponent.name)} · ${escapeHtml(m.venue || "Stadium")}</div>
+              <div class="font-bold text-base truncate">${escapeHtml(cleanTeamDisplayNameClient(entry.team.name))} <span class="text-xs font-normal text-muted">${entry.isHome ? "(Home)" : "(Away)"}</span></div>
+              <div class="flex items-center gap-1 text-xs text-text-secondary truncate">${entry.isHome ? "vs" : "@"} ${crestImg(resolveTeamLogoByName(entry.opponent.name, entry.opponent.logo), entry.opponent.name, entry.opponent.color, 15)} <span>${escapeHtml(cleanTeamDisplayNameClient(entry.opponent.name))}</span> · ${escapeHtml(m.venue || "Stadium")}</div>
             </div>
           </div>
           <div class="flex items-center gap-2">
@@ -4777,11 +4974,16 @@
         </div>
       `;
 
+    const hDisp = cleanTeamDisplayNameClient(item.homeTeamName);
+    const aDisp = cleanTeamDisplayNameClient(item.awayTeamName);
+    const hLogo = resolveTeamLogoByName(hDisp, item.homeLogo);
+    const aLogo = resolveTeamLogoByName(aDisp, item.awayLogo);
     return `
       <article class="power-team-card mismatch-card">
         <div class="flex items-center justify-between gap-2 flex-wrap">
           <div class="flex items-center gap-2 min-w-0 flex-wrap">
             <span class="font-mono text-xs font-bold px-2 py-0.5 rounded-pill ${isStrong ? "bg-brand-soft text-brand" : "alert-badge"}">#${idx + 1}</span>
+            ${countryFlagBadgeHtml(item.country, "🏳️", true)}
             <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(item.country)} · ${escapeHtml(item.league)}</span>
             <span class="text-xs font-mono ${item.isLive ? "text-live font-bold" : "text-muted"}">· ${item.isLive ? `● LIVE (${escapeHtml(item.matchStatus)})` : `${escapeHtml(item.isoDate)} ${escapeHtml(item.kickoffUtc)} UTC`}</span>
             ${item.isInvertedTrap ? `<span class="alert-badge">INVERTED BOOKIE TRAP</span>` : ""}
@@ -4794,10 +4996,12 @@
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
           <div class="min-w-0">
-            <div class="font-bold text-base">
-              <span class="${item.side === "HOME" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.homeTeamName)} (Home @ ${fmtOdd(item.bestOdds.home)})</span>
+            <div class="flex items-center gap-1.5 flex-wrap font-bold text-base">
+              ${crestImg(hLogo, hDisp, "#10B981", 22)}
+              <span class="${item.side === "HOME" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(hDisp)} (Home @ ${fmtOdd(item.bestOdds.home)})</span>
               <span class="text-xs font-mono text-muted mx-1">vs</span>
-              <span class="${item.side === "AWAY" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(item.awayTeamName)} (Away @ ${fmtOdd(item.bestOdds.away)})</span>
+              <span class="${item.side === "AWAY" ? (isStrong ? "text-brand" : "text-live") : ""}">${escapeHtml(aDisp)} (Away @ ${fmtOdd(item.bestOdds.away)})</span>
+              ${crestImg(aLogo, aDisp, "#3B82F6", 22)}
             </div>
             <div class="text-xs text-text-secondary mt-0.5">
               ${isStrong ? `Strong Team w/ Mistake Big Odds: <strong>${escapeHtml(item.targetTeam)} (${item.side} @ ${fmtOdd(item.mistakeBigOdd)})</strong> vs Opponent Low Odds (${escapeHtml(item.opponentTeam)} @ ${fmtOdd(item.opponentLowOdd)})` : `Worst Team w/ Mistake Low Odds: <strong>${escapeHtml(item.targetTeam)} (${item.side} @ ${fmtOdd(item.mistakeLowOdd)})</strong> vs Opponent Big Odds (${escapeHtml(item.opponentTeam)} @ ${fmtOdd(item.opponentBigOdd)})`}
@@ -5046,12 +5250,16 @@
                       const as = g.awayStats || { ppg: 1.3, form: ["L","W","D"] };
                       const sb = g.sportybet;
                       const fb = g.footballCom;
+                      const hDisp = cleanTeamDisplayNameClient(g.homeTeamName);
+                      const aDisp = cleanTeamDisplayNameClient(g.awayTeamName);
+                      const hLogo = resolveTeamLogoByName(hDisp, g.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : ""));
+                      const aLogo = resolveTeamLogoByName(aDisp, g.awayLogo || (g.awayUid ? `https://img.sportradar.com/ls/crest/medium/${g.awayUid}.png` : ""));
                       return `
                         <tr>
                           <td class="font-mono text-xs">${g.isLive ? `<span class="text-live font-bold">LIVE</span>` : escapeHtml(g.kickoffUtc || "-")}</td>
                           <td>
-                            <div class="font-bold text-xs">${escapeHtml(g.homeTeamName)} vs ${escapeHtml(g.awayTeamName)}</div>
-                            <div class="text-muted" style="font-size:11px;">${escapeHtml(g.country)} · ${escapeHtml(g.league)}</div>
+                            <div class="flex items-center gap-1.5 font-bold text-xs">${crestImg(hLogo, hDisp, "#10B981", 16)} <span>${escapeHtml(hDisp)}</span> <span class="text-muted font-normal">vs</span> <span>${escapeHtml(aDisp)}</span> ${crestImg(aLogo, aDisp, "#3B82F6", 16)}</div>
+                            <div class="flex items-center gap-1 text-muted mt-0.5" style="font-size:11px;">${countryFlagBadgeHtml(g.country, "🏳️", true)} <span>${escapeHtml(g.country)} · ${escapeHtml(g.league)}</span></div>
                           </td>
                           <td class="font-mono text-xs">#${escapeHtml(String(sb?.gameId || "-"))} / #${escapeHtml(String(fb?.gameId || "-"))}</td>
                           <td class="font-mono text-xs"><strong class="text-brand">${(hs.ppg || 1.5).toFixed(2)}</strong> vs <strong>${(as.ppg || 1.3).toFixed(2)}</strong></td>
@@ -5225,12 +5433,18 @@
 
     const renderSingleTipCard = (tip) => {
       const targetSos = tip.targetPpg;
+      const hName = cleanTeamDisplayNameClient(tip.homeTeamName || (tip.fixture || "").split(" vs ")[0] || "Home");
+      const aName = cleanTeamDisplayNameClient(tip.awayTeamName || (tip.fixture || "").split(" vs ")[1] || "Away");
+      const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+      const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
+      const cName = tip.country || "International";
       return `
         <div class="handicap-card ${tip.qualityTier === "ELITE" ? "is-elite" : tip.category === "SAFE_PLUS" ? "is-safe" : "is-blowout"}">
           <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
             <div class="flex items-center gap-2 flex-wrap min-w-0">
               <span class="sport-badge-pill">${escapeHtml(tip.sportName)}</span>
-              <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.league)}</span>
+              ${countryFlagBadgeHtml(cName, tip.countryFlag || "🏳️", true)}
+              <span class="text-xs font-semibold text-text-secondary truncate">${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}</span>
               <span class="text-xs font-mono text-muted">· ${escapeHtml(tip.kickoffUtc || "Today")}</span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
@@ -5241,7 +5455,13 @@
 
           <div class="flex items-center justify-between gap-3 flex-wrap my-2">
             <div>
-              <h3 class="text-base font-bold font-headline">${escapeHtml(tip.fixture)}</h3>
+              <h3 class="flex items-center gap-2 flex-wrap text-base font-bold font-headline">
+                ${crestImg(hLogo, hName, "#10B981", 22)}
+                <span>${escapeHtml(hName)}</span>
+                <span class="text-xs font-mono text-muted">vs</span>
+                <span>${escapeHtml(aName)}</span>
+                ${crestImg(aLogo, aName, "#3B82F6", 22)}
+              </h3>
               <div class="text-xs text-muted mt-0.5">Recommended Bet Selection:</div>
               <div class="handicap-line-badge mt-1">${escapeHtml(tip.handicapLine)}</div>
             </div>
@@ -5512,13 +5732,17 @@
                   </div>
 
                   <div class="flex items-center justify-between text-xs text-muted mb-1 flex-wrap gap-1">
-                    <span>${tip.flag} <strong class="text-text">${escapeHtml(tip.league)}</strong></span>
+                    <span class="flex items-center gap-1.5">${countryFlagBadgeHtml(tip.country || "International", tip.flag, true)} <strong class="text-text">${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}</strong></span>
                     <span class="font-mono">${escapeHtml(tip.date)} · ${escapeHtml(tip.kickoffTime)}</span>
                   </div>
                   <div class="flex items-center gap-1.5 flex-wrap mb-1.5">${renderVerifyKoPills(tip)}</div>
 
-                  <h3 class="font-headline font-bold text-base text-text mt-1 mb-2">
-                    ${escapeHtml(tip.fixture)}
+                  <h3 class="flex items-center gap-2 flex-wrap font-headline font-bold text-base text-text mt-1 mb-2">
+                    ${crestImg(resolveTeamLogoByName(tip.homeTeam, tip.homeLogo), cleanTeamDisplayNameClient(tip.homeTeam || "Home"), "#06B6D4", 22)}
+                    <span>${escapeHtml(cleanTeamDisplayNameClient(tip.homeTeam || (tip.fixture || "").split(" vs ")[0] || "Home"))}</span>
+                    <span class="text-xs font-mono text-muted">vs</span>
+                    <span>${escapeHtml(cleanTeamDisplayNameClient(tip.awayTeam || (tip.fixture || "").split(" vs ")[1] || "Away"))}</span>
+                    ${crestImg(resolveTeamLogoByName(tip.awayTeam, tip.awayLogo), cleanTeamDisplayNameClient(tip.awayTeam || "Away"), "#3B82F6", 22)}
                   </h3>
 
                   <div class="defensive-ppg-strip">
@@ -6574,8 +6798,10 @@
 
       const sport = (g.sport || "football").toLowerCase();
       const sportName = g.sportName || (sport === "tennis" ? "Tennis" : sport === "basketball" ? "Basketball" : sport === "hockey" ? "Ice Hockey" : sport === "darts" ? "Darts" : "Football");
-      const homeName = g.homeTeamName || "Home";
-      const awayName = g.awayTeamName || "Away";
+      const homeName = cleanTeamDisplayNameClient(g.homeTeamName || "Home");
+      const awayName = cleanTeamDisplayNameClient(g.awayTeamName || "Away");
+      const homeLogoBest = g.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : "");
+      const awayLogoBest = g.awayLogo || (g.awayUid ? `https://img.sportradar.com/ls/crest/medium/${g.awayUid}.png` : "");
       const homeKey = `bk-${(g.homeUid || homeName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
       const awayKey = `bk-${(g.awayUid || awayName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
 
@@ -6585,24 +6811,30 @@
             name: homeName,
             short: homeName,
             country: g.country || sportName,
-            logo: g.homeLogo || g.tournamentIcon || "",
+            logo: homeLogoBest,
             color: "#10B981"
           };
         } else {
           DATA.TEAMS[homeKey].name = homeName;
           DATA.TEAMS[homeKey].short = homeName;
+          if (homeLogoBest && (!DATA.TEAMS[homeKey].logo || DATA.TEAMS[homeKey].logo.includes("/tournaments/"))) {
+            DATA.TEAMS[homeKey].logo = homeLogoBest;
+          }
         }
         if (!DATA.TEAMS[awayKey]) {
           DATA.TEAMS[awayKey] = {
             name: awayName,
             short: awayName,
             country: g.country || sportName,
-            logo: g.awayLogo || g.tournamentIcon || "",
+            logo: awayLogoBest,
             color: "#3B82F6"
           };
         } else {
           DATA.TEAMS[awayKey].name = awayName;
           DATA.TEAMS[awayKey].short = awayName;
+          if (awayLogoBest && (!DATA.TEAMS[awayKey].logo || DATA.TEAMS[awayKey].logo.includes("/tournaments/"))) {
+            DATA.TEAMS[awayKey].logo = awayLogoBest;
+          }
         }
       }
 
@@ -6962,13 +7194,15 @@
       const cid = `bm-${cg.eventId}`;
       const sp = (cg.sport || "football").toLowerCase();
       const spNm = cg.sportName || sp;
-      const hNm = cg.homeTeamName || "Home";
-      const aNm = cg.awayTeamName || "Away";
+      const hNm = cleanTeamDisplayNameClient(cg.homeTeamName || "Home");
+      const aNm = cleanTeamDisplayNameClient(cg.awayTeamName || "Away");
+      const hLogo = cg.homeLogo || (cg.homeUid ? `https://img.sportradar.com/ls/crest/medium/${cg.homeUid}.png` : "");
+      const aLogo = cg.awayLogo || (cg.awayUid ? `https://img.sportradar.com/ls/crest/medium/${cg.awayUid}.png` : "");
       const hKey = `bk-${(cg.homeUid || hNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
       const aKey = `bk-${(cg.awayUid || aNm).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
       if (DATA?.TEAMS) {
-        if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hNm, short: hNm, country: cg.country || spNm, logo: cg.homeLogo || cg.tournamentIcon || "", color: "#10B981" };
-        if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aNm, short: aNm, country: cg.country || spNm, logo: cg.awayLogo || cg.tournamentIcon || "", color: "#3B82F6" };
+        if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hNm, short: hNm, country: cg.country || spNm, logo: hLogo, color: "#10B981" };
+        if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aNm, short: aNm, country: cg.country || spNm, logo: aLogo, color: "#3B82F6" };
       }
       const ts = Number(cg.estimateStartTime) || Date.now();
       const kp = formatKickoffCompact({ timestamp: ts, kickoffUtc: cg.kickoffUtc, isoDate: cg.isoDate });
@@ -7762,13 +7996,13 @@
     const ageText = ageSec === null ? "JUST NOW" : ageSec < 10 ? "JUST NOW" : ageSec < 60 ? `${ageSec}s AGO` : `${Math.floor(ageSec / 60)}m AGO`;
     const srcs = missionTelemetry?.sources || {};
     const hasRuninLoaded = runinLeagueCacheClient.size > 0 || Boolean(RT?.getAllRuninStandingsMap && RT.getAllRuninStandingsMap().size > 0);
-    const ofOk = (srcs.onefootball?.status === "ONLINE" || liveMatches.length > 0) ? "✓" : "…";
-    const bkOk = (srcs.bookmakers?.status === "ONLINE" || Boolean(bookmakerMismatchData)) ? "✓" : "…";
-    const riOk = (srcs.runin?.status === "ONLINE" || hasRuninLoaded) ? "✓" : "…";
-    const isStreamHealthy = sseConnected || (ofOk === "✓" && (bkOk === "✓" || riOk === "✓"));
+    const ofOk = (srcs.onefootball?.status === "ONLINE" || liveMatches.length > 0) ? "✓" : "↻";
+    const bkOk = (srcs.bookmakers?.status === "ONLINE" || Boolean(bookmakerMismatchData) || (bookmakerScan?.allGames?.length > 0)) ? "✓" : "↻";
+    const riOk = (srcs.runin?.status === "ONLINE" || hasRuninLoaded) ? "✓" : "↻";
+    const isStreamHealthy = sseConnected || liveMatches.length > 0 || (bookmakerScan?.allGames?.length > 0);
     hudEl.classList.toggle("is-reconnecting", !isStreamHealthy);
-    const linkLabel = isStreamHealthy ? "LIVE STREAM" : "AUTO-SYNC";
-    labelEl.textContent = `${linkLabel} · ${ageText} · OF${ofOk} FB/SB${bkOk} RI${riOk}`;
+    const linkLabel = isStreamHealthy ? "LIVE STREAM" : "LIVE SYNC";
+    labelEl.textContent = `${linkLabel} · ${ageText} · OF:${ofOk} FB/SB:${bkOk} RI:${riOk}`;
     hudEl.title = `Mission Engine ${missionTelemetry?.mode || "ONLINE"} | Uptime: ${missionTelemetry?.uptimeSec ?? 0}s | Stream: ${isStreamHealthy ? "Live Connected" : "Syncing"} | Click for immediate full refresh`;
   }
 

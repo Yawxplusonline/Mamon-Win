@@ -1,6 +1,6 @@
 // Real-Time Bookmaker Scraper & Odds Mismatch Engine for SportyBet (sportybet.com) & Football.com (football.com)
 const onefootballApi = require("./onefootball");
-const { canonicalizeLeagueAndCountry, isGenericStageName } = require("./leagueCatalog");
+const { canonicalizeLeagueAndCountry, isGenericStageName, cleanTeamDisplayName } = require("./leagueCatalog");
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 const teamStatsCache = new Map(); // uid -> { data, expiresAt }
@@ -209,7 +209,7 @@ function extractEventsFromFactCenter(json, sportKey = "football", sportLabel = "
   const tList = Array.isArray(json.data) ? json.data : json.data.tournaments || [];
   const out = [];
   const isExcludedTournamentOrEvent = (text) => {
-    return /\bncaa\b|\bnacca\b|\bcollege\b|\bdivision\s*[i|1|2|3]+\s*women\b|\bncaa\s*division\b|\bwomen('s)?\b|\(w\)\b|\b\(w\)|\b-w\b|\bwbb\b|\bwnba\b|\bladies\b|\blady\b|\bfemenil\b|\bfeminina\b|\bfeminino\b|\bfem\b|\bfemminile\b|\bféminine\b|\bfrauen\b|\bw-league\b|\bwsl\b|\bnwsl\b|\bd1\s*arkema\b|\bliga\s*f\b|\bdamallsvenskan\b/i.test(text);
+    return /\bncaa\b|\bnacca\b|\bcollege\b|\bdivision\s*[i|1|2|3]+\s*women\b|\bncaa\s*division\b|\bwomen('s)?\b|\(w\)\b|\b\(w\)|\b-w\b|\bwbb\b|\bwnba\b|\bladies\b|\blady\b|\bfemenil\b|\bfeminina\b|\bfeminino\b|\bfem\b|\bfemminile\b|\bféminine\b|\bfrauen\b|\bw-league\b|\bwsl\b|\bnwsl\b|\bd1\s*arkema\b|\bliga\s*f\b|\bdamallsvenskan\b|\bitf\s*w\d+\b|\bw(15|25|35|50|60|75|100)\b/i.test(text);
   };
   for (const t of tList) {
     const tIcon = t.tournamentIcon || "";
@@ -868,8 +868,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
             matchId: eventId.split(":").pop() || eventId,
             sport: ev.sport || "football",
             sportName: ev.sportName || "Football",
-            homeTeamName: ev.homeTeamName || "Home",
-            awayTeamName: ev.awayTeamName || "Away",
+            homeTeamName: cleanTeamDisplayName(ev.homeTeamName || "Home"),
+            awayTeamName: cleanTeamDisplayName(ev.awayTeamName || "Away"),
             homeUid,
             awayUid,
             country: loc.country,
@@ -933,8 +933,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
           };
         } else if (sourceName === "footballCom") {
           // Enforce Football.com's exact Home vs Away team & UID orientation
-          const fbHome = String(ev.homeTeamName || "").trim();
-          const fbAway = String(ev.awayTeamName || "").trim();
+          const fbHome = cleanTeamDisplayName(String(ev.homeTeamName || "").trim());
+          const fbAway = cleanTeamDisplayName(String(ev.awayTeamName || "").trim());
           const fbHomeUid = String(ev.homeTeamId || "").split(":").pop() || "";
           const fbAwayUid = String(ev.awayTeamId || "").split(":").pop() || "";
           const isSwappedVsExisting =
@@ -1025,8 +1025,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
           onefootballUrl: ofMatch?.onefootballUrl || null,
           onefootballLeague: ofMatch?.leagueName || null,
           onefootballCountry: ofMatch?.country || null,
-          homeLogo: ofMatch?.homeLogo || "",
-          awayLogo: ofMatch?.awayLogo || "",
+          homeLogo: ofMatch?.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : ""),
+          awayLogo: ofMatch?.awayLogo || (g.awayUid ? `https://img.sportradar.com/ls/crest/medium/${g.awayUid}.png` : ""),
           droppingOdds,
           bestOdds: {
             home: bH.odd,

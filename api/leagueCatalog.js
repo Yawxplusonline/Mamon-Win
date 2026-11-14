@@ -24,6 +24,8 @@ const COUNTRY_ALIASES = {
   tur: "Turkey",
   turkiye: "Turkey",
   "türkiye": "Turkey",
+  "turkiye amateur": "Turkey",
+  "türkiye amateur": "Turkey",
   turkey: "Turkey",
   bel: "Belgium",
   belgium: "Belgium",
@@ -41,6 +43,18 @@ const COUNTRY_ALIASES = {
   argentina: "Argentina",
   chi: "Chile",
   chile: "Chile",
+  peru: "Peru",
+  per: "Peru",
+  uru: "Uruguay",
+  uruguay: "Uruguay",
+  par: "Paraguay",
+  paraguay: "Paraguay",
+  ecu: "Ecuador",
+  ecuador: "Ecuador",
+  ven: "Venezuela",
+  venezuela: "Venezuela",
+  bol: "Bolivia",
+  bolivia: "Bolivia",
   mex: "Mexico",
   mexico: "Mexico",
   usa: "USA",
@@ -49,6 +63,42 @@ const COUNTRY_ALIASES = {
   sau: "Saudi Arabia",
   ksa: "Saudi Arabia",
   "saudi arabia": "Saudi Arabia",
+  uae: "United Arab Emirates",
+  "united arab emirates": "United Arab Emirates",
+  irq: "Iraq",
+  iraq: "Iraq",
+  irn: "Iran",
+  iran: "Iran",
+  blr: "Belarus",
+  belarus: "Belarus",
+  lva: "Latvia",
+  latvia: "Latvia",
+  fin: "Finland",
+  finland: "Finland",
+  hun: "Hungary",
+  hungary: "Hungary",
+  bgr: "Bulgaria",
+  bulgaria: "Bulgaria",
+  svn: "Slovenia",
+  slovenia: "Slovenia",
+  isr: "Israel",
+  israel: "Israel",
+  cyp: "Cyprus",
+  cyprus: "Cyprus",
+  egy: "Egypt",
+  egypt: "Egypt",
+  mar: "Morocco",
+  morocco: "Morocco",
+  tun: "Tunisia",
+  tunisia: "Tunisia",
+  dza: "Algeria",
+  algeria: "Algeria",
+  zaf: "South Africa",
+  "south africa": "South Africa",
+  nga: "Nigeria",
+  nigeria: "Nigeria",
+  gha: "Ghana",
+  ghana: "Ghana",
   rus: "Russia",
   russia: "Russia",
   swe: "Sweden",
@@ -129,7 +179,33 @@ const DEMONYM_BY_COUNTRY = {
   Romania: "Romanian",
   Croatia: "Croatian",
   Serbia: "Serbian",
-  Japan: "Japanese"
+  Japan: "Japanese",
+  "South Korea": "South Korean",
+  "Czech Republic": "Czech",
+  Finland: "Finnish",
+  Hungary: "Hungarian",
+  Bulgaria: "Bulgarian",
+  Slovenia: "Slovenian",
+  Israel: "Israeli",
+  Cyprus: "Cypriot",
+  Belarus: "Belarusian",
+  Latvia: "Latvian",
+  Peru: "Peruvian",
+  Uruguay: "Uruguayan",
+  Paraguay: "Paraguayan",
+  Ecuador: "Ecuadorian",
+  Venezuela: "Venezuelan",
+  Bolivia: "Bolivian",
+  Iraq: "Iraqi",
+  Iran: "Iranian",
+  "United Arab Emirates": "UAE",
+  Egypt: "Egyptian",
+  Morocco: "Moroccan",
+  Tunisia: "Tunisian",
+  Algeria: "Algerian",
+  "South Africa": "South African",
+  Nigeria: "Nigerian",
+  Ghana: "Ghanaian"
 };
 
 const KNOWN_LEAGUE_RULES = [
@@ -162,9 +238,10 @@ const KNOWN_LEAGUE_RULES = [
 
   // Spain
   { re: /^(spanish\s+)?la\s*liga$/i, country: "Spain", league: "Spanish La Liga" },
-  { re: /^(spanish\s+)?la\s*liga\s*2$|segunda divisi[oó]n/i, country: "Spain", league: "Spanish LaLiga 2" },
+  { re: /^(spanish\s+)?la\s*liga\s*2$|segunda divisi[oó]n|laliga hypermotion/i, country: "Spain", league: "Spanish LaLiga 2" },
   { re: /copa del rey/i, country: "Spain", league: "Spanish Copa del Rey" },
   { re: /primera federaci[oó]n|primera rfef/i, country: "Spain", league: "Spanish Primera Federación" },
+  { re: /liga acb/i, country: "Spain", league: "Spanish Liga ACB", sport: "basketball" },
 
   // Germany
   { re: /^(german\s+)?bundesliga$/i, country: "Germany", league: "German Bundesliga", exclude: /2\.|austria/i },
@@ -200,8 +277,18 @@ const KNOWN_LEAGUE_RULES = [
   { re: /t[uü]rkiye kupas|turkish cup/i, country: "Turkey", league: "Turkish Cup" },
 
   // Other Global Leagues & Cups
-  { re: /persha liha/i, country: "Ukraine", league: "Ukrainian Persha Liha" },
+  { re: /persha li[gh]a/i, country: "Ukraine", league: "Ukrainian Persha Liga" },
   { re: /ukrainian premier/i, country: "Ukraine", league: "Ukrainian Premier League" },
+  { re: /ekstraklasa/i, country: "Poland", league: "Polish Ekstraklasa" },
+  { re: /^i\s+liga$/i, country: "Poland", league: "Polish I Liga" },
+  { re: /^ii\s+liga$/i, country: "Poland", league: "Polish II Liga" },
+  { re: /^iii\s+liga/i, country: "Poland", league: "Polish III Liga" },
+  { re: /virsliga/i, country: "Latvia", league: "Latvian Virsliga" },
+  { re: /vtoraya liga/i, country: "Belarus", league: "Belarusian Vtoraya Liga" },
+  { re: /^liga 1$/i, country: "Peru", league: "Peruvian Liga 1" },
+  { re: /premier division league/i, country: "Iraq", league: "Iraqi Premier Division League" },
+  { re: /pro league cup/i, country: "United Arab Emirates", league: "UAE Pro League Cup" },
+  { re: /lnb\s*[eé]lite/i, country: "France", league: "French LNB Élite", sport: "basketball" },
   { re: /copa colombia/i, country: "Colombia", league: "Colombian Copa Colombia" },
   { re: /primera a|categor[ií]a primera/i, country: "Colombia", league: "Colombian Primera A" },
   { re: /primera divisi[oó]n de el salvador/i, country: "El Salvador", league: "El Salvador Primera Division" },
@@ -286,7 +373,7 @@ function canonicalizeLeagueAndCountry(rawCountry, rawLeague, sportKey = "footbal
     demonym &&
     !league.toLowerCase().includes(country.toLowerCase()) &&
     !league.toLowerCase().includes(demonym.toLowerCase()) &&
-    /^(premier league|championship|league one|league two|national league|cup|fa cup|1\. lig|2\. lig|3\. lig|serie [abc]|ligue [12]|super league|primera division|primera b|first division)$/i.test(league)
+    /^(premier league|championship|league one|league two|national league|cup|fa cup|1\. lig|2\. lig|3\. lig|1\. liga|2\. liga|serie [abc]|ligue [12]|super league|primera division|primera b|first division|basketball league|superliga|eliteserien|allsvenskan|veikkausliiga|superligaen)$/i.test(league)
   ) {
     league = `${demonym} ${league}`;
   }
@@ -298,9 +385,74 @@ function canonicalizeLeagueAndCountry(rawCountry, rawLeague, sportKey = "footbal
   return { country, league };
 }
 
+const TEAM_DISPLAY_OVERRIDES = {
+  "ac goianiense go": "Atlético Goianiense",
+  "atletico goianiense": "Atlético Goianiense",
+  "cuiaba ec mt": "Cuiabá EC",
+  "america fc mg": "América Mineiro",
+  "avai fc sc": "Avaí FC",
+  "botafogo fc sp": "Botafogo-SP",
+  "operario ferroviario ec pr": "Operário Ferroviário",
+  "vila nova fc go": "Vila Nova FC",
+  "coritiba fc pr": "Coritiba FC",
+  "goias ec go": "Goiás EC",
+  "paysandu sc pa": "Paysandu SC",
+  "ceara sc ce": "Ceará SC",
+  "sport club do recife pe": "Sport Recife",
+  "guarani fc sp": "Guarani FC",
+  "ponte preta sp": "Ponte Preta",
+  "santos fc sp": "Santos FC",
+  "novorizontino sp": "Grêmio Novorizontino",
+  "gremio novorizontino sp": "Grêmio Novorizontino",
+  "mirassol fc sp": "Mirassol FC",
+  "chapecoense sc": "Chapecoense",
+  "ituano fc sp": "Ituano FC",
+  "brusque fc sc": "Brusque FC",
+  "cr brasil al": "CRB Maceió",
+  "amazonas fc am": "Amazonas FC",
+  "man utd": "Manchester United",
+  "man united": "Manchester United",
+  "man city": "Manchester City",
+  "nottm forest": "Nottingham Forest",
+  "nott'm forest": "Nottingham Forest",
+  "sheff utd": "Sheffield United",
+  "sheff wed": "Sheffield Wednesday",
+  "wba": "West Bromwich Albion",
+  "west brom": "West Bromwich Albion",
+  "qpr": "Queens Park Rangers",
+  "wolves": "Wolverhampton Wanderers",
+  "spurs": "Tottenham Hotspur",
+  "psg": "Paris Saint-Germain",
+  "paris sg": "Paris Saint-Germain",
+  "ath bilbao": "Athletic Club Bilbao",
+  "athletic bilbao": "Athletic Club Bilbao",
+  "atl madrid": "Atlético Madrid",
+  "atl. madrid": "Atlético Madrid",
+  "atletico madrid": "Atlético Madrid",
+  "inter": "Inter Milan",
+  "internazionale": "Inter Milan",
+  "milan": "AC Milan",
+  "bayern munchen": "Bayern Munich",
+  "m'gladbach": "Borussia Mönchengladbach",
+  "monchengladbach": "Borussia Mönchengladbach",
+  "sporting": "Sporting CP",
+  "sporting lisbon": "Sporting CP"
+};
+
+function cleanTeamDisplayName(rawName) {
+  const s = String(rawName || "").trim();
+  if (!s) return "";
+  const low = s.toLowerCase().replace(/\s+/g, " ");
+  if (TEAM_DISPLAY_OVERRIDES[low]) return TEAM_DISPLAY_OVERRIDES[low];
+  // Strip trailing 2-letter Brazilian state codes after FC/EC/SC/AC (e.g. "Vila Nova FC GO" -> "Vila Nova FC")
+  const strippedState = s.replace(/\b(FC|EC|SC|AC|CR)\s+(SP|RJ|MG|RS|PR|SC|BA|GO|PE|CE|PA|MT|AL|AM|RN|PB|MA|SE|DF|ES|PI|TO|MS|RO|AC|AP|RR)$/i, "$1");
+  return strippedState.trim();
+}
+
 module.exports = {
   isGenericStageName,
   normalizeCountryName,
   canonicalizeLeagueAndCountry,
+  cleanTeamDisplayName,
   DEMONYM_BY_COUNTRY
 };

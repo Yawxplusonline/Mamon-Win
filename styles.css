@@ -368,8 +368,8 @@ ul {
 }
 
 .topbar-logo span {
-  font-size: clamp(16px, 2.2vw, 21px);
-  font-weight: 700;
+  font-size: clamp(13px, 1.45vw, 17px);
+  font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--text);
   white-space: nowrap;
@@ -421,7 +421,7 @@ ul {
 }
 
 @media (max-width: 1240px) {
-  .topbar-logo span { font-size: 18px; }
+  .topbar-logo span { font-size: 14px; }
   .topbar-nav { gap: 2px; padding: 3px 4px; margin: 0 4px; }
   .topbar-nav a { flex: 0 0 auto; padding: 4px 7px; font-size: 11px; }
 }

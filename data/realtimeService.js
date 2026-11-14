@@ -6349,7 +6349,7 @@ window.MAMON_REALTIME = (() => {
           time: a.published ? new Date(a.published).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Today",
           tag: codeToMeta.get(code)?.name || "Football",
           summary: a.description || a.headline,
-          body: [a.description || a.headline, "Live story synced via MAMON WIN real-time football desk."]
+          body: [a.description || a.headline, "Live story synced via Abradakabra Money God (AMG) real-time football desk."]
         });
       }
     }

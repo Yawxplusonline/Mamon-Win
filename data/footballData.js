@@ -79,14 +79,14 @@ window.MAMON_DATA = (() => {
     {
       id: "news-1",
       featured: true,
-      title: "11-Factor Match Model: How Home Clean Sheets & Run-in Rest Edges Drive Sure Odds",
-      source: "MAMON WIN DESK",
+      title: "19-Factor Match Model: How Home Clean Sheets & Run-in Rest Edges Drive Sure Odds",
+      source: "ABRADAKABRA MONEY GOD (AMG) DESK",
       time: "Live Update",
       tag: "Sure Odds",
       summary: "Combining 5-game Home/Away splits, Head-to-Head tendencies, squad injuries, red-card suspensions, and fixture congestion reveals mispriced football markets.",
       body: [
         "Single-stat betting fails when form lines mask home-away variance. A club carrying W-W-D-L-W overall might be undefeated across five straight home matches with three clean sheets while struggling on its travels.",
-        "MAMON WIN calculates all 11 live performance pillars across every fixture before constructing the 2, 5, 10, 80, 100, 200, 500, and 1 Million Sure Odds accumulators.",
+        "Abradakabra Money God (AMG) calculates all 19 live performance pillars across every fixture before constructing the 2, 5, 10, 80, 100, 200, 500, and 1 Million Sure Odds accumulators.",
         "Every slip mixes only active live and upcoming global matches so you never risk building tickets on completed or cancelled games."
       ]
     },

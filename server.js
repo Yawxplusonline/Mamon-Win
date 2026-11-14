@@ -266,7 +266,7 @@ server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
 server.listen(PORT, HOST, () => {
-  console.log(`MAMON WIN server running at http://${HOST}:${PORT}/`);
+  console.log(`Abradakabra Money God (AMG) server running at http://${HOST}:${PORT}/`);
   // Initial Mission Boot Ingestion (all real-time feeds start immediately)
   runMissionJob("onefootball", false);
   runMissionJob("bookmakers", false);

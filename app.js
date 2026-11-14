@@ -5889,7 +5889,7 @@
         main.innerHTML = renderHomeView();
       }
     } catch (err) {
-      console.error("[MAMON WIN] Route render recovery:", r, err);
+      console.error("[AMG] Route render recovery:", r, err);
       main.innerHTML = `<div class="empty-state"><h3>Refreshing View...</h3><p class="text-sm text-muted">Live market feeds are synchronizing. Click any tab above to retry.</p></div>`;
     }
   }
@@ -6448,19 +6448,19 @@
 
   function openLegalModal(kind) {
     const titles = {
-      about: "About MAMON WIN",
+      about: "About Abradakabra Money God (AMG)",
       privacy: "Privacy Policy",
       terms: "Terms of Service",
       cookies: "Cookie Settings",
-      contact: "Contact MAMON WIN"
+      contact: "Contact Abradakabra Money God (AMG)"
     };
     openModal(`
       <div class="modal-header">
-        <span id="modalTitle" class="font-headline text-lg font-bold">${titles[kind] || "MAMON WIN"}</span>
+        <span id="modalTitle" class="font-headline text-lg font-bold">${titles[kind] || "Abradakabra Money God (AMG)"}</span>
         <button type="button" class="modal-close" data-close-modal aria-label="Close">×</button>
       </div>
       <div class="p-5 text-sm text-text-secondary flex flex-col gap-3" style="line-height:1.65;">
-        <p><strong>MAMON WIN — Where football lives.</strong> Real-time live scores, 11-factor match scouting, and Sure Odds accumulators across global football with instant open access.</p>
+        <p><strong>Abradakabra Money God (AMG) — Where winning lives.</strong> Real-time live scores, 19-factor match scouting, and Sure Odds accumulators across global football with instant open access.</p>
         <p>Match preferences, stake calculator settings, and pinned clubs remain privately inside your browser storage.</p>
       </div>
     `);
@@ -7519,7 +7519,7 @@
       const slip = sureSlips[state.activeSureTier || "2"];
       if (slip?.legs?.length) {
         const lines = [
-          `MAMON WIN — ${slip.title} (${formatOdds(slip.totalOdds)}x)`,
+          `Abradakabra Money God (AMG) — ${slip.title} (${formatOdds(slip.totalOdds)}x)`,
           `Stake: ${formatMoney(state.stakeAmount)} -> Est. Win: ${formatMoney(state.stakeAmount * slip.totalOdds)}`,
           "---",
           ...slip.legs.map((l, i) => {

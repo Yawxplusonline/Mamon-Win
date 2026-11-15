@@ -4256,7 +4256,8 @@ window.MAMON_REALTIME = (() => {
     const refereePhaseSummary = `Official: ${referee} · Min ${minute}' (${match.halfLabel || "In Play"}) · ${minute >= 75 ? "Late match frantic urgency" : minute >= 45 ? "Post-HT tactical adjustments" : "First half establishing rhythm"}`;
 
     // ============ SECOND HALF HIGHEST SCORING HALF & 2H GOALS PROJECTION ENGINE ============
-    const isHalfTime = /\b(HT|Half)\b|HALFTIME/i.test(`${match.halfLabel || ""} ${match.displayTime || ""}`) || minute === 45;
+    const halfAndClockText = `${match.halfLabel || ""} ${match.displayTime || ""}`;
+    const isHalfTime = (/\b(HT|HALFTIME|Half[-\s]?Time)\b/i.test(halfAndClockText) && !/\b(1st|2nd)\s+Half\b/i.test(halfAndClockText)) || minute === 45;
     const isSecondHalf = minute > 45 || /2nd|second/i.test(match.halfLabel || "");
 
     let firstHalfGoals = 0;
@@ -6949,6 +6950,260 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  // ============ 2ND HALF HIGHEST SCORING INTELLIGENCE ============
+  let secondHalfAnalyticsCache = null;
+  let secondHalfAnalyticsInFlight = null;
+
+  function getSecondHalfAnalyticsCached() {
+    return secondHalfAnalyticsCache;
+  }
+
+  async function fetchSecondHalfAnalytics(force = false) {
+    if (!force && secondHalfAnalyticsCache && secondHalfAnalyticsCache.ok) {
+      return secondHalfAnalyticsCache;
+    }
+    if (secondHalfAnalyticsInFlight && !force) {
+      return secondHalfAnalyticsInFlight;
+    }
+    const url = `/api/secondhalf${force ? "?refresh=1" : ""}`;
+    secondHalfAnalyticsInFlight = (async () => {
+      try {
+        const res = await fetchJson(url, 15000);
+        if (res && res.ok) {
+          secondHalfAnalyticsCache = res;
+          return res;
+        }
+      } catch {}
+      return secondHalfAnalyticsCache || { ok: false, leaguesRanked: [], teams2hScorers: [], htDrawBreakoutTeams: [] };
+    })();
+    try {
+      return await secondHalfAnalyticsInFlight;
+    } finally {
+      secondHalfAnalyticsInFlight = null;
+    }
+  }
+
+  function buildLiveSecondHalfSectionData(matches = [], analyticsOverride = null) {
+    const intel = analyticsOverride || secondHalfAnalyticsCache || {
+      ok: false,
+      leaguesRanked: [],
+      teams2hScorers: [],
+      htDrawBreakoutTeams: []
+    };
+
+    const leagueBySlug = new Map();
+    const leagueByName = new Map();
+    for (const lg of intel.leaguesRanked || []) {
+      if (lg.slug) leagueBySlug.set(String(lg.slug).toLowerCase(), lg);
+      if (lg.name) leagueByName.set(String(lg.name).toLowerCase(), lg);
+    }
+
+    const team2hMap = new Map();
+    for (const t of intel.teams2hScorers || []) {
+      const k = normTeamMatchKey(t.team);
+      if (k && !team2hMap.has(k)) team2hMap.set(k, t);
+    }
+
+    const htDrawMap = new Map();
+    for (const t of intel.htDrawBreakoutTeams || []) {
+      const k = normTeamMatchKey(t.team);
+      if (k && !htDrawMap.has(k)) htDrawMap.set(k, t);
+    }
+
+    function getTeamNamesFromMatch(m) {
+      const homeName = m.homeTeamName || DATA.TEAMS?.[m.home]?.name || m.home || "Home";
+      const awayName = m.awayTeamName || DATA.TEAMS?.[m.away]?.name || m.away || "Away";
+      return { homeName, awayName };
+    }
+
+    function findMatchForTeam(teamName, leagueSlug) {
+      const targetKey = normTeamMatchKey(teamName);
+      if (!targetKey) return null;
+      const allFootball = (matches || []).filter((m) => (m.sport || "football") === "football" && m.status !== "FT" && m.status !== "AET" && m.status !== "PEN");
+      return allFootball.find((m) => {
+        const { homeName, awayName } = getTeamNamesFromMatch(m);
+        const hk = normTeamMatchKey(homeName);
+        const ak = normTeamMatchKey(awayName);
+        const nameHit = hk === targetKey || ak === targetKey || (targetKey.length >= 5 && (hk.includes(targetKey) || ak.includes(targetKey) || targetKey.includes(hk) || targetKey.includes(ak)));
+        if (!nameHit) return false;
+        if (leagueSlug && m.leagueSlug && leagueSlug.startsWith("uefa-") && m.leagueSlug !== leagueSlug) return true;
+        return true;
+      }) || null;
+    }
+
+    function findMatchesForLeague(lg) {
+      const slug = String(lg.slug || "").toLowerCase();
+      const lname = String(lg.name || "").toLowerCase();
+      return (matches || []).filter((m) => {
+        if ((m.sport || "football") !== "football") return false;
+        if (m.status === "FT" || m.status === "AET" || m.status === "PEN") return false;
+        const ms = String(m.leagueSlug || m.league || "").toLowerCase();
+        const mn = String(m.leagueName || DATA.LEAGUES?.[m.league]?.name || "").toLowerCase();
+        return (slug && ms === slug) || (lname && mn && (mn === lname || mn.includes(lname) || lname.includes(mn)));
+      });
+    }
+
+    const liveItems = [];
+    const seenIds = new Set();
+
+    for (const m of matches || []) {
+      if ((m.sport || "football") !== "football") continue;
+      if (!isMatchTrulyLive(m)) continue;
+      const { homeName, awayName } = getTeamNamesFromMatch(m);
+      const dedupeId = m.id || `${homeName}_${awayName}`;
+      if (seenIds.has(dedupeId)) continue;
+      seenIds.add(dedupeId);
+
+      const radar = computeLiveInPlayGoalRadar(m);
+      if (!radar || !radar.secondHalfInsights || !radar.secondHalfInsights.highestScoringHalf) continue;
+      const sh = radar.secondHalfInsights;
+      const hsh = sh.highestScoringHalf;
+      const shg = sh.secondHalfGoals || {};
+      const minute = Number(m.minute) || (parseInt(String(m.displayTime || m.liveClock || "").match(/\d+/)?.[0], 10) || 45);
+      const homeScore = Number(m.homeScore || 0);
+      const awayScore = Number(m.awayScore || 0);
+      const firstHalfGoals = Number(sh.firstHalfGoals ?? 0);
+      const secondHalfGoalsCurrent = Number(sh.secondHalfGoalsCurrent ?? 0);
+      const prob2ndHalf = Number(hsh.prob2ndHalf || 50);
+      const probOver05 = Number(shg.probOver05 || radar.probOver05 || 55);
+      const isHomeAwayLevel = homeScore === awayScore;
+      const isHtBreakOrLate1H = Boolean(sh.isHalfTime) || (minute >= 42 && minute <= 68 && secondHalfGoalsCurrent === 0);
+      const isHtDraw = isHtBreakOrLate1H && isHomeAwayLevel;
+      const isHigh1HTrap = firstHalfGoals >= 3 && secondHalfGoalsCurrent === 0 && hsh.predictedHalf === "1ST_HALF";
+      const isLateHalftimeSetup = Boolean(sh.isHalfTime) || (minute >= 42 && minute <= 58);
+
+      const ms = String(m.leagueSlug || m.league || "").toLowerCase();
+      const mn = String(m.leagueName || DATA.LEAGUES?.[m.league]?.name || "").toLowerCase();
+      const lgHist = leagueBySlug.get(ms) || leagueByName.get(mn) || null;
+      const homeKey = normTeamMatchKey(homeName);
+      const awayKey = normTeamMatchKey(awayName);
+      const homeHist = team2hMap.get(homeKey) || null;
+      const awayHist = team2hMap.get(awayKey) || null;
+      const homeHtHist = htDrawMap.get(homeKey) || null;
+      const awayHtHist = htDrawMap.get(awayKey) || null;
+
+      let histBonus = 0;
+      const histReasons = [];
+      if (lgHist && lgHist.pct2hHigherThan1h >= 55) {
+        histBonus += 10;
+        histReasons.push(`${lgHist.name}: ${lgHist.pct2hHigherThan1h}% matches score higher in 2H`);
+      }
+      if (homeHist && homeHist.pct2hFor >= 58) {
+        histBonus += 8;
+        histReasons.push(`${homeName} scores ${homeHist.pct2hFor}% of goals in 2H (${homeHist.goals2H} vs ${homeHist.goals1H})`);
+      }
+      if (awayHist && awayHist.pct2hFor >= 58) {
+        histBonus += 8;
+        histReasons.push(`${awayName} scores ${awayHist.pct2hFor}% of goals in 2H (${awayHist.goals2H} vs ${awayHist.goals1H})`);
+      }
+      if (homeHtHist && isHtDraw) {
+        histBonus += 9;
+        histReasons.push(`${homeName} breaks 1H draws in ${homeHtHist.htDrawBreakoutRatePct}% of matches`);
+      }
+      if (awayHtHist && isHtDraw) {
+        histBonus += 9;
+        histReasons.push(`${awayName} breaks 1H draws in ${awayHtHist.htDrawBreakoutRatePct}% of matches`);
+      }
+
+      const htDrawBonus = isHtDraw ? 16 : 0;
+      const trapPenalty = isHigh1HTrap ? 35 : 0;
+      const rankScore = Math.round(
+        prob2ndHalf * 1.15 +
+        probOver05 * 0.28 +
+        htDrawBonus +
+        histBonus -
+        trapPenalty
+      );
+
+      let recommendedMarket = hsh.tip || "2nd Half Highest Scoring Half";
+      let recommendedBadge = "2H HIGHEST";
+      if (isHigh1HTrap) {
+        recommendedMarket = "TRAP ALERT — Avoid 2H Highest (back 1st Half / Equal)";
+        recommendedBadge = "1H TRAP";
+      } else if (isHtDraw) {
+        recommendedMarket = firstHalfGoals === 0
+          ? "HT Draw (0-0) · 2nd Half Highest Scoring + 2H Over 0.5 Goals"
+          : "HT Draw · 2nd Half Highest Scoring + Next Goal in 2H";
+        recommendedBadge = "HT DRAW -> 2H";
+      } else if (firstHalfGoals === 0 && prob2ndHalf >= 62) {
+        recommendedMarket = "1H 0-0 Live · Strong 2nd Half Highest Scoring Setup";
+        recommendedBadge = "0-0 · 2H EDGE";
+      } else if (prob2ndHalf >= 62) {
+        recommendedMarket = "STRONG 2nd Half Highest Scoring Half";
+        recommendedBadge = "STRONG 2H";
+      }
+
+      liveItems.push({
+        match: m,
+        homeName,
+        awayName,
+        homeScore,
+        awayScore,
+        radar,
+        sh,
+        hsh,
+        shg,
+        minute,
+        firstHalfGoals,
+        secondHalfGoalsCurrent,
+        prob2ndHalf,
+        probOver05,
+        isHtDraw,
+        isHigh1HTrap,
+        isLateHalftimeSetup,
+        lgHist,
+        homeHist,
+        awayHist,
+        homeHtHist,
+        awayHtHist,
+        histReasons,
+        rankScore,
+        recommendedMarket,
+        recommendedBadge
+      });
+    }
+
+    liveItems.sort((a, b) => b.rankScore - a.rankScore || b.prob2ndHalf - a.prob2ndHalf);
+
+    const livePriorityPicks = liveItems.filter((item) => !item.isHigh1HTrap && (item.prob2ndHalf >= 52 || item.isHtDraw || item.isLateHalftimeSetup));
+    const liveHtDraws = liveItems.filter((item) => item.isHtDraw || (item.minute >= 38 && item.minute <= 70 && item.homeScore === item.awayScore));
+    const live1hTraps = liveItems.filter((item) => item.isHigh1HTrap);
+
+    // Enrich leagues, 2H teams, and 1H-Draw->2H teams with live/upcoming fixtures from current feed
+    const leaguesEnriched = (intel.leaguesRanked || []).map((lg) => {
+      const feedMatches = findMatchesForLeague(lg);
+      return {
+        ...lg,
+        feedMatchesCount: feedMatches.length,
+        feedMatchesSample: feedMatches.slice(0, 4)
+      };
+    });
+
+    const teamsEnriched = (intel.teams2hScorers || []).map((t) => ({
+      ...t,
+      nextMatch: findMatchForTeam(t.team, t.leagueSlug)
+    }));
+
+    const htDrawTeamsEnriched = (intel.htDrawBreakoutTeams || []).map((t) => ({
+      ...t,
+      nextMatch: findMatchForTeam(t.team, t.leagueSlug)
+    }));
+
+    return {
+      ok: Boolean(intel.ok) || liveItems.length > 0,
+      generatedAt: intel.generatedAt || null,
+      leaguesAnalyzed: intel.leaguesAnalyzed || 0,
+      totalMatchesAnalyzed: intel.totalMatchesAnalyzed || 0,
+      liveAll: liveItems,
+      livePriorityPicks,
+      liveHtDraws,
+      live1hTraps,
+      leaguesRanked: leaguesEnriched,
+      teams2hScorers: teamsEnriched,
+      htDrawBreakoutTeams: htDrawTeamsEnriched
+    };
+  }
+
   return {
     SURE_TIERS,
     load,
@@ -6964,6 +7219,9 @@ window.MAMON_REALTIME = (() => {
     getLeagueRuninCached,
     buildFallbackRuninTable,
     computeLiveInPlayGoalRadar,
+    fetchSecondHalfAnalytics,
+    getSecondHalfAnalyticsCached,
+    buildLiveSecondHalfSectionData,
     lookupTeamRunin,
     evaluateRuninTableConfirmation,
     computeRuninTip,

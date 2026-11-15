@@ -8,6 +8,8 @@
     { "source": "/sure-odds", "destination": "/index.html" },
     { "source": "/handicap", "destination": "/index.html" },
     { "source": "/special-tips", "destination": "/index.html" },
+    { "source": "/2h-highest", "destination": "/index.html" },
+    { "source": "/second-half", "destination": "/index.html" },
     { "source": "/run-in", "destination": "/index.html" },
     { "source": "/runin", "destination": "/index.html" },
     { "source": "/accurate-odds", "destination": "/index.html" },

@@ -430,6 +430,8 @@
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
+      active2hTab: "LIVE_2H", // LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
+      active2hFilter: "ALL", // ALL | UEFA | DOMESTIC
       activeRuninLeague: "england",
       activeRuninSport: "football", // football | tennis | basketball | darts | hockey
       activeRuninSportLeague: "ALL",
@@ -477,6 +479,24 @@
   let isHydratingPowerWeather = false;
   let bookmakerScan = null;
   let isLoadingBookmakers = true;
+  let secondHalfIntel = null;
+  let isLoadingSecondHalf = false;
+
+  async function loadSecondHalfIntelligence(force = false) {
+    if (!RT || typeof RT.fetchSecondHalfAnalytics !== "function") return null;
+    if (isLoadingSecondHalf && !force) return secondHalfIntel;
+    isLoadingSecondHalf = true;
+    try {
+      const res = await RT.fetchSecondHalfAnalytics(force);
+      if (res && res.ok) {
+        secondHalfIntel = res;
+      }
+      return secondHalfIntel;
+    } finally {
+      isLoadingSecondHalf = false;
+      scheduleRenderMainContent();
+    }
+  }
   const runinLeagueCacheClient = new Map();
   const runinAttemptedCodes = new Set();
   const runinLoadingCodes = new Set();
@@ -808,6 +828,14 @@
     if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
     if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips") return "/special-tips";
+    if (h === "/2h-highest" || h === "/second-half" || h === "/second-half-highest" || h.startsWith("/2h-highest?") || h.startsWith("/second-half?")) {
+      if (h.includes("?")) {
+        const q = new URLSearchParams(h.split("?")[1]);
+        if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
+        if (q.get("filter")) state.active2hFilter = q.get("filter").toUpperCase();
+      }
+      return "/2h-highest";
+    }
     return h;
   }
 
@@ -834,6 +862,16 @@
       route = "/special-tips";
     }
     if (route === "/5min-draw" || route === "/no-3-in-a-row" || route === "/draw-defense" || route === "/defensive-tips") route = "/special-tips";
+    if (route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
+      if (q.get("filter")) state.active2hFilter = q.get("filter").toUpperCase();
+      route = "/2h-highest";
+    }
+    if (route === "/second-half" || route === "/second-half-highest") route = "/2h-highest";
+    if (route === "/2h-highest" && !secondHalfIntel && !isLoadingSecondHalf) {
+      loadSecondHalfIntelligence(false);
+    }
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("filter")) state.activeDropFilter = q.get("filter").toUpperCase();
@@ -4387,6 +4425,413 @@
     `;
   }
 
+  function renderHomeSecondHalfCard() {
+    if (!RT || typeof RT.buildLiveSecondHalfSectionData !== "function") return "";
+    if (!secondHalfIntel && !isLoadingSecondHalf) {
+      loadSecondHalfIntelligence(false);
+    }
+    const shData = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel);
+    const liveTop = (shData.livePriorityPicks.length > 0 ? shData.livePriorityPicks : shData.liveAll).slice(0, 2);
+    const topLeague = (shData.leaguesRanked || [])[0] || null;
+    const topTeam = (shData.teams2hScorers || [])[0] || null;
+    const topHtKing = (shData.htDrawBreakoutTeams || [])[0] || null;
+    const totalSignals = shData.livePriorityPicks.length + (shData.leaguesRanked?.length || 0);
+
+    return `
+      <section class="panel-section sh2-home-card" id="secondHalfHighestHomeCard">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(249, 115, 22, 0.25); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#f97316;color:#fff;font-weight:800;">🔥 2ND HALF HIGHEST SCORING</span>
+            <span class="sure-pill-tag" style="background:rgba(16,185,129,0.14);color:var(--text);border:1px solid rgba(16,185,129,0.35);font-weight:700;">${shData.liveAll.length} Live · ${shData.liveHtDraws.length} HT Draws · ${shData.leaguesRanked?.length || 0} Leagues (UCL/UEL/UECL + Domestic)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/2h-highest" data-route="/2h-highest" style="font-weight:800;color:#ea580c;">Open 2H Highest Center (${totalSignals}+ Signals) &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px;">
+            ${liveTop.map((item) => {
+              const m = item.match;
+              const hName = cleanTeamDisplayNameClient(item.homeName);
+              const aName = cleanTeamDisplayNameClient(item.awayName);
+              const hLogo = resolveTeamLogoByName(hName, m.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, m.awayLogo);
+              const loc = RT.resolveCanonicalLocation ? RT.resolveCanonicalLocation(m.leagueName || "", m.country || "", m.leagueSlug || "") : { country: m.country || "", flag: m.flag || "🌍" };
+              return `
+                <a class="power-preview-tile is-strong" href="/2h-highest?tab=LIVE_2H" data-route="/2h-highest?tab=LIVE_2H" style="border-left: 3px solid ${item.isHtDraw ? "#10b981" : "#f97316"}; background: var(--bg-surface);">
+                  <div class="flex items-center justify-between gap-1 w-full">
+                    <span class="tile-kicker font-bold" style="color:${item.isHtDraw ? "#10b981" : "#f97316"};">${escapeHtml(item.recommendedBadge)} · ${item.minute}'</span>
+                    <span class="ev-return-pill" style="background:#f97316;color:#fff;">2H ${item.prob2ndHalf}%</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                    ${crestImg(hLogo, hName, "#f97316", 18)}
+                    <span class="truncate">${escapeHtml(hName)} ${item.homeScore}-${item.awayScore} ${escapeHtml(aName)}</span>
+                    ${crestImg(aLogo, aName, "#3b82f6", 18)}
+                  </div>
+                  <div class="text-xs text-muted mt-0.5 truncate w-full">${countryFlagBadgeHtml(loc.country || "Live", loc.flag, true)} ${escapeHtml(loc.leagueName || m.leagueName || "Live Football")} · 1H: ${item.firstHalfGoals}g · 2H: ${item.secondHalfGoalsCurrent}g</div>
+                  <div class="text-xs font-bold mt-1.5" style="color:#ea580c;">🎯 ${escapeHtml(item.recommendedMarket)}</div>
+                </a>
+              `;
+            }).join("")}
+            ${topLeague ? `
+              <a class="power-preview-tile is-strong" href="/2h-highest?tab=LEAGUES_2H" data-route="/2h-highest?tab=LEAGUES_2H" style="border-left: 3px solid #3b82f6; background: var(--bg-surface);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#3b82f6;">TOP 2H LEAGUE (${escapeHtml(topLeague.category)})</span>
+                  <span class="ev-return-pill" style="background:#3b82f6;color:#fff;">${topLeague.pct2hHigherThan1h}% 2H&gt;1H</span>
+                </div>
+                <div class="font-bold text-sm mt-1 truncate w-full">${countryFlagBadgeHtml(topLeague.country, topLeague.flag, true)} ${escapeHtml(topLeague.name)}</div>
+                <div class="text-xs text-muted mt-0.5 truncate w-full">${topLeague.matchesAnalyzed} matches · ${topLeague.pct2hGoals}% goals scored in 2nd Half</div>
+                <div class="text-xs font-bold mt-1.5" style="color:#2563eb;">⚡ HT Draw → 2H Goal: ${topLeague.pctHtDrawWith2hGoals}%</div>
+              </a>
+            ` : ""}
+            ${topTeam ? `
+              <a class="power-preview-tile is-strong" href="/2h-highest?tab=TEAMS_2H" data-route="/2h-highest?tab=TEAMS_2H" style="border-left: 3px solid #10b981; background: var(--bg-surface);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#10b981;">#1 2H SCORING TEAM</span>
+                  <span class="ev-return-pill" style="background:#10b981;color:#fff;">${topTeam.pct2hFor}% IN 2H</span>
+                </div>
+                <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                  ${crestImg(topTeam.logo, topTeam.team, "#10b981", 18)}
+                  <span class="truncate">${escapeHtml(topTeam.team)}</span>
+                </div>
+                <div class="text-xs text-muted mt-0.5 truncate w-full">${countryFlagBadgeHtml(topTeam.country, topTeam.flag, true)} ${escapeHtml(topTeam.leagueName)} · 2H: ${topTeam.goals2H}g vs 1H: ${topTeam.goals1H}g</div>
+                <div class="text-xs font-bold mt-1.5" style="color:#059669;">🎯 Team Over 0.5 / 1.5 2H Goals</div>
+              </a>
+            ` : ""}
+            ${topHtKing ? `
+              <a class="power-preview-tile is-strong" href="/2h-highest?tab=HT_DRAW_2H" data-route="/2h-highest?tab=HT_DRAW_2H" style="border-left: 3px solid #a855f7; background: var(--bg-surface);">
+                <div class="flex items-center justify-between gap-1 w-full">
+                  <span class="tile-kicker font-bold" style="color:#a855f7;">1H DRAW → 2H GOAL KING</span>
+                  <span class="ev-return-pill" style="background:#a855f7;color:#fff;">${topHtKing.htDrawBreakoutRatePct}% BREAK</span>
+                </div>
+                <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                  ${crestImg(topHtKing.logo, topHtKing.team, "#a855f7", 18)}
+                  <span class="truncate">${escapeHtml(topHtKing.team)}</span>
+                </div>
+                <div class="text-xs text-muted mt-0.5 truncate w-full">${countryFlagBadgeHtml(topHtKing.country, topHtKing.flag, true)} ${escapeHtml(topHtKing.leagueName)} · ${topHtKing.htDrawsWith2hGoal}/${topHtKing.htDraws} HT draws exploded in 2H</div>
+                <div class="text-xs font-bold mt-1.5" style="color:#9333ea;">🛡️ Back 2nd Half Highest After 1H Draw</div>
+              </a>
+            ` : ""}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderSecondHalfHighestView() {
+    if (!RT || typeof RT.buildLiveSecondHalfSectionData !== "function") {
+      return `<div class="panel-section p-4">Loading 2nd Half Highest Scoring Engine...</div>`;
+    }
+    if (!secondHalfIntel && !isLoadingSecondHalf) {
+      loadSecondHalfIntelligence(false);
+    }
+
+    const activeTab = state.active2hTab || "LIVE_2H";
+    const activeFilter = state.active2hFilter || "ALL";
+    const data = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel);
+
+    const filterScope = (arr) => {
+      if (activeFilter === "UEFA") return (arr || []).filter((x) => x.category === "UEFA");
+      if (activeFilter === "DOMESTIC") return (arr || []).filter((x) => x.category === "DOMESTIC");
+      return arr || [];
+    };
+
+    const renderMatchLinkBar = (m) => {
+      if (!m) return "";
+      const hName = cleanTeamDisplayNameClient(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || m.home || "Home");
+      const aName = cleanTeamDisplayNameClient(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || m.away || "Away");
+      const hLogo = resolveTeamLogoByName(hName, m.homeLogo);
+      const aLogo = resolveTeamLogoByName(aName, m.awayLogo);
+      const isLive = m.status === "LIVE" || m.isLive;
+      const ko = isLive ? `🔴 LIVE ${m.minute || ""}' (${m.homeScore ?? 0}-${m.awayScore ?? 0})` : `🕒 ${formatKickoffCompact(m).compactLabel}`;
+      return `
+        <div class="sh2-next-fixture" data-match-id="${escapeHtml(String(m.id || ""))}">
+          <div class="flex items-center gap-1.5 truncate">
+            ${crestImg(hLogo, hName, "#f97316", 16)}
+            <span class="font-bold truncate">${escapeHtml(hName)} vs ${escapeHtml(aName)}</span>
+            ${crestImg(aLogo, aName, "#3b82f6", 16)}
+          </div>
+          <span class="font-mono font-bold" style="color:${isLive ? "#ef4444" : "#2563eb"};white-space:nowrap;">${escapeHtml(ko)}</span>
+        </div>
+      `;
+    };
+
+    let tabBodyHtml = "";
+
+    if (activeTab === "LIVE_2H") {
+      const liveCardsHtml = data.liveAll.length > 0
+        ? `<div class="sh2-grid">
+            ${data.liveAll.map((item) => {
+              const m = item.match;
+              const hName = cleanTeamDisplayNameClient(item.homeName);
+              const aName = cleanTeamDisplayNameClient(item.awayName);
+              const hLogo = resolveTeamLogoByName(hName, m.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, m.awayLogo);
+              const loc = RT.resolveCanonicalLocation ? RT.resolveCanonicalLocation(m.leagueName || "", m.country || "", m.leagueSlug || "") : { country: m.country || "", flag: m.flag || "🌍" };
+              const cardCls = item.isHigh1HTrap ? "is-trap" : item.isHtDraw ? "is-ht-draw" : "";
+              const badgeCls = item.isHigh1HTrap ? "is-red" : item.isHtDraw ? "is-green" : "";
+              return `
+                <article class="sh2-card ${cardCls}" data-match-id="${escapeHtml(String(m.id || ""))}" style="cursor:pointer;">
+                  <div class="sh2-card-head">
+                    <span class="sh2-league-pill">${countryFlagBadgeHtml(loc.country || "International", loc.flag, true)} ${escapeHtml(loc.leagueName || m.leagueName || "Football")}</span>
+                    <span class="sh2-badge ${badgeCls}">${escapeHtml(item.recommendedBadge)} · ${item.minute}'</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      ${crestImg(hLogo, hName, "#f97316", 24)}
+                      <span class="font-bold text-sm truncate">${escapeHtml(hName)}</span>
+                    </div>
+                    <div class="font-mono font-extrabold text-base px-2 py-0.5 rounded" style="background:var(--bg-subtle);white-space:nowrap;">${item.homeScore} - ${item.awayScore}</div>
+                    <div class="flex items-center gap-2 min-w-0 justify-end">
+                      <span class="font-bold text-sm truncate">${escapeHtml(aName)}</span>
+                      ${crestImg(aLogo, aName, "#3b82f6", 24)}
+                    </div>
+                  </div>
+                  <div>
+                    <div class="sh2-split-labels mb-1">
+                      <span>1H Goals: ${item.firstHalfGoals} (${item.hsh.prob1stHalf}%)</span>
+                      <span style="font-weight:800;color:#ea580c;">2H Prob: ${item.prob2ndHalf}% · Equal ${item.hsh.probEqual}%</span>
+                    </div>
+                    <div class="sh2-split-bar">
+                      <div class="sh2-split-1h" style="width:${item.hsh.prob1stHalf}%;"></div>
+                      <div class="sh2-split-2h" style="width:${item.prob2ndHalf}%;"></div>
+                    </div>
+                  </div>
+                  <div class="sh2-metrics-row">
+                    <div class="sh2-metric"><strong>${item.probOver05}%</strong><span>Over 0.5 2H Goal</span></div>
+                    <div class="sh2-metric"><strong>${Number(item.sh.projectedRemaining2hXg || 0).toFixed(2)}</strong><span>Rem. 2H xG</span></div>
+                    <div class="sh2-metric"><strong>${item.firstHalfGoals} vs ${item.secondHalfGoalsCurrent}</strong><span>1H vs 2H Now</span></div>
+                  </div>
+                  ${item.histReasons.length > 0 ? `
+                    <div class="sh2-proof-chips">
+                      ${item.histReasons.slice(0, 3).map((r) => `<span class="sh2-proof-chip">📊 ${escapeHtml(r)}</span>`).join("")}
+                    </div>
+                  ` : ""}
+                  <div class="sh2-tip-box">
+                    <strong>🎯 ${escapeHtml(item.recommendedMarket)}</strong>
+                    <div class="text-xs text-muted mt-1">${escapeHtml(item.hsh.tacticalReason || "")}</div>
+                  </div>
+                </article>
+              `;
+            }).join("")}
+          </div>`
+        : `<div class="panel-section p-4 text-sm text-muted">No live football matches right this minute — check the <strong>High-2H Leagues</strong>, <strong>2H Scoring Teams</strong>, and <strong>1H Draw → 2H Kings</strong> tabs or upcoming high-2H fixtures below!</div>`;
+
+      const high2hUpcoming = [];
+      const seenU = new Set();
+      for (const lg of (data.leaguesRanked || []).filter((l) => l.pct2hHigherThan1h >= 54)) {
+        for (const fm of lg.feedMatchesSample || []) {
+          const fid = fm.id || `${fm.home}_${fm.away}`;
+          if (!seenU.has(fid) && fm.status !== "LIVE" && !fm.isLive) {
+            seenU.add(fid);
+            high2hUpcoming.push({ match: fm, leagueStats: lg });
+          }
+        }
+      }
+
+      tabBodyHtml = `
+        <div class="mb-4">
+          <h3 class="text-sm font-extrabold uppercase tracking-wide mb-2">🔴 Live In-Play 2nd Half Highest Scoring Scanner (${data.liveAll.length} Games · ${data.livePriorityPicks.length} Strong Picks · ${data.liveHtDraws.length} HT Draws)</h3>
+          ${liveCardsHtml}
+        </div>
+        ${high2hUpcoming.length > 0 ? `
+          <div class="mt-5">
+            <h3 class="text-sm font-extrabold uppercase tracking-wide mb-2">📅 Upcoming Matches in High-2H Scoring Leagues (${high2hUpcoming.length} Matches Ready)</h3>
+            <div class="sh2-grid">
+              ${high2hUpcoming.slice(0, 12).map(({ match: m, leagueStats: lg }) => {
+                const hName = cleanTeamDisplayNameClient(m.homeTeamName || DATA.TEAMS?.[m.home]?.name || m.home || "Home");
+                const aName = cleanTeamDisplayNameClient(m.awayTeamName || DATA.TEAMS?.[m.away]?.name || m.away || "Away");
+                const hLogo = resolveTeamLogoByName(hName, m.homeLogo);
+                const aLogo = resolveTeamLogoByName(aName, m.awayLogo);
+                return `
+                  <article class="sh2-card" data-match-id="${escapeHtml(String(m.id || ""))}" style="cursor:pointer;">
+                    <div class="sh2-card-head">
+                      <span class="sh2-league-pill">${countryFlagBadgeHtml(lg.country, lg.flag, true)} ${escapeHtml(lg.name)}</span>
+                      <span class="sh2-badge ${lg.category === "UEFA" ? "is-uefa" : ""}">${lg.pct2hHigherThan1h}% 2H&gt;1H</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2 min-w-0">${crestImg(hLogo, hName, "#f97316", 20)}<span class="font-bold text-sm truncate">${escapeHtml(hName)}</span></div>
+                      <span class="font-mono text-xs text-muted">${escapeHtml(formatKickoffCompact(m).compactLabel)}</span>
+                      <div class="flex items-center gap-2 min-w-0 justify-end"><span class="font-bold text-sm truncate">${escapeHtml(aName)}</span>${crestImg(aLogo, aName, "#3b82f6", 20)}</div>
+                    </div>
+                    <div class="sh2-tip-box"><strong>🎯 ${escapeHtml(lg.recommendedTip)}</strong> · HT Draw→2H Goal: <strong>${lg.pctHtDrawWith2hGoals}%</strong></div>
+                  </article>
+                `;
+              }).join("")}
+            </div>
+          </div>
+        ` : ""}
+      `;
+    } else if (activeTab === "LEAGUES_2H") {
+      const leaguesList = filterScope(data.leaguesRanked);
+      tabBodyHtml = leaguesList.length === 0
+        ? `<div class="panel-section p-4 text-sm text-muted">${isLoadingSecondHalf ? "Analyzing real 1H vs 2H goal timings across 20 UEFA & Domestic leagues..." : "No league data matches this filter."}</div>`
+        : `<div class="sh2-grid">
+            ${leaguesList.map((lg, idx) => `
+              <article class="sh2-card">
+                <div class="sh2-card-head">
+                  <span class="sh2-league-pill">#${idx + 1} · ${countryFlagBadgeHtml(lg.country, lg.flag, true)} ${escapeHtml(lg.country)} · ${escapeHtml(lg.name)}</span>
+                  <span class="sh2-badge ${lg.category === "UEFA" ? "is-uefa" : ""}">${escapeHtml(lg.category)}</span>
+                </div>
+                <div>
+                  <div class="sh2-split-labels mb-1">
+                    <span>1H Goals: ${lg.goals1H} (${100 - lg.pct2hGoals}%)</span>
+                    <span style="font-weight:800;color:#ea580c;">2H Goals: ${lg.goals2H} (${lg.pct2hGoals}%)</span>
+                  </div>
+                  <div class="sh2-split-bar">
+                    <div class="sh2-split-1h" style="width:${100 - lg.pct2hGoals}%;"></div>
+                    <div class="sh2-split-2h" style="width:${lg.pct2hGoals}%;"></div>
+                  </div>
+                </div>
+                <div class="sh2-metrics-row">
+                  <div class="sh2-metric"><strong>${lg.pct2hHigherThan1h}%</strong><span>2H &gt; 1H Matches</span></div>
+                  <div class="sh2-metric"><strong>${lg.pctHtDrawWith2hGoals}%</strong><span>HT Draw → 2H Goal</span></div>
+                  <div class="sh2-metric"><strong>${lg.matchesAnalyzed}</strong><span>Matches Scanned</span></div>
+                </div>
+                <div class="sh2-tip-box">
+                  <strong>🎯 ${escapeHtml(lg.recommendedTip)}</strong> · Avg ${lg.avg2hGoalsPerMatch} goals in 2H vs ${lg.avg1hGoalsPerMatch} in 1H (0-0 HT → 2H Goal: ${lg.pctHt00With2hGoals}%).
+                </div>
+                ${(lg.feedMatchesSample || []).length > 0 ? lg.feedMatchesSample.slice(0, 2).map(renderMatchLinkBar).join("") : (lg.upcomingSample || []).slice(0, 2).map((u) => `
+                  <div class="sh2-proof-chip">🕒 ${escapeHtml(u.homeName)} vs ${escapeHtml(u.awayName)} (${escapeHtml(String(u.date || "").slice(0, 10))})</div>
+                `).join("")}
+              </article>
+            `).join("")}
+          </div>`;
+    } else if (activeTab === "TEAMS_2H") {
+      const teamsList = filterScope(data.teams2hScorers);
+      tabBodyHtml = teamsList.length === 0
+        ? `<div class="panel-section p-4 text-sm text-muted">${isLoadingSecondHalf ? "Computing 2nd Half team goal splits across Domestic & UEFA competitions..." : "No 2H scoring teams match this filter."}</div>`
+        : `<div class="sh2-grid">
+            ${teamsList.map((t, idx) => `
+              <article class="sh2-card">
+                <div class="sh2-card-head">
+                  <span class="sh2-league-pill">#${idx + 1} · ${countryFlagBadgeHtml(t.country, t.flag, true)} ${escapeHtml(t.leagueName)}</span>
+                  <span class="sh2-badge ${t.category === "UEFA" ? "is-uefa" : "is-green"}">${t.pct2hFor}% GOALS IN 2H</span>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  ${crestImg(t.logo, t.team, "#10b981", 28)}
+                  <div class="min-w-0">
+                    <div class="font-extrabold text-sm truncate">${escapeHtml(t.team)}</div>
+                    <div class="text-xs text-muted">${t.matches} matches analyzed · Avg ${t.avg2hFor} 2H goals/match</div>
+                  </div>
+                </div>
+                <div>
+                  <div class="sh2-split-labels mb-1">
+                    <span>1H Scored: ${t.goals1H} (${100 - t.pct2hFor}%)</span>
+                    <span style="font-weight:800;color:#059669;">2H Scored: ${t.goals2H} (${t.pct2hFor}%)</span>
+                  </div>
+                  <div class="sh2-split-bar">
+                    <div class="sh2-split-1h" style="width:${100 - t.pct2hFor}%;"></div>
+                    <div class="sh2-split-2h" style="width:${t.pct2hFor}%;"></div>
+                  </div>
+                </div>
+                <div class="sh2-metrics-row">
+                  <div class="sh2-metric"><strong>${t.goals2H} vs ${t.goals1H}</strong><span>2H vs 1H Goals</span></div>
+                  <div class="sh2-metric"><strong>${t.match2hHigherPct}%</strong><span>Match 2H &gt; 1H</span></div>
+                  <div class="sh2-metric"><strong>${t.conceded2H}</strong><span>2H Conceded</span></div>
+                </div>
+                ${(t.recentMatches || []).length > 0 ? `
+                  <div class="sh2-proof-chips">
+                    ${t.recentMatches.slice(0, 3).map((rm) => `<span class="sh2-proof-chip">${escapeHtml(rm.venue === "HOME" ? "vs" : "@")} ${escapeHtml(rm.opponent)}: HT ${escapeHtml(rm.htScore)} → FT ${escapeHtml(rm.ftScore)} (2H: ${escapeHtml(rm.shScore)})</span>`).join("")}
+                  </div>
+                ` : ""}
+                <div class="sh2-tip-box"><strong>🎯 ${escapeHtml(t.recommendedTip)}</strong></div>
+                ${t.nextMatch ? renderMatchLinkBar(t.nextMatch) : ""}
+              </article>
+            `).join("")}
+          </div>`;
+    } else if (activeTab === "HT_DRAW_2H") {
+      const htList = filterScope(data.htDrawBreakoutTeams);
+      tabBodyHtml = htList.length === 0
+        ? `<div class="panel-section p-4 text-sm text-muted">${isLoadingSecondHalf ? "Scanning 1H Draw → 2H Goal Breakout Kings..." : "No 1H Draw → 2H breakout teams match this filter."}</div>`
+        : `<div class="sh2-grid">
+            ${htList.map((t, idx) => `
+              <article class="sh2-card is-ht-draw">
+                <div class="sh2-card-head">
+                  <span class="sh2-league-pill">#${idx + 1} · ${countryFlagBadgeHtml(t.country, t.flag, true)} ${escapeHtml(t.leagueName)}</span>
+                  <span class="sh2-badge is-green">${t.htDrawBreakoutRatePct}% 2H BREAKOUT</span>
+                </div>
+                <div class="flex items-center gap-2.5">
+                  ${crestImg(t.logo, t.team, "#a855f7", 28)}
+                  <div class="min-w-0">
+                    <div class="font-extrabold text-sm truncate">${escapeHtml(t.team)}</div>
+                    <div class="text-xs text-muted">${t.htDraws} HT Draws (0-0 ×${t.ht00Count}) across ${t.matches} matches</div>
+                  </div>
+                </div>
+                <div class="sh2-metrics-row">
+                  <div class="sh2-metric"><strong>${t.htDrawsWith2hGoal}/${t.htDraws}</strong><span>HT Draws → 2H Goal</span></div>
+                  <div class="sh2-metric"><strong>${t.htDrawTeamScoredPct}%</strong><span>Team Scores in 2H</span></div>
+                  <div class="sh2-metric"><strong>${t.avg2hGoalsAfterHtDraw}</strong><span>Avg 2H Goals</span></div>
+                </div>
+                ${(t.recentHtDraws || []).length > 0 ? `
+                  <div class="sh2-proof-chips">
+                    ${t.recentHtDraws.slice(0, 4).map((rm) => `<span class="sh2-proof-chip">HT ${escapeHtml(rm.htScore)} → FT ${escapeHtml(rm.ftScore)} (${rm.venue} ${escapeHtml(rm.opponent)})</span>`).join("")}
+                  </div>
+                ` : ""}
+                <div class="sh2-tip-box"><strong>🎯 ${escapeHtml(t.recommendedTip)}</strong></div>
+                ${t.nextMatch ? renderMatchLinkBar(t.nextMatch) : ""}
+              </article>
+            `).join("")}
+          </div>`;
+    }
+
+    const showScopeFilters = activeTab !== "LIVE_2H";
+
+    return `
+      <section class="sh2-hero">
+        <div class="sh2-hero-top">
+          <div>
+            <h1 class="sh2-hero-title">🔥 2nd Half Highest Scoring Intelligence Center</h1>
+            <p class="sh2-hero-sub">Extracted directly from live in-play matches + verified goal-minute history across <strong>UEFA Champions League, UEFA Europa League, UEFA Conference League</strong> &amp; 17 Domestic Leagues. Pinpoints leagues with highest 2H scoring share, teams that explode after Half-Time, and <strong>1H Draw → 2H Goal Kings</strong>.</p>
+          </div>
+          <button type="button" class="btn-subtle" data-2h-refresh style="background:rgba(249,115,22,0.2);color:#fed7aa;border:1px solid rgba(251,146,60,0.45);font-weight:700;">
+            ${isLoadingSecondHalf ? "⏳ Syncing..." : "🔄 Refresh 2H Engine"}
+          </button>
+        </div>
+        <div class="sh2-hero-stats">
+          <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${data.liveAll.length}</div>
+            <div class="sh2-stat-lbl">Live Matches Tracked (${data.liveHtDraws.length} HT Draw)</div>
+          </div>
+          <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${data.leaguesAnalyzed || data.leaguesRanked.length}</div>
+            <div class="sh2-stat-lbl">Leagues (UCL/UEL/UECL + Domestic)</div>
+          </div>
+          <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${data.teams2hScorers.length}</div>
+            <div class="sh2-stat-lbl">Top 2H Scoring Teams</div>
+          </div>
+          <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${data.htDrawBreakoutTeams.length}</div>
+            <div class="sh2-stat-lbl">1H Draw → 2H Goal Kings</div>
+          </div>
+          <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${data.totalMatchesAnalyzed || 0}</div>
+            <div class="sh2-stat-lbl">Real Matches Verified</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="sh2-controls-bar">
+        <div class="sh2-tabs">
+          <button type="button" class="filter-chip${activeTab === "LIVE_2H" ? " is-active" : ""}" data-2h-tab="LIVE_2H">🔴 Live Games (${data.liveAll.length})</button>
+          <button type="button" class="filter-chip${activeTab === "LEAGUES_2H" ? " is-active" : ""}" data-2h-tab="LEAGUES_2H">🏆 High-2H Leagues (${data.leaguesRanked.length})</button>
+          <button type="button" class="filter-chip${activeTab === "TEAMS_2H" ? " is-active" : ""}" data-2h-tab="TEAMS_2H">⚽ 2H Scoring Teams (${data.teams2hScorers.length})</button>
+          <button type="button" class="filter-chip${activeTab === "HT_DRAW_2H" ? " is-active" : ""}" data-2h-tab="HT_DRAW_2H">👑 1H Draw → 2H Kings (${data.htDrawBreakoutTeams.length})</button>
+        </div>
+        ${showScopeFilters ? `
+          <div class="sh2-filters">
+            <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-2h-filter="ALL">🌍 All Competitions</button>
+            <button type="button" class="filter-chip${activeFilter === "UEFA" ? " is-active" : ""}" data-2h-filter="UEFA">⭐ UEFA (UCL/UEL/UECL)</button>
+            <button type="button" class="filter-chip${activeFilter === "DOMESTIC" ? " is-active" : ""}" data-2h-filter="DOMESTIC">🏟️ Domestic Leagues</button>
+          </div>
+        ` : ""}
+      </div>
+
+      ${tabBodyHtml}
+    `;
+  }
+
   function renderHomeLiveCard(liveList, spDef) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const validLiveList = (liveList || []).filter(isMatchTrulyLive);
@@ -4553,6 +4998,7 @@
 
     return `
       ${renderHomeSureOddsBanner()}
+      ${renderHomeSecondHalfCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
       ${renderHomeRunInCard()}
@@ -6063,6 +6509,8 @@
     try {
       if (r === "/" || r === "") {
         main.innerHTML = renderHomeView();
+      } else if (r === "/2h-highest" || r === "/second-half" || r === "/second-half-highest") {
+        main.innerHTML = renderSecondHalfHighestView();
       } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
         main.innerHTML = renderHandicapValueBetsView();
       } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
@@ -7361,7 +7809,7 @@
     }
 
     // Fast-path: Skip inert elements (backgrounds, containers, plain text) in 0.05ms (zero cascade latency)
-    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
+    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
     if (!actionable) {
       if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
         const sm = document.getElementById("settingsMenu");
@@ -7635,6 +8083,28 @@
       state.activeSpecialTipFilter = specialFilterBtn.getAttribute("data-special-filter");
       saveState();
       scheduleRenderMainContent();
+      return;
+    }
+
+    // Switch 2nd Half Highest Scoring Tab / Filter / Refresh
+    const sh2TabBtn = e.target.closest("[data-2h-tab]");
+    if (sh2TabBtn) {
+      state.active2hTab = sh2TabBtn.getAttribute("data-2h-tab");
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const sh2FilterBtn = e.target.closest("[data-2h-filter]");
+    if (sh2FilterBtn) {
+      state.active2hFilter = sh2FilterBtn.getAttribute("data-2h-filter");
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    if (e.target.closest("[data-2h-refresh]")) {
+      scheduleUiUpdate(() => loadSecondHalfIntelligence(true));
       return;
     }
 
@@ -7997,7 +8467,7 @@
     const srcs = missionTelemetry?.sources || {};
     const hasRuninLoaded = runinLeagueCacheClient.size > 0 || Boolean(RT?.getAllRuninStandingsMap && RT.getAllRuninStandingsMap().size > 0);
     const ofOk = (srcs.onefootball?.status === "ONLINE" || liveMatches.length > 0) ? "✓" : "↻";
-    const bkOk = (srcs.bookmakers?.status === "ONLINE" || Boolean(bookmakerMismatchData) || (bookmakerScan?.allGames?.length > 0)) ? "✓" : "↻";
+    const bkOk = (srcs.bookmakers?.status === "ONLINE" || Boolean(bookmakerScan) || (bookmakerScan?.allGames?.length > 0)) ? "✓" : "↻";
     const riOk = (srcs.runin?.status === "ONLINE" || hasRuninLoaded) ? "✓" : "↻";
     const isStreamHealthy = sseConnected || liveMatches.length > 0 || (bookmakerScan?.allGames?.length > 0);
     hudEl.classList.toggle("is-reconnecting", !isStreamHealthy);
@@ -8175,9 +8645,16 @@
     if (pRoute === "/game-points") pRoute = "/sure-odds";
     if (pRoute === "/community") pRoute = "/power-picks";
     if (pRoute === "/runin" || pRoute === "/run-in-analysis") pRoute = "/run-in";
+    if (pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/2h-highest";
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
-    if (qs.get("tab")) state.activeIntelTab = qs.get("tab").toUpperCase();
+    if (qs.get("tab")) {
+      state.activeIntelTab = qs.get("tab").toUpperCase();
+      if (pRoute === "/2h-highest") state.active2hTab = qs.get("tab").toUpperCase();
+    }
+    if (qs.get("filter") && pRoute === "/2h-highest") {
+      state.active2hFilter = qs.get("filter").toUpperCase();
+    }
     if (qs.get("cat")) {
       const upperCat = qs.get("cat").toUpperCase();
       state.activePowerCategory = upperCat;
@@ -8201,4 +8678,5 @@
   renderMissionHud();
   syncRealtimeFeed(false);
   syncBookmakerMismatchFeed(false, false);
+  loadSecondHalfIntelligence(false);
 })();

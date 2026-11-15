@@ -6,6 +6,7 @@ const handleWeatherProxy = require("./api/weather");
 const handleBookmakersProxy = require("./api/bookmakers");
 const handleRuninProxy = require("./api/runin");
 const handleOnefootballProxy = require("./api/onefootball");
+const handleSecondHalfProxy = require("./api/secondhalf");
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -59,6 +60,19 @@ const missionState = {
     },
     runin: {
       intervalMs: 10 * 60 * 1000,
+      status: "WARMING",
+      inFlight: false,
+      lastOkAt: null,
+      lastOkMs: 0,
+      lastErrorAt: null,
+      lastError: null,
+      latencyMs: 0,
+      runCount: 0,
+      errorCount: 0,
+      meta: {}
+    },
+    secondhalf: {
+      intervalMs: 20 * 60 * 1000,
       status: "WARMING",
       inFlight: false,
       lastOkAt: null,
@@ -142,6 +156,12 @@ async function runMissionJob(sourceKey, forceRefresh = true) {
       slot.meta = {
         leaguesCount: result?.leaguesCount || 0
       };
+    } else if (sourceKey === "secondhalf" && typeof handleSecondHalfProxy.fetchSecondHalfIntelligence === "function") {
+      result = await handleSecondHalfProxy.fetchSecondHalfIntelligence(forceRefresh);
+      slot.meta = {
+        leaguesAnalyzed: result?.leaguesAnalyzed || 0,
+        totalMatchesAnalyzed: result?.totalMatchesAnalyzed || 0
+      };
     }
     slot.status = "ONLINE";
     slot.lastOkMs = Date.now();
@@ -222,6 +242,10 @@ const server = http.createServer(async (req, res) => {
       await handleOnefootballProxy(req, res);
       return;
     }
+    if (reqUrl.pathname === "/api/secondhalf") {
+      await handleSecondHalfProxy(req, res);
+      return;
+    }
 
     let reqPath = decodeURIComponent(reqUrl.pathname);
     if (reqPath === "/") reqPath = "/index.html";
@@ -271,11 +295,13 @@ server.listen(PORT, HOST, () => {
   runMissionJob("onefootball", false);
   runMissionJob("bookmakers", false);
   runMissionJob("runin", false);
+  runMissionJob("secondhalf", false);
 
   // Autonomous Continuous Real-Time Acquisition Loops
   setInterval(() => { runMissionJob("onefootball", true); }, 60 * 1000);
   setInterval(() => { runMissionJob("bookmakers", true); }, 90 * 1000);
   setInterval(() => { runMissionJob("runin", true); }, 10 * 60 * 1000);
+  setInterval(() => { runMissionJob("secondhalf", true); }, 20 * 60 * 1000);
 
   // Self-Healing Watchdog + SSE Keep-Alive Heartbeat (Guaranteed Permanent Live Stream)
   setInterval(() => {

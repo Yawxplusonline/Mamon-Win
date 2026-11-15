@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=speed9">
+  <link rel="stylesheet" href="/styles.css?v=speed10">
 </head>
 <body>
   <div class="flex min-h-dvh flex-col">
@@ -36,6 +36,10 @@
             <a href="/handicap" data-route="/handicap" class="nav-handicap">
               <span class="handicap-pulse-dot" aria-hidden="true"></span>
               Handicap
+            </a>
+            <a href="/2h-highest" data-route="/2h-highest" class="nav-2h-highest">
+              <span class="sh2-pulse-dot" aria-hidden="true"></span>
+              2H Highest
             </a>
             <a href="/special-tips" data-route="/special-tips" class="nav-special-tips">
               <span class="special-pulse-dot" aria-hidden="true"></span>
@@ -127,6 +131,7 @@
           <div class="footer-col">
             <h3>Winning Tips &amp; Slips</h3>
             <ul>
+              <li><a href="/2h-highest" data-route="/2h-highest">🔥 2H Highest Scoring (Live, Leagues &amp; Teams)</a></li>
               <li><a href="/special-tips" data-route="/special-tips">⏱️ 5-Minute Draw Tips (50 Games)</a></li>
               <li><a href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW">🛡️ No 3+ in a Row Tips (50 Games)</a></li>
               <li><a href="/handicap" data-route="/handicap">🎯 Winning Handicap &amp; +EV Bets</a></li>
@@ -190,6 +195,12 @@
           </span>
           <span class="tabbar-label">Handicap</span>
         </a>
+        <a class="tabbar-item" href="/2h-highest" data-route="/2h-highest">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </span>
+          <span class="tabbar-label">2H High</span>
+        </a>
         <a class="tabbar-item" href="/special-tips" data-route="/special-tips">
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -250,9 +261,9 @@
   <!-- Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="/data/leagues.js?v=speed9"></script>
-  <script src="/data/footballData.js?v=speed9"></script>
-  <script src="/data/realtimeService.js?v=speed9"></script>
-  <script src="/app.js?v=speed9"></script>
+  <script src="/data/leagues.js?v=speed10"></script>
+  <script src="/data/footballData.js?v=speed10"></script>
+  <script src="/data/realtimeService.js?v=speed10"></script>
+  <script src="/app.js?v=speed10"></script>
 </body>
 </html>

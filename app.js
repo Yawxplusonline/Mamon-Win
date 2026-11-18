@@ -4315,6 +4315,8 @@
               const aName = cleanTeamDisplayNameClient(tip.awayTeamName || (tip.fixture || "").split(" vs ")[1] || "Away");
               const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
               const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
+              const tName = cleanTeamDisplayNameClient(tip.targetTeam || (tip.targetSide === "AWAY" ? aName : hName));
+              const tLogo = tip.targetSide === "AWAY" ? aLogo : hLogo;
               return `
               <a class="power-preview-tile is-strong" href="/handicap" data-route="/handicap" style="border-left: 3px solid #10B981; background: var(--ground);">
                 <div class="flex items-center justify-between gap-1 w-full">
@@ -4329,11 +4331,14 @@
                   ${crestImg(aLogo, aName, "#3B82F6", 18)}
                 </div>
                 <div class="text-xs font-medium text-muted truncate mt-0.5 w-full">${countryFlagBadgeHtml(tip.country || "International", tip.countryFlag || "🏳️", true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}</div>
-                <div class="text-xs font-mono font-bold mt-0.5 text-text">${escapeHtml(tip.handicapLine)}</div>
-                <div class="text-xs font-mono text-muted truncate mt-0.5 w-full">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
+                <div class="flex items-center gap-1.5 text-xs font-mono font-bold mt-1 px-1.5 py-1 rounded w-full" style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.28);color:#059669;">
+                  ${crestImg(tLogo, tName, "#10B981", 15)}
+                  <span class="truncate">STAKE: ${escapeHtml(tName)} — ${escapeHtml(tip.handicapLine)}</span>
+                </div>
+                <div class="text-xs font-mono text-muted truncate mt-1 w-full">${tip.footballComGameId ? `FB #${escapeHtml(String(tip.footballComGameId))} · ` : ""}🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}${tip.onOneFootball ? " · ⚽ OF" : ""}</div>
                 <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span title="Fair Odds for ${escapeHtml(tName)}: ${escapeHtml(tip.handicapLine)}">Fair (${escapeHtml(tName)}): <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#10B981;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
@@ -4385,9 +4390,10 @@
                   ${crestImg(aLogo, aName, "#3B82F6", 18)}
                 </div>
                 <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${countryFlagBadgeHtml(tip.country || "International", tip.flag, true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · 🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</div>
-                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                <div class="text-xs font-mono font-bold mt-1 text-text truncate w-full">🎯 Line: 0-0 Draw First 5 Min (${escapeHtml(hName)} vs ${escapeHtml(aName)})</div>
+                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-1.5 pt-1.5" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Fair (0-0 5m): <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#06B6D4;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
@@ -4412,9 +4418,10 @@
                   ${crestImg(aLogo, aName, "#3B82F6", 18)}
                 </div>
                 <div class="text-xs font-medium mt-0.5 text-muted truncate w-full">${countryFlagBadgeHtml(tip.country || "International", tip.flag, true)} ${escapeHtml(tip.country ? `${tip.country} · ${tip.league}` : tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""} · Resistance: ${tip.consecutiveGoalResistancePct}</div>
-                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                <div class="text-xs font-mono font-bold mt-1 text-text truncate w-full">🛡️ Line: ${escapeHtml(tip.marketLabel || "No 3+ Goals in a Row")} (${escapeHtml(hName)} vs ${escapeHtml(aName)})</div>
+                <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-1.5 pt-1.5" style="border-top:1px dashed var(--line-soft);">
                   <span>Prob: <strong class="text-text">${tip.trueProbabilityPct}</strong></span>
-                  <span>Fair: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                  <span>Fair (No 3+): <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
                   <span>Bookie: <strong style="color:#10B981;" class="font-bold">${tip.bookmakerOdds.toFixed(2)}</strong></span>
                 </div>
               </a>
@@ -5908,8 +5915,11 @@
                 <span>${escapeHtml(aName)}</span>
                 ${crestImg(aLogo, aName, "#3B82F6", 22)}
               </h3>
-              <div class="text-xs text-muted mt-0.5">Recommended Bet Selection:</div>
-              <div class="handicap-line-badge mt-1">${escapeHtml(tip.handicapLine)}</div>
+              <div class="text-xs text-muted mt-0.5">Recommended Team &amp; Bet Selection (What Fair Odds Backs):</div>
+              <div class="handicap-line-badge mt-1 flex items-center gap-1.5 flex-wrap">
+                ${crestImg(tip.targetSide === "AWAY" ? aLogo : hLogo, cleanTeamDisplayNameClient(tip.targetTeam || (tip.targetSide === "AWAY" ? aName : hName)), "#10B981", 16)}
+                <span>🎯 ${escapeHtml(cleanTeamDisplayNameClient(tip.targetTeam || (tip.targetSide === "AWAY" ? aName : hName)))} &mdash; ${escapeHtml(tip.handicapLine)}</span>
+              </div>
             </div>
             <div class="text-right">
               <div class="text-xs text-muted">Expected Return / ROI:</div>
@@ -5930,16 +5940,20 @@
           <table class="ev-metric-table">
             <tbody>
               <tr>
+                <th>Backed Team &amp; Market Line</th>
+                <td><strong>${escapeHtml(cleanTeamDisplayNameClient(tip.targetTeam || ""))}</strong> &middot; <span class="font-mono">${escapeHtml(tip.handicapLine)}</span></td>
+              </tr>
+              <tr>
                 <th>Estimated True Probability (P)</th>
                 <td>${tip.trueProbabilityPct}</td>
               </tr>
               <tr>
-                <th>Fair Odds (1 / P)</th>
-                <td>${tip.fairOdds.toFixed(2)}</td>
+                <th>Fair Odds (1 / P) &middot; ${escapeHtml(cleanTeamDisplayNameClient(tip.targetTeam || ""))}</th>
+                <td><strong>${tip.fairOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.handicapLine)})</span></td>
               </tr>
               <tr>
-                <th>Bookmaker Odds (O)</th>
-                <td><strong>${tip.bookmakerOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.bookmakerSource)})</span></td>
+                <th>Bookmaker Odds (O) &middot; Stake Here</th>
+                <td><strong style="color:#10B981;">${tip.bookmakerOdds.toFixed(2)}</strong> <span class="text-xs text-muted font-normal">(${escapeHtml(tip.bookmakerSource)})</span></td>
               </tr>
               <tr class="ev-row-highlight">
                 <th>Expected return per unit staked (EV = P &times; O - 1)</th>
@@ -6208,15 +6222,15 @@
 
                   <div class="defense-metrics-strip">
                     <div class="defense-metric-item">
-                      <span class="label">True Prob</span>
+                      <span class="label">True Prob (${is5Min ? "0-0 First 5m" : "No 3+ Goals"})</span>
                       <span class="val font-mono" style="color: ${is5Min ? '#0891B2' : '#059669'};">${tip.trueProbabilityPct}</span>
                     </div>
                     <div class="defense-metric-item">
-                      <span class="label">Fair Odds</span>
+                      <span class="label">Fair Odds (${is5Min ? "0-0 5m Line" : "No 3+ Line"})</span>
                       <span class="val font-mono">${tip.fairOdds.toFixed(2)}</span>
                     </div>
                     <div class="defense-metric-item">
-                      <span class="label">Bookie Odds</span>
+                      <span class="label">Bookie Odds (Stake Line)</span>
                       <span class="val font-mono" style="color: var(--brand); font-weight: 800;">${tip.bookmakerOdds.toFixed(2)}</span>
                     </div>
                   </div>

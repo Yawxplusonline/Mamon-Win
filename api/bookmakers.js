@@ -773,11 +773,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
   scanInFlight = (async () => {
     try {
       const SPORTS_CONFIG = [
-        { key: "football", sportId: "sr:sport:1", label: "Football" },
-        { key: "basketball", sportId: "sr:sport:2", label: "Basketball" },
-        { key: "tennis", sportId: "sr:sport:5", label: "Tennis" },
-        { key: "hockey", sportId: "sr:sport:4", label: "Ice Hockey" },
-        { key: "darts", sportId: "sr:sport:22", label: "Darts" }
+        { key: "football", sportId: "sr:sport:1", label: "Football" }
       ];
 
       const sbEvents = [];
@@ -788,35 +784,21 @@ async function runFullBookmakerScan(forceRefresh = false) {
         const marketParam = "marketId=1%2C10%2C14%2C16%2C18%2C29%2C186%2C202%2C219%2C225";
         const fbBase = "https://www.football.com/api/gh/factsCenter";
         const sbBase = "https://www.sportybet.com/api/gh/factsCenter";
-        const upcUrls = sp.key === "football"
-          ? [
-              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.football.com/"),
-              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.football.com/"),
-              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=2`, 8500, "https://www.football.com/"),
-              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.sportybet.com/"),
-              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.sportybet.com/"),
-              fetchJsonSafe(`${fbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
-              fetchJsonSafe(`${sbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/")
-            ]
-          : [
-              fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.football.com/"),
-              fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.sportybet.com/"),
-              fetchJsonSafe(`${fbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
-              fetchJsonSafe(`${sbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/")
-            ];
+        const upcUrls = [
+          fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.football.com/"),
+          fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.football.com/"),
+          fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=2`, 8500, "https://www.football.com/"),
+          fetchJsonSafe(`${fbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=3`, 8500, "https://www.football.com/"),
+          fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1&timeline=48`, 8500, "https://www.sportybet.com/"),
+          fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=1`, 8500, "https://www.sportybet.com/"),
+          fetchJsonSafe(`${sbBase}/pcUpcomingEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}&pageSize=100&pageNum=2`, 8500, "https://www.sportybet.com/"),
+          fetchJsonSafe(`${fbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.football.com/"),
+          fetchJsonSafe(`${sbBase}/liveOrPrematchEvents?sportId=${encodeURIComponent(sp.sportId)}&${marketParam}`, 7500, "https://www.sportybet.com/")
+        ];
 
-        const results = await Promise.all(upcUrls);
-        if (sp.key === "football") {
-          const [fbT48, fbP1, fbP2, sbT48, sbP1, fbLive, sbLive] = results;
-          for (const j of [fbT48, fbP1, fbP2, fbLive]) fbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
-          for (const j of [sbT48, sbP1, sbLive]) sbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
-        } else {
-          const [fbUpc, sbUpc, fbLive, sbLive] = results;
-          fbEvents.push(...extractEventsFromFactCenter(fbUpc, sp.key, sp.label));
-          fbEvents.push(...extractEventsFromFactCenter(fbLive, sp.key, sp.label));
-          sbEvents.push(...extractEventsFromFactCenter(sbUpc, sp.key, sp.label));
-          sbEvents.push(...extractEventsFromFactCenter(sbLive, sp.key, sp.label));
-        }
+        const [fbT48, fbP1, fbP2, fbP3, sbT48, sbP1, sbP2, fbLive, sbLive] = await Promise.all(upcUrls);
+        for (const j of [fbT48, fbP1, fbP2, fbP3, fbLive]) fbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
+        for (const j of [sbT48, sbP1, sbP2, sbLive]) sbEvents.push(...extractEventsFromFactCenter(j, sp.key, sp.label));
       });
 
       const [, ofSchedule] = await Promise.all([Promise.all(sportFetches), ofSchedulePromise]);
@@ -1065,15 +1047,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
         return a.estimateStartTime - b.estimateStartTime;
       });
 
-      // Hydrate team stats across >=5h Pre-Match AND live games for all 5 sports
-      const footballPre5h = activeRawGames.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 60);
-      const footballLive = activeRawGames.filter((g) => g.sport === "football" && g.isLive).slice(0, 20);
-      const nonFootballImmediate = [];
-      for (const sp of ["tennis", "basketball", "hockey", "darts"]) {
-        nonFootballImmediate.push(...activeRawGames.filter((g) => g.sport === sp && g.isPreMatch5h).slice(0, 20));
-        nonFootballImmediate.push(...activeRawGames.filter((g) => g.sport === sp && g.isLive).slice(0, 15));
-      }
-      const immediateGames = [...footballPre5h, ...footballLive, ...nonFootballImmediate];
+      // Hydrate team stats across >=5h Pre-Match AND live Football games
+      const footballPre5h = activeRawGames.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 90);
+      const footballLive = activeRawGames.filter((g) => g.sport === "football" && g.isLive).slice(0, 30);
+      const immediateGames = [...footballPre5h, ...footballLive];
       const immediateIds = new Set(immediateGames.map((g) => g.eventId));
       const deferredGames = activeRawGames.filter((g) => !immediateIds.has(g.eventId));
 
@@ -1361,12 +1338,8 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .sort((a, b) => (b.isInvertedTrap ? 1 : 0) - (a.isInvertedTrap ? 1 : 0) || b.mismatchScore - a.mismatchScore || b.edgePct - a.edgePct);
 
       const balancedAllGames = [
-        ...evaluated.filter((x) => x.sport === "football" && x.isPreMatch5h).slice(0, 120),
-        ...evaluated.filter((x) => x.sport === "football" && !x.isPreMatch5h).slice(0, 40),
-        ...evaluated.filter((x) => x.sport === "tennis").slice(0, 80),
-        ...evaluated.filter((x) => x.sport === "basketball").slice(0, 70),
-        ...evaluated.filter((x) => x.sport === "hockey").slice(0, 70),
-        ...evaluated.filter((x) => x.sport === "darts").slice(0, 50)
+        ...evaluated.filter((x) => x.sport === "football" && x.isPreMatch5h).slice(0, 240),
+        ...evaluated.filter((x) => x.sport === "football" && !x.isPreMatch5h).slice(0, 80)
       ];
 
       const payload = {

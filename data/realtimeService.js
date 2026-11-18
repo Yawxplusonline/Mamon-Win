@@ -4916,8 +4916,8 @@ window.MAMON_REALTIME = (() => {
 
         const winProb = isHome ? probs.pH : probs.pA;
         const loseProb = isHome ? probs.pA : probs.pH;
-        const winOdd = isHome ? m.odds.home : m.odds.away;
-        const oppOdd = isHome ? m.odds.away : m.odds.home;
+        const winOdd = (isHome ? m.odds?.home : m.odds?.away) || probs.fairOddsHome || 0;
+        const oppOdd = (isHome ? m.odds?.away : m.odds?.home) || probs.fairOddsAway || 0;
 
         // Reliability gate so unplayed 0-MP youth/reserve fixtures don't dominate real leagues
         const sampleBonus = (myMp >= 2 ? 3 : -8) + (oppMp >= 2 ? 2 : -4) + (calc.hasTable ? 3 : 0);
@@ -5203,7 +5203,8 @@ window.MAMON_REALTIME = (() => {
 
       const b = g.bestOdds;
       const sport = (g.sport || "football").toLowerCase();
-      const sportName = g.sportName || (sport === "hockey" ? "Ice Hockey" : sport === "basketball" ? "Basketball" : sport === "tennis" ? "Tennis" : sport === "darts" ? "Darts" : "Football");
+      if (sport !== "football") continue;
+      const sportName = "Football";
       const hs = g.homeStats || { ppg: 1.5, homePpg: 1.6, formPts: 9, form: ["W","D","W"], gfAvg: 1.5, gaAvg: 1.2, csPct: 30 };
       const as = g.awayStats || { ppg: 1.3, awayPpg: 1.2, formPts: 7, form: ["L","W","D"], gfAvg: 1.2, gaAvg: 1.4, csPct: 20 };
       const ppgSched = g.ppgSchedule || {};

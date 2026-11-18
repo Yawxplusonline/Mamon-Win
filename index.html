@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=speed11">
+  <link rel="stylesheet" href="/styles.css?v=speed12">
 </head>
 <body>
   <div class="flex min-h-dvh flex-col">
@@ -90,11 +90,11 @@
         </div>
       </div>
 
-      <!-- 5 Exclusive Sports Quick Selector (Football, Tennis, Basketball, Darts, Ice Hockey) -->
+      <!-- Football Only Quick Selector -->
       <div class="subnav-rail" id="sportsRail">
         <div class="subnav-desktop">
           <div class="flex items-center gap-2">
-            <span class="font-mono text-xs font-bold text-muted uppercase tracking-wider">Active Sports:</span>
+            <span class="font-mono text-xs font-bold text-muted uppercase tracking-wider">Sport Focus:</span>
           </div>
           <span class="subnav-sep" aria-hidden="true"></span>
           <div class="sports-pills-bar" id="subnavScroll"></div>
@@ -124,7 +124,7 @@
               <span class="font-bold text-lg text-white">Abradakabra Money God (AMG)</span>
             </div>
             <p class="text-xs text-muted leading-relaxed max-w-xs">
-              Autonomous multi-sport winning intelligence &amp; value odds engine. Real-time statistical analysis across Football, Tennis, Basketball, Darts, and Ice Hockey.
+              Autonomous Football-Only winning intelligence &amp; value odds engine. Real-time statistical analysis, +EV handicaps, 2H highest scoring, and Run-In matrices.
             </p>
           </div>
 
@@ -140,13 +140,11 @@
           </div>
 
           <div class="footer-col">
-            <h3>5 Core Sports</h3>
+            <h3>Football Sections</h3>
             <ul>
-              <li><a href="/matches" data-route="/matches" data-sport-filter="football">⚽ Football Matches</a></li>
-              <li><a href="/matches" data-route="/matches" data-sport-filter="tennis">🎾 Tennis Matches</a></li>
-              <li><a href="/matches" data-route="/matches" data-sport-filter="basketball">🏀 Basketball Matches</a></li>
-              <li><a href="/matches" data-route="/matches" data-sport-filter="darts">🎯 Darts Matches</a></li>
-              <li><a href="/matches" data-route="/matches" data-sport-filter="hockey">🏒 Ice Hockey Matches</a></li>
+              <li><a href="/matches" data-route="/matches" data-sport-filter="football">⚽ All Football Matches</a></li>
+              <li><a href="/live" data-route="/live">🔴 Live Football In-Play</a></li>
+              <li><a href="/upcoming" data-route="/upcoming">📅 Upcoming Football Fixtures</a></li>
             </ul>
           </div>
 
@@ -261,9 +259,9 @@
   <!-- Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="/data/leagues.js?v=speed11"></script>
-  <script src="/data/footballData.js?v=speed11"></script>
-  <script src="/data/realtimeService.js?v=speed11"></script>
-  <script src="/app.js?v=speed11"></script>
+  <script src="/data/leagues.js?v=speed12"></script>
+  <script src="/data/footballData.js?v=speed12"></script>
+  <script src="/data/realtimeService.js?v=speed12"></script>
+  <script src="/app.js?v=speed12"></script>
 </body>
 </html>

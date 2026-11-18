@@ -417,7 +417,7 @@
   function loadState() {
     const defaults = {
       route: "/",
-      activeSport: "ALL", // ALL | football | tennis | basketball | darts | hockey
+      activeSport: "football", // Football Only
       selectedDate: "UPCOMING_ALL",
       matchFilter: "LIVE", // LIVE | SCHEDULED | DROPS | ALERTS | FT
       activeIntelTab: "DROPS", // DROPS | ALERTS
@@ -452,7 +452,9 @@
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
       const merged = { ...defaults, ...saved };
-      // Migrate legacy filters: no "ALL", no "FOLLOWING"
+      // Migrate legacy multi-sport state: Football Only
+      merged.activeSport = "football";
+      merged.activeRuninSport = "football";
       if (merged.matchFilter === "ALL" || merged.matchFilter === "FOLLOWING" || !merged.matchFilter) {
         merged.matchFilter = "LIVE";
       }
@@ -1283,26 +1285,21 @@
   }
 
   const ALLOWED_SPORTS = [
-    { key: "ALL", label: "All 5 Sports", icon: "🏆" },
-    { key: "football", label: "Football", icon: "⚽" },
-    { key: "tennis", label: "Tennis", icon: "🎾" },
-    { key: "basketball", label: "Basketball", icon: "🏀" },
-    { key: "darts", label: "Darts", icon: "🎯" },
-    { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+    { key: "football", label: "Football", icon: "⚽" }
   ];
 
   function renderSubnav() {
     const scrollEl = document.getElementById("subnavScroll");
     const mobileEl = document.getElementById("subnavMobile");
-    const currentSport = (state.activeSport || "ALL").toLowerCase();
+    const currentSport = "football";
 
-    // Count matches per sport (restricted strictly to the 5 allowed sports, excluding NCAA/women)
-    const sportCounts = { all: 0, tennis: 0, basketball: 0, darts: 0, hockey: 0, football: 0 };
+    // Count verified football matches strictly (excluding NCAA/women)
+    const sportCounts = { all: 0, football: 0 };
     liveMatches.forEach((m) => {
       if (isNcaaOrWomenMatch(m)) return;
       const sp = (m.sport || "football").toLowerCase();
-      if (sportCounts[sp] !== undefined) {
-        sportCounts[sp]++;
+      if (sp === "football") {
+        sportCounts.football++;
         sportCounts.all++;
       }
     });
@@ -2332,7 +2329,7 @@
 
   function renderMatchesPanel(matchesList, title = "Upcoming Fixtures", showToolbar = true, allowCompletedToggle = false, forcedSection = null) {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
 
     const isLiveSection = forcedSection === "LIVE" || (!forcedSection && state.route === "/live");
     const isScopedList = !showToolbar || forcedSection === "COMPETITION";
@@ -2560,13 +2557,8 @@
         groupsHtml = renderCountryGroupedLeagues(filtered, state.matchFilter === "FT");
       }
     } else {
-      // ALL SPORTS SELECTED: Football keeps Country -> Original League Fixtures & Odds; Tennis, Basketball, Darts & Ice Hockey use Run-In Difficulty Table
       const sportsToGroup = [
-        { key: "football", label: "Football", icon: "⚽" },
-        { key: "tennis", label: "Tennis", icon: "🎾" },
-        { key: "basketball", label: "Basketball", icon: "🏀" },
-        { key: "darts", label: "Darts", icon: "🎯" },
-        { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+        { key: "football", label: "Football", icon: "⚽" }
       ];
 
       const sectionsHtml = sportsToGroup
@@ -2833,13 +2825,10 @@
   }
 
   function filteredMatchesForDate() {
-    const allowed = ["football", "tennis", "basketball", "darts", "hockey"];
+    const allowed = ["football"];
     let pool = liveMatches
       .filter((m) => allowed.includes((m.sport || "football").toLowerCase()))
       .filter((m) => !isNcaaOrWomenMatch(m));
-    if (state.activeSport && state.activeSport !== "ALL") {
-      pool = pool.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
-    }
     // Strict separation: Live section strictly returns live games (no abandoned / interrupted)
     if (state.matchFilter === "LIVE") {
       return pool.filter(isMatchTrulyLive);
@@ -3343,11 +3332,7 @@
   }
 
   const RUNIN_SPORTS = [
-    { key: "football", label: "Football", icon: "⚽", entityLabel: "Team" },
-    { key: "tennis", label: "Tennis", icon: "🎾", entityLabel: "Player / Pair" },
-    { key: "basketball", label: "Basketball", icon: "🏀", entityLabel: "Team" },
-    { key: "darts", label: "Darts", icon: "🎯", entityLabel: "Player" },
-    { key: "hockey", label: "Ice Hockey", icon: "🏒", entityLabel: "Team" }
+    { key: "football", label: "Football", icon: "⚽", entityLabel: "Team" }
   ];
 
   function renderRuninPlayedChips(playedList, inlineLimit = null, rowMeta = null) {
@@ -4840,39 +4825,19 @@
   }
 
   function renderHomeLiveCard(liveList, spDef) {
-    const activeSportKey = (state.activeSport || "ALL").toLowerCase();
+    const activeSportKey = "football";
     const validLiveList = (liveList || []).filter(isMatchTrulyLive);
     const sortedLive = sortMatchesInOrder(validLiveList);
-    const nonFootballSports = ["tennis", "basketball", "darts", "hockey"];
-    let bodyHtml = "";
-
-    if (nonFootballSports.includes(activeSportKey)) {
-      bodyHtml = renderNonFootballRuninSection(activeSportKey, {
-        mode: "LIVE",
-        showHeader: false,
-        scopePrefix: "homelive"
-      }) || `<div class="p-4 text-center text-xs text-muted">No live ${escapeHtml(spDef.label)} games in progress right now.</div>`;
-    } else {
-      const footballLive = activeSportKey === "all"
-        ? sortedLive.filter((m) => (m.sport || "football").toLowerCase() === "football")
-        : sortedLive;
-      const shownFootball = footballLive.length > 0 ? renderCountryGroupedLeagues(footballLive.slice(0, 8), false) : "";
-      const nonFootballLiveHtml = activeSportKey === "all"
-        ? nonFootballSports
-            .map((spKey) => renderNonFootballRuninSection(spKey, { mode: "LIVE", scopePrefix: "homelive" }))
-            .filter(Boolean)
-            .join("")
-        : "";
-      bodyHtml = `
-        <div>${shownFootball}</div>
-        ${footballLive.length > 8 ? `
-          <div class="p-3 text-center border-t">
-            <a href="/live" data-route="/live" class="analyze-inline-btn" style="background:#DC2626; color:#fff; border-color:#DC2626;">View All ${footballLive.length} Live Football Games &rarr;</a>
-          </div>
-        ` : ""}
-        ${nonFootballLiveHtml ? `<div class="p-3 flex flex-col gap-3 border-t">${nonFootballLiveHtml}</div>` : ""}
-      `;
-    }
+    const footballLive = sortedLive.filter((m) => (m.sport || "football").toLowerCase() === "football");
+    const shownFootball = footballLive.length > 0 ? renderCountryGroupedLeagues(footballLive.slice(0, 8), false) : "";
+    const bodyHtml = `
+      <div>${shownFootball || `<div class="p-4 text-center text-xs text-muted">No live Football games in progress right now.</div>`}</div>
+      ${footballLive.length > 8 ? `
+        <div class="p-3 text-center border-t">
+          <a href="/live" data-route="/live" class="analyze-inline-btn" style="background:#DC2626; color:#fff; border-color:#DC2626;">View All ${footballLive.length} Live Football Games &rarr;</a>
+        </div>
+      ` : ""}
+    `;
 
     return `
       <section class="panel live-home-panel" style="border:1px solid rgba(239, 68, 68, 0.3); background:linear-gradient(180deg, rgba(239, 68, 68, 0.04) 0%, var(--card) 100%);">
@@ -4993,7 +4958,7 @@
 
   function renderHomeView() {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
     const baseSportMatches = liveMatches
       .filter((m) => !isNcaaOrWomenMatch(m))
       .filter((m) => activeSportKey === "all" || (m.sport || "football").toLowerCase() === activeSportKey);
@@ -5020,7 +4985,7 @@
   function renderMatchesView() {
     const isLiveRoute = state.route === "/live";
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
     const isSingleSport = spDef.key !== "ALL";
 
     if (isLiveRoute) {
@@ -5033,9 +4998,7 @@
       const bannerTitle = isSingleSport
         ? `${spDef.icon} ${spDef.label} · 🔴 Live In-Play Games`
         : "🔴 Real-Time Live Match Center";
-      const bannerDesc = isSingleSport
-        ? `In-play matches belonging strictly to <strong>${escapeHtml(spDef.label)}</strong> with continuous live score updates.`
-        : "Live in-play matches across Football, Tennis, Basketball, Darts, and Ice Hockey · Zero upcoming games.";
+    const bannerDesc = "Live in-play Football matches with continuous real-time score updates · Zero upcoming games.";
 
       return `
         <div class="hero-banner" style="margin-bottom:12px; padding:18px 22px; border-left:4px solid #DC2626; text-align:center;">
@@ -5068,9 +5031,7 @@
     const bannerTitle = isSingleSport
       ? `${spDef.icon} ${spDef.label} · 📅 Upcoming Fixtures`
       : "📅 Upcoming Fixtures Match Center";
-    const bannerDesc = isSingleSport
-      ? `Upcoming scheduled matches belonging strictly to <strong>${escapeHtml(spDef.label)}</strong> from SportyBet &amp; Football.com.`
-      : "Verified upcoming fixtures across Football, Tennis, Basketball, Darts, and Ice Hockey · Zero live games.";
+    const bannerDesc = "Verified upcoming Football fixtures from OneFootball, SportyBet &amp; Football.com · Zero live games.";
 
     const pre5HeroCount = schedMatchesPool.filter((m) => (
       RT?.isTipEligiblePreMatch5h
@@ -5597,14 +5558,8 @@
       `;
     }
 
-    // When in "ALL" mode: GROUP MATCHES ACCORDING TO WHERE THEY BELONG (BY SPORT)
-    // NEVER ADD FOOTBALL TO TENNIS, NEVER ADD BASKETBALL TO ICE HOCKEY!
     const sportGroups = [
-      { key: "football", label: "Football", icon: "⚽" },
-      { key: "tennis", label: "Tennis", icon: "🎾" },
-      { key: "basketball", label: "Basketball", icon: "🏀" },
-      { key: "darts", label: "Darts", icon: "🎯" },
-      { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+      { key: "football", label: "Football", icon: "⚽" }
     ];
 
     const groupSectionsHtml = sportGroups
@@ -5648,15 +5603,9 @@
     const fmtOdd = (v) => (typeof v === "number" && Number.isFinite(v) ? v.toFixed(2) : "-");
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
 
-    const sportGroups = activeSportKey !== "all"
-      ? [ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey)].filter(Boolean)
-      : [
-          { key: "football", label: "Football", icon: "⚽" },
-          { key: "tennis", label: "Tennis", icon: "🎾" },
-          { key: "basketball", label: "Basketball", icon: "🏀" },
-          { key: "darts", label: "Darts", icon: "🎯" },
-          { key: "hockey", label: "Ice Hockey", icon: "🏒" }
-        ];
+    const sportGroups = [
+      { key: "football", label: "Football", icon: "⚽" }
+    ];
 
     const tablesHtml = sportGroups
       .map((sp) => {
@@ -5752,7 +5701,7 @@
     const sc = bookmakerScan;
     const activeCat = state.activeMismatchCategory || "ALL";
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
 
     const sportFilter = (list) => {
       if (!Array.isArray(list)) return [];
@@ -5825,13 +5774,13 @@
         <h1 class="mt-2">${activeSportKey !== "all" ? `${spDef.icon} ${spDef.label} ` : ""}Bookmaker Trap &amp; Mistake Odds Scanner</h1>
         <p>Scrapes the entire catalog from <strong>https://www.football.com</strong> and <strong>https://www.sportybet.com</strong> to spot: <strong>(1) Strong Teams given Mistake Big Odds (while their opponent has Low Odds)</strong> to trick people into thinking they will lose when in reality they will win, and <strong>(2) Worst Teams given Mistake Low Odds (while their opponent has Big Odds)</strong> to trick people into thinking they will win when in reality they will lose.</p>
 
-        ${activeSportKey !== "all" ? `
+        ${activeSportKey !== "football" ? `
           <div class="active-sport-banner mt-3">
             <div class="flex items-center gap-2">
-              <span style="font-size:20px;">${spDef.icon}</span>
-              <span>Showing <strong>${escapeHtml(spDef.label)}</strong> mismatches only (${sh.length + sa.length + wh.length + wa.length} active opportunities)</span>
+              <span style="font-size:20px;">⚽</span>
+              <span>Showing <strong>Football</strong> mismatches only (${sh.length + sa.length + wh.length + wa.length} active opportunities)</span>
             </div>
-            <button type="button" class="clear-sport-filter-btn" data-sport-filter="ALL">Show All 5 Sports</button>
+            <button type="button" class="clear-sport-filter-btn" data-sport-filter="football">Football Only</button>
           </div>
         ` : ""}
 
@@ -5882,7 +5831,7 @@
     }
 
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
-    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "ALL", label: "All 5 Sports", icon: "🏆" };
+    const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
 
     const renderSingleTipCard = (tip) => {
       const targetSos = tip.targetPpg;
@@ -5994,13 +5943,8 @@
       // SINGLE SPORT ONLY
       cardsHtml = filteredTips.map(renderSingleTipCard).join("");
     } else {
-      // ALL SPORTS: GROUP ACCORDING TO WHERE THEY BELONG (Football First)
       const sportGroups = [
-        { key: "football", label: "Football", icon: "⚽" },
-        { key: "tennis", label: "Tennis", icon: "🎾" },
-        { key: "basketball", label: "Basketball", icon: "🏀" },
-        { key: "darts", label: "Darts", icon: "🎯" },
-        { key: "hockey", label: "Ice Hockey", icon: "🏒" }
+        { key: "football", label: "Football", icon: "⚽" }
       ];
 
       cardsHtml = sportGroups

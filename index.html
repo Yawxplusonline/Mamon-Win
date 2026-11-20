@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=speed12">
+  <link rel="stylesheet" href="/styles.css?v=speed14">
 </head>
 <body>
   <div class="flex min-h-dvh flex-col">
@@ -40,6 +40,10 @@
             <a href="/2h-highest" data-route="/2h-highest" class="nav-2h-highest">
               <span class="sh2-pulse-dot" aria-hidden="true"></span>
               2H Highest
+            </a>
+            <a href="/ft-draw" data-route="/ft-draw" class="nav-ft-draw">
+              <span class="ftdraw-pulse-dot" aria-hidden="true"></span>
+              FT Draw
             </a>
             <a href="/special-tips" data-route="/special-tips" class="nav-special-tips">
               <span class="special-pulse-dot" aria-hidden="true"></span>
@@ -131,6 +135,7 @@
           <div class="footer-col">
             <h3>Winning Tips &amp; Slips</h3>
             <ul>
+              <li><a href="/ft-draw" data-route="/ft-draw">⚖️ Full-Time Draw (X) Intelligence</a></li>
               <li><a href="/2h-highest" data-route="/2h-highest">🔥 2H Highest Scoring (Live, Leagues &amp; Teams)</a></li>
               <li><a href="/special-tips" data-route="/special-tips">⏱️ 5-Minute Draw Tips (50 Games)</a></li>
               <li><a href="/special-tips?tab=NO_3_ROW" data-route="/special-tips?tab=NO_3_ROW">🛡️ No 3+ in a Row Tips (50 Games)</a></li>
@@ -199,6 +204,12 @@
           </span>
           <span class="tabbar-label">2H High</span>
         </a>
+        <a class="tabbar-item" href="/ft-draw" data-route="/ft-draw">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l-7 7 7 7M12 5l7 7-7 7"/></svg>
+          </span>
+          <span class="tabbar-label">FT Draw</span>
+        </a>
         <a class="tabbar-item" href="/special-tips" data-route="/special-tips">
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -259,9 +270,9 @@
   <!-- Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="/data/leagues.js?v=speed12"></script>
-  <script src="/data/footballData.js?v=speed12"></script>
-  <script src="/data/realtimeService.js?v=speed12"></script>
-  <script src="/app.js?v=speed12"></script>
+  <script src="/data/leagues.js?v=speed14"></script>
+  <script src="/data/footballData.js?v=speed14"></script>
+  <script src="/data/realtimeService.js?v=speed14"></script>
+  <script src="/app.js?v=speed14"></script>
 </body>
 </html>

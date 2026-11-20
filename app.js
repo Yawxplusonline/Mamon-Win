@@ -430,6 +430,8 @@
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
+      activeFtDrawTab: "PREMATCH_FT_DRAW", // PREMATCH_FT_DRAW | LIVE_FT_DRAW | DRAW_SLIPS
+      activeFtDrawFilter: "ALL", // ALL | DEADLOCK | PLUS_EV | TODAY
       active2hTab: "LIVE_2H", // LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
       active2hFilter: "ALL", // ALL | UEFA | DOMESTIC
       activeRuninLeague: "england",
@@ -830,6 +832,14 @@
     if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
     if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips") return "/special-tips";
+    if (h === "/ft-draw" || h === "/fulltime-draw" || h === "/full-time-draw" || h === "/draw-tips" || h.startsWith("/ft-draw?") || h.startsWith("/fulltime-draw?")) {
+      if (h.includes("?")) {
+        const q = new URLSearchParams(h.split("?")[1]);
+        if (q.get("tab")) state.activeFtDrawTab = q.get("tab").toUpperCase();
+        if (q.get("filter")) state.activeFtDrawFilter = q.get("filter").toUpperCase();
+      }
+      return "/ft-draw";
+    }
     if (h === "/2h-highest" || h === "/second-half" || h === "/second-half-highest" || h.startsWith("/2h-highest?") || h.startsWith("/second-half?")) {
       if (h.includes("?")) {
         const q = new URLSearchParams(h.split("?")[1]);
@@ -864,6 +874,13 @@
       route = "/special-tips";
     }
     if (route === "/5min-draw" || route === "/no-3-in-a-row" || route === "/draw-defense" || route === "/defensive-tips") route = "/special-tips";
+    if (route.startsWith("/ft-draw?") || route.startsWith("/fulltime-draw?") || route.startsWith("/full-time-draw?") || route.startsWith("/draw-tips?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("tab")) state.activeFtDrawTab = q.get("tab").toUpperCase();
+      if (q.get("filter")) state.activeFtDrawFilter = q.get("filter").toUpperCase();
+      route = "/ft-draw";
+    }
+    if (route === "/fulltime-draw" || route === "/full-time-draw" || route === "/draw-tips") route = "/ft-draw";
     if (route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
@@ -2554,7 +2571,13 @@
           `;
         }
       } else {
-        groupsHtml = renderCountryGroupedLeagues(filtered, state.matchFilter === "FT");
+        const isHomePreview = (state.route === "/" || state.route === "") && filtered.length > 60;
+        const displayList = isHomePreview ? filtered.slice(0, 60) : filtered;
+        groupsHtml = renderCountryGroupedLeagues(displayList, state.matchFilter === "FT") + (isHomePreview ? `
+          <div class="p-3 text-center border-t">
+            <a href="/upcoming" data-route="/upcoming" class="analyze-inline-btn">View All ${filtered.length} Upcoming Fixtures &rarr;</a>
+          </div>
+        ` : "");
       }
     } else {
       const sportsToGroup = [
@@ -4417,6 +4440,262 @@
     `;
   }
 
+  function renderHomeFullTimeDrawCard() {
+    if (!RT || typeof RT.buildFullTimeDrawTips !== "function") return "";
+    const ftData = RT.buildFullTimeDrawTips(filteredMatchesForDate(), bookmakerScan);
+    if (!ftData || ((ftData.allTips?.length || 0) === 0 && (ftData.liveDraws?.length || 0) === 0)) return "";
+    const topTips = (ftData.allTips || []).slice(0, 3);
+    const totalCount = ftData.allTips?.length || 0;
+    const liveCount = ftData.liveDraws?.length || 0;
+
+    return `
+      <section class="panel-section ftd-home-card" id="fullTimeDrawHomeCard">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(139, 92, 246, 0.25); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#8b5cf6;color:#fff;font-weight:800;">⚖️ FULL-TIME DRAW (X) INTELLIGENCE</span>
+            <span class="sure-pill-tag" style="background:rgba(139,92,246,0.14);color:var(--text);border:1px solid rgba(139,92,246,0.35);font-weight:700;">${totalCount} Pre-Match ≥5h · ${ftData.stats?.positiveEvCount || 0} +EV · ${liveCount} Live Holds</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/ft-draw" data-route="/ft-draw" style="font-weight:800;color:#7c3aed;">Open Full-Time Draw Center (${totalCount} Picks) &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3">
+          <div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(255px, 1fr)); gap: 12px;">
+            ${topTips.map((tip, i) => {
+              const koLabel = formatKickoffCompact(tip).compactLabel;
+              const hName = cleanTeamDisplayNameClient(tip.homeTeam);
+              const aName = cleanTeamDisplayNameClient(tip.awayTeam);
+              const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+              const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
+              return `
+                <a class="power-preview-tile is-strong" href="/ft-draw" data-route="/ft-draw" style="border-left: 3px solid ${tip.isPositiveEv ? "#10b981" : "#8b5cf6"}; background: var(--bg-surface);">
+                  <div class="flex items-center justify-between gap-1 w-full">
+                    <span class="tile-kicker font-bold" style="color:#7c3aed;">#${i + 1} · ${escapeHtml(tip.oddsShapeLabel)}</span>
+                    <span class="ev-return-pill" style="background:${tip.isPositiveEv ? "#10b981" : "#8b5cf6"};color:#fff;">${tip.evPct} EV</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 font-bold text-sm truncate mt-1 w-full">
+                    ${crestImg(hLogo, hName, "#8b5cf6", 18)}
+                    <span class="truncate">${escapeHtml(hName)}</span>
+                    <span class="text-xs text-muted font-normal">vs</span>
+                    <span class="truncate">${escapeHtml(aName)}</span>
+                    ${crestImg(aLogo, aName, "#06b6d4", 18)}
+                  </div>
+                  <div class="text-xs text-muted mt-0.5 truncate w-full">${countryFlagBadgeHtml(tip.country, tip.flag, true)} ${escapeHtml(tip.country)} · ${escapeHtml(tip.league)} · 🕒 ${escapeHtml(koLabel)}${tip.footballComGameId ? ` · FB #${escapeHtml(String(tip.footballComGameId))}` : ""}</div>
+                  <div class="flex items-center justify-between gap-2 w-full text-xs text-muted mt-2 pt-1.5" style="border-top:1px dashed var(--line-soft);">
+                    <span>Draw Prob: <strong class="text-text">${tip.trueProbPct}</strong></span>
+                    <span>Fair X: <strong class="text-text">${tip.fairOdds.toFixed(2)}</strong></span>
+                    <span>Bookie X: <strong style="color:#7c3aed;" class="font-bold">${tip.bookmakerDrawOdds.toFixed(2)}</strong></span>
+                  </div>
+                </a>
+              `;
+            }).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderFullTimeDrawView() {
+    if (!RT || typeof RT.buildFullTimeDrawTips !== "function") {
+      return `<div class="panel-section p-4">Initializing Full-Time Draw Multi-Logic Engine...</div>`;
+    }
+    const ftData = RT.buildFullTimeDrawTips(liveMatches, bookmakerScan);
+    const activeTab = state.activeFtDrawTab || "PREMATCH_FT_DRAW";
+    const activeFilter = state.activeFtDrawFilter || "ALL";
+
+    let filteredPicks = ftData.allTips || [];
+    if (activeFilter === "DEADLOCK") filteredPicks = filteredPicks.filter((p) => p.oddsShape === "TIGHT_DEADLOCK");
+    else if (activeFilter === "PLUS_EV") filteredPicks = filteredPicks.filter((p) => p.isPositiveEv);
+    else if (activeFilter === "TODAY") filteredPicks = filteredPicks.filter((p) => p.isToday);
+
+    const renderSingleDrawCard = (tip, idx) => {
+      const hName = cleanTeamDisplayNameClient(tip.homeTeam);
+      const aName = cleanTeamDisplayNameClient(tip.awayTeam);
+      const hLogo = resolveTeamLogoByName(hName, tip.homeLogo);
+      const aLogo = resolveTeamLogoByName(aName, tip.awayLogo);
+      const koLabel = formatKickoffCompact(tip).compactLabel;
+
+      return `
+        <article class="ftd-card ${tip.tier === "ELITE_DRAW" ? "is-elite" : ""}">
+          <div class="sh2-card-head">
+            <span class="sh2-league-pill">#${idx + 1} · ${countryFlagBadgeHtml(tip.country, tip.flag, true)} ${escapeHtml(tip.country)} · ${escapeHtml(tip.league)}</span>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="ftd-shape-badge">${escapeHtml(tip.oddsShapeLabel)}</span>
+              <span class="ev-return-pill" style="background:${tip.isPositiveEv ? "#10b981" : "#8b5cf6"};color:#fff;">${tip.evPct} EV</span>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 min-w-0">
+              ${crestImg(hLogo, hName, "#8b5cf6", 24)}
+              <span class="font-extrabold text-sm truncate">${escapeHtml(hName)}</span>
+              <span class="text-xs text-muted">vs</span>
+              <span class="font-extrabold text-sm truncate">${escapeHtml(aName)}</span>
+              ${crestImg(aLogo, aName, "#06b6d4", 24)}
+            </div>
+            <div class="flex items-center gap-2 text-xs font-mono">
+              ${tip.footballComGameId ? `<span class="game-id-pill" data-copy-gameid="${escapeHtml(String(tip.footballComGameId))}" title="Click to copy Football.com Game ID">FB #${escapeHtml(String(tip.footballComGameId))}</span>` : ""}
+              ${tip.sportybetGameId ? `<span class="game-id-pill">SB #${escapeHtml(String(tip.sportybetGameId))}</span>` : ""}
+              <span class="text-muted">🕒 ${escapeHtml(koLabel)}${tip.countdownLabel ? ` (${escapeHtml(tip.countdownLabel)})` : ""}</span>
+            </div>
+          </div>
+
+          <div class="ftd-odds-strip">
+            <div class="ftd-odd-box"><strong>${tip.oddH ? tip.oddH.toFixed(2) : "-"}</strong><span>Home (1)</span></div>
+            <div class="ftd-odd-box is-draw"><strong>${tip.bookmakerDrawOdds.toFixed(2)}</strong><span>Draw (X) · Stake</span></div>
+            <div class="ftd-odd-box"><strong>${tip.oddA ? tip.oddA.toFixed(2) : "-"}</strong><span>Away (2)</span></div>
+            <div class="ftd-odd-box"><strong>${tip.oddU25 ? tip.oddU25.toFixed(2) : `${tip.totalXg} xG`}</strong><span>${tip.oddU25 ? "Under 2.5" : "Model xG"}</span></div>
+          </div>
+
+          <div class="sh2-metrics-row">
+            <div class="sh2-metric"><strong>${tip.trueProbPct}</strong><span>True Draw Prob</span></div>
+            <div class="sh2-metric"><strong>${tip.fairOdds.toFixed(2)} vs ${tip.bookmakerDrawOdds.toFixed(2)}</strong><span>Fair vs Bookie X</span></div>
+            <div class="sh2-metric"><strong>${tip.homePpg.toFixed(2)} vs ${tip.awayPpg.toFixed(2)}</strong><span>PPG Parity (±${tip.absOverallGap.toFixed(2)})</span></div>
+          </div>
+
+          <div class="sh2-proof-chips">
+            <span class="sh2-proof-chip">📊 League Draw: ${tip.leagueDrawRatePct}</span>
+            <span class="sh2-proof-chip">🤝 ${escapeHtml(tip.h2hSummary)}</span>
+            <span class="sh2-proof-chip">⚽ Expected Goals: ${tip.totalXg} (${tip.lamH}-${tip.lamA})</span>
+            ${tip.runinConfirmation?.confirmed ? `<span class="sh2-proof-chip">📈 ${escapeHtml(tip.runinConfirmation.shortTag)}</span>` : ""}
+            ${tip.drawDropPct >= 1.5 ? `<span class="sh2-proof-chip" style="border-color:#10b981;color:#059669;">📉 Draw Odds Dropped -${tip.drawDropPct}%</span>` : ""}
+          </div>
+
+          <div class="sh2-tip-box" style="background:rgba(139,92,246,0.08);border-left-color:#8b5cf6;">
+            <strong>🎯 BEST STAKE: Full-Time Draw (X) @ ${tip.bookmakerDrawOdds.toFixed(2)} (${tip.evPct} EV)</strong>
+            <span class="text-xs text-muted"> · Safe Backup: <strong>${escapeHtml(tip.safeBackup)}</strong></span>
+            ${tip.mastermind ? `
+              <div class="text-xs text-text-secondary mt-1.5 grid gap-0.5">
+                <div><strong>📐 Logic:</strong> ${escapeHtml(tip.mastermind.logic)}</div>
+                <div><strong>🕵️ Deceive Judgment:</strong> ${escapeHtml(tip.mastermind.deceiveJudgment)}</div>
+                <div><strong>😄 Wit:</strong> <em>"${escapeHtml(tip.mastermind.humor)}"</em></div>
+              </div>
+            ` : ""}
+          </div>
+
+          <div class="flex items-center justify-between text-xs pt-1" style="border-top:1px dashed var(--line-soft);">
+            <span class="font-mono text-muted">Composite Confidence: <strong class="text-text">${tip.compositeScore}/99</strong></span>
+            <button type="button" class="btn-subtle text-xs" style="color:#7c3aed;font-weight:700;" data-copy-tip="${escapeHtml(`${tip.fixture} — Full-Time Draw (X) @ ${tip.bookmakerDrawOdds.toFixed(2)} (${tip.evPct} EV)${tip.footballComGameId ? ` [FB #${tip.footballComGameId}]` : ""}`)}">Copy Draw Tip 📋</button>
+          </div>
+        </article>
+      `;
+    };
+
+    let tabHtml = "";
+    if (activeTab === "PREMATCH_FT_DRAW") {
+      tabHtml = filteredPicks.length === 0
+        ? `<div class="panel-section p-4 text-sm text-muted">No Full-Time Draw picks match the selected filter. Switch to <strong>All Draw Picks</strong> above.</div>`
+        : `<div class="sh2-grid">${filteredPicks.map(renderSingleDrawCard).join("")}</div>`;
+    } else if (activeTab === "LIVE_FT_DRAW") {
+      const lives = ftData.liveDraws || [];
+      tabHtml = lives.length === 0
+        ? `<div class="panel-section p-4 text-sm text-muted">No live level (0-0 / 1-1 past 20') low-threat draw deadlocks right this minute — check Pre-Match Full-Time Draw Picks or Draw Slips!</div>`
+        : `<div class="sh2-grid">
+            ${lives.map((ld) => `
+              <article class="ftd-card" data-match-id="${escapeHtml(String(ld.matchId || ""))}" style="cursor:pointer;">
+                <div class="sh2-card-head">
+                  <span class="sh2-league-pill">${countryFlagBadgeHtml(ld.country, ld.flag, true)} ${escapeHtml(ld.league)}</span>
+                  <span class="ftd-shape-badge" style="color:#dc2626;border-color:rgba(220,38,38,0.4);background:rgba(220,38,38,0.12);">🔴 LIVE ${ld.minute}' · ${escapeHtml(ld.score)}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">${crestImg(ld.homeLogo, ld.homeTeam, "#8b5cf6", 22)}<span class="font-bold text-sm truncate">${escapeHtml(ld.homeTeam)}</span></div>
+                  <div class="font-mono font-extrabold text-base px-2 py-0.5 rounded" style="background:var(--bg-subtle);">${escapeHtml(ld.score)}</div>
+                  <div class="flex items-center gap-2 min-w-0 justify-end"><span class="font-bold text-sm truncate">${escapeHtml(ld.awayTeam)}</span>${crestImg(ld.awayLogo, ld.awayTeam, "#06b6d4", 22)}</div>
+                </div>
+                <div class="sh2-metrics-row">
+                  <div class="sh2-metric"><strong>${ld.holdProbPct}</strong><span>Draw Hold Prob</span></div>
+                  <div class="sh2-metric"><strong>${ld.fairDrawOdds.toFixed(2)}</strong><span>Fair Live X</span></div>
+                  <div class="sh2-metric"><strong>${ld.threatPct}%</strong><span>Goal Threat</span></div>
+                </div>
+                <div class="sh2-tip-box" style="background:rgba(139,92,246,0.08);border-left-color:#8b5cf6;">
+                  <strong>🎯 ${escapeHtml(ld.verdict)}</strong>
+                  <div class="text-xs text-muted mt-1">${escapeHtml(ld.tacticalNote)}</div>
+                </div>
+              </article>
+            `).join("")}
+          </div>`;
+    } else if (activeTab === "DRAW_SLIPS") {
+      const slips = [ftData.drawSlips?.drawDouble, ftData.drawSlips?.drawTreble].filter(Boolean);
+      tabHtml = `
+        ${ftData.drawSlips?.bestSingle ? `
+          <div class="mb-4">
+            <h3 class="text-sm font-extrabold uppercase tracking-wide mb-2">🥇 #1 High-Confidence Full-Time Draw Single</h3>
+            ${renderSingleDrawCard(ftData.drawSlips.bestSingle, 0)}
+          </div>
+        ` : ""}
+        <div class="sh2-grid">
+          ${slips.map((sl) => `
+            <article class="ftd-card is-elite">
+              <div class="sh2-card-head">
+                <h3 class="font-extrabold text-base m-0">${escapeHtml(sl.title)}</h3>
+                <span class="ev-return-pill" style="background:#10b981;color:#fff;">${sl.totalOdds.toFixed(2)}x Total</span>
+              </div>
+              <div class="text-xs text-muted">${escapeHtml(sl.badge)} · Avg EV: <strong style="color:#059669;">${sl.avgEvPct}</strong> · Combined Prob: <strong>${sl.combinedProb}</strong></div>
+              <div class="grid gap-2 mt-1">
+                ${sl.legs.map((lg, li) => `
+                  <div class="p-2 rounded flex items-center justify-between gap-2 text-xs" style="background:var(--bg-subtle);">
+                    <div class="min-w-0">
+                      <div class="font-bold truncate">#${li + 1} ${escapeHtml(lg.fixture)}</div>
+                      <div class="text-muted truncate">${escapeHtml(lg.country)} · ${escapeHtml(lg.league)}${lg.footballComGameId ? ` · FB #${escapeHtml(String(lg.footballComGameId))}` : ""} · Draw Prob ${lg.trueProbPct}</div>
+                    </div>
+                    <span class="font-mono font-extrabold px-2 py-1 rounded" style="background:rgba(139,92,246,0.16);color:#7c3aed;">X @ ${lg.bookmakerDrawOdds.toFixed(2)}</span>
+                  </div>
+                `).join("")}
+              </div>
+              <div class="sh2-tip-box" style="background:rgba(16,185,129,0.08);border-left-color:#10b981;">
+                <strong>💡 Staking Advice:</strong> ${escapeHtml(sl.summary)}
+              </div>
+            </article>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    return `
+      <section class="ftd-hero">
+        <div class="ftd-hero-top">
+          <div>
+            <h1 class="sh2-hero-title">⚖️ Full-Time Draw (X) Multi-Logic Intelligence</h1>
+            <p class="sh2-hero-sub">Combines <strong>all 8 core system logics</strong> — Bivariate Poisson (0-0 / 1-1), Fair Draw Odds vs Bookmaker +EV, Strict PPG &amp; Venue Parity, Tight Deadlock Odds Shapes, Low-Scoring League Draw Rates, H2H + Form Draws, Run-In Symmetry, and 8-Pillar Deceive Judgment — to pinpoint the highest-accuracy <strong>Full-Time Draws (X)</strong>.</p>
+            <div class="ftd-logic-pills">
+              <span class="ftd-logic-pill">📐 Poisson 0-0 / 1-1 Matrix</span>
+              <span class="ftd-logic-pill">⚖️ Fair Draw Odds vs Bookie (+EV)</span>
+              <span class="ftd-logic-pill">🔍 Tight Deadlock Odds Shape</span>
+              <span class="ftd-logic-pill">📊 Strict PPG &amp; Venue Parity</span>
+              <span class="ftd-logic-pill">📈 Run-In Balance Gate</span>
+              <span class="ftd-logic-pill">🛡️ 8-Pillar Trap Filter</span>
+            </div>
+          </div>
+        </div>
+        <div class="sh2-hero-stats">
+          <div class="sh2-stat-box"><div class="sh2-stat-num">${ftData.allTips.length}</div><div class="sh2-stat-lbl">Verified Pre-Match Draws</div></div>
+          <div class="sh2-stat-box"><div class="sh2-stat-num">${ftData.stats.positiveEvCount}</div><div class="sh2-stat-lbl">+EV Fair-Odds Value</div></div>
+          <div class="sh2-stat-box"><div class="sh2-stat-num">${ftData.stats.tightDeadlockCount}</div><div class="sh2-stat-lbl">Tight Deadlock Shapes</div></div>
+          <div class="sh2-stat-box"><div class="sh2-stat-num">${ftData.liveDraws.length}</div><div class="sh2-stat-lbl">Live Draw Holds</div></div>
+          <div class="sh2-stat-box"><div class="sh2-stat-num">${ftData.stats.avgDrawOdds}x</div><div class="sh2-stat-lbl">Avg Draw Payout</div></div>
+        </div>
+      </section>
+
+      <div class="sh2-controls-bar">
+        <div class="sh2-tabs">
+          <button type="button" class="filter-chip${activeTab === "PREMATCH_FT_DRAW" ? " is-active" : ""}" data-ftdraw-tab="PREMATCH_FT_DRAW">🎯 Pre-Match FT Draw (${ftData.allTips.length})</button>
+          <button type="button" class="filter-chip${activeTab === "LIVE_FT_DRAW" ? " is-active" : ""}" data-ftdraw-tab="LIVE_FT_DRAW">🔴 Live Draw Holds (${ftData.liveDraws.length})</button>
+          <button type="button" class="filter-chip${activeTab === "DRAW_SLIPS" ? " is-active" : ""}" data-ftdraw-tab="DRAW_SLIPS">💎 Draw Singles &amp; System Slips</button>
+        </div>
+        ${activeTab === "PREMATCH_FT_DRAW" ? `
+          <div class="sh2-filters">
+            <button type="button" class="filter-chip${activeFilter === "ALL" ? " is-active" : ""}" data-ftdraw-filter="ALL">All Draw Picks</button>
+            <button type="button" class="filter-chip${activeFilter === "DEADLOCK" ? " is-active" : ""}" data-ftdraw-filter="DEADLOCK">🔒 Tight Deadlocks</button>
+            <button type="button" class="filter-chip${activeFilter === "PLUS_EV" ? " is-active" : ""}" data-ftdraw-filter="PLUS_EV">💎 +EV Value Only</button>
+            <button type="button" class="filter-chip${activeFilter === "TODAY" ? " is-active" : ""}" data-ftdraw-filter="TODAY">📅 Today Only</button>
+          </div>
+        ` : ""}
+      </div>
+
+      ${tabHtml}
+    `;
+  }
+
   function renderHomeSecondHalfCard() {
     if (!RT || typeof RT.buildLiveSecondHalfSectionData !== "function") return "";
     if (!secondHalfIntel && !isLoadingSecondHalf) {
@@ -4971,6 +5250,7 @@
     return `
       ${renderHomeSureOddsBanner()}
       ${renderHomeSecondHalfCard()}
+      ${renderHomeFullTimeDrawCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
       ${renderHomeRunInCard()}
@@ -6469,6 +6749,8 @@
         main.innerHTML = renderHomeView();
       } else if (r === "/2h-highest" || r === "/second-half" || r === "/second-half-highest") {
         main.innerHTML = renderSecondHalfHighestView();
+      } else if (r === "/ft-draw" || r === "/fulltime-draw" || r === "/full-time-draw" || r === "/draw-tips") {
+        main.innerHTML = renderFullTimeDrawView();
       } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
         main.innerHTML = renderHandicapValueBetsView();
       } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
@@ -7767,7 +8049,7 @@
     }
 
     // Fast-path: Skip inert elements (backgrounds, containers, plain text) in 0.05ms (zero cascade latency)
-    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
+    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-ftdraw-tab], [data-ftdraw-filter], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
     if (!actionable) {
       if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
         const sm = document.getElementById("settingsMenu");
@@ -8063,6 +8345,23 @@
 
     if (e.target.closest("[data-2h-refresh]")) {
       scheduleUiUpdate(() => loadSecondHalfIntelligence(true));
+      return;
+    }
+
+    // Switch Full-Time Draw Tab / Filter
+    const ftdTabBtn = e.target.closest("[data-ftdraw-tab]");
+    if (ftdTabBtn) {
+      state.activeFtDrawTab = ftdTabBtn.getAttribute("data-ftdraw-tab");
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const ftdFilterBtn = e.target.closest("[data-ftdraw-filter]");
+    if (ftdFilterBtn) {
+      state.activeFtDrawFilter = ftdFilterBtn.getAttribute("data-ftdraw-filter");
+      saveState();
+      scheduleRenderMainContent();
       return;
     }
 
@@ -8604,14 +8903,19 @@
     if (pRoute === "/community") pRoute = "/power-picks";
     if (pRoute === "/runin" || pRoute === "/run-in-analysis") pRoute = "/run-in";
     if (pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/2h-highest";
+    if (pRoute === "/fulltime-draw" || pRoute === "/full-time-draw" || pRoute === "/draw-tips") pRoute = "/ft-draw";
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
     if (qs.get("tab")) {
       state.activeIntelTab = qs.get("tab").toUpperCase();
       if (pRoute === "/2h-highest") state.active2hTab = qs.get("tab").toUpperCase();
+      if (pRoute === "/ft-draw") state.activeFtDrawTab = qs.get("tab").toUpperCase();
     }
     if (qs.get("filter") && pRoute === "/2h-highest") {
       state.active2hFilter = qs.get("filter").toUpperCase();
+    }
+    if (qs.get("filter") && pRoute === "/ft-draw") {
+      state.activeFtDrawFilter = qs.get("filter").toUpperCase();
     }
     if (qs.get("cat")) {
       const upperCat = qs.get("cat").toUpperCase();

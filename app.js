@@ -432,6 +432,8 @@
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
       activeFtDrawTab: "PREMATCH_FT_DRAW", // PREMATCH_FT_DRAW | LIVE_FT_DRAW | DRAW_SLIPS
       activeFtDrawFilter: "ALL", // ALL | DEADLOCK | PLUS_EV | TODAY
+      activeStatMarket: "GOALS", // GOALS | THROW_INS | SHOTS_ON_TARGET | OFFSIDE | BOOKINGS | GOAL_KICKS | SAVES
+      activeStatSideFilter: "ALL", // ALL | OVER | UNDER | PLUS_EV
       active2hTab: "LIVE_2H", // LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
       active2hFilter: "ALL", // ALL | UEFA | DOMESTIC
       activeRuninLeague: "england",
@@ -485,6 +487,28 @@
   let isLoadingBookmakers = true;
   let secondHalfIntel = null;
   let isLoadingSecondHalf = false;
+  let statPropsData = null;
+  let isLoadingStatProps = false;
+
+  async function loadStatPropsIntelligence(force = false) {
+    if (isLoadingStatProps && !force) return statPropsData;
+    isLoadingStatProps = true;
+    try {
+      const resp = await fetch(`/api/statprops${force ? "?refresh=1" : ""}`, { cache: "no-store" });
+      if (!resp.ok) return statPropsData;
+      const res = await resp.json();
+      if (res && res.ok) {
+        statPropsData = res;
+        renderSubnav();
+      }
+      return statPropsData;
+    } catch {
+      return statPropsData;
+    } finally {
+      isLoadingStatProps = false;
+      scheduleRenderMainContent();
+    }
+  }
 
   async function loadSecondHalfIntelligence(force = false) {
     if (!RT || typeof RT.fetchSecondHalfAnalytics !== "function") return null;
@@ -881,6 +905,17 @@
       route = "/ft-draw";
     }
     if (route === "/fulltime-draw" || route === "/full-time-draw" || route === "/draw-tips") route = "/ft-draw";
+    if (route.startsWith("/ou-props?") || route.startsWith("/stat-props?")) {
+      const q = new URLSearchParams(route.split("?")[1]);
+      if (q.get("market")) state.activeStatMarket = q.get("market").toUpperCase();
+      if (q.get("cat")) state.activeStatMarket = q.get("cat").toUpperCase();
+      if (q.get("filter")) state.activeStatSideFilter = q.get("filter").toUpperCase();
+      route = "/ou-props";
+    }
+    if (route === "/stat-props") route = "/ou-props";
+    if (route === "/ou-props" && !statPropsData && !isLoadingStatProps) {
+      loadStatPropsIntelligence(false);
+    }
     if (route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
       const q = new URLSearchParams(route.split("?")[1]);
       if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
@@ -962,6 +997,7 @@
     }
     saveState();
     renderHeaderState();
+    renderSubnav();
     if (route === "/run-in") {
       loadRuninLeague(state.activeRuninLeague || "england");
     }
@@ -1305,10 +1341,22 @@
     { key: "football", label: "Football", icon: "⚽" }
   ];
 
+  const STAT_OU_MARKETS = [
+    { key: "GOALS", label: "Goals O/U", shortLabel: "Goals", icon: "⚽" },
+    { key: "THROW_INS", label: "Throw-ins O/U", shortLabel: "Throw-ins", icon: "🤾" },
+    { key: "SHOTS_ON_TARGET", label: "Shots On Target O/U", shortLabel: "Shots On Target", icon: "🎯" },
+    { key: "OFFSIDE", label: "Offside O/U", shortLabel: "Offside", icon: "🚩" },
+    { key: "BOOKINGS", label: "Bookings O/U", shortLabel: "Bookings", icon: "🟨" },
+    { key: "GOAL_KICKS", label: "Goal Kicks O/U", shortLabel: "Goal Kicks", icon: "🥅" },
+    { key: "SAVES", label: "Saves O/U", shortLabel: "Saves", icon: "🧤" }
+  ];
+
   function renderSubnav() {
     const scrollEl = document.getElementById("subnavScroll");
     const mobileEl = document.getElementById("subnavMobile");
     const currentSport = "football";
+    const isOuRoute = state.route === "/ou-props";
+    const activeMarket = state.activeStatMarket || "GOALS";
 
     // Count verified football matches strictly (excluding NCAA/women)
     const sportCounts = { all: 0, football: 0 };
@@ -1321,32 +1369,42 @@
       }
     });
 
-    if (scrollEl) {
-      scrollEl.innerHTML = ALLOWED_SPORTS.map((s) => {
-        const isActive = currentSport === s.key.toLowerCase() ? " is-active" : "";
+    const statCounts = statPropsData?.counts || {};
+    const buildFocusPillsHtml = (isMobile = false) => {
+      const sportHtml = ALLOWED_SPORTS.map((s) => {
+        const isActive = !isOuRoute && currentSport === s.key.toLowerCase() ? " is-active" : "";
         const count = sportCounts[s.key.toLowerCase()] || 0;
         return `
-          <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}" title="Filter games by ${escapeHtml(s.label)}">
+          <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}" title="View all ${escapeHtml(s.label)} matches">
             <span>${s.icon}</span>
             <span>${escapeHtml(s.label)}</span>
             <span class="sport-count">${count}</span>
           </button>
         `;
       }).join("");
+
+      const statHtml = STAT_OU_MARKETS.map((m) => {
+        const isActive = isOuRoute && activeMarket === m.key ? " is-active" : "";
+        const cnt = statCounts[m.key];
+        const countBadge = Number.isFinite(cnt) ? `<span class="sport-count">${cnt}</span>` : `<span class="sport-count">O/U</span>`;
+        return `
+          <button type="button" class="sport-pill is-stat-ou${isActive}" data-stat-market="${m.key}" title="Over/Under ${escapeHtml(m.shortLabel)} Poisson +EV Tips">
+            <span>${m.icon}</span>
+            <span>${escapeHtml(isMobile ? m.shortLabel : m.label)}</span>
+            ${countBadge}
+          </button>
+        `;
+      }).join("");
+
+      return sportHtml + statHtml;
+    };
+
+    if (scrollEl) {
+      scrollEl.innerHTML = buildFocusPillsHtml(false);
     }
 
     if (mobileEl) {
-      mobileEl.innerHTML = ALLOWED_SPORTS.map((s) => {
-        const isActive = currentSport === s.key.toLowerCase() ? " is-active" : "";
-        const count = sportCounts[s.key.toLowerCase()] || 0;
-        return `
-          <button type="button" class="sport-pill${isActive}" data-sport-filter="${s.key}">
-            <span>${s.icon}</span>
-            <span>${escapeHtml(s.label)}</span>
-            <span class="sport-count">${count}</span>
-          </button>
-        `;
-      }).join("");
+      mobileEl.innerHTML = buildFocusPillsHtml(true);
     }
   }
 
@@ -4696,6 +4754,194 @@
     `;
   }
 
+  function renderStatPropPickCard(p) {
+    const hName = cleanTeamDisplayNameClient(p.homeTeam);
+    const aName = cleanTeamDisplayNameClient(p.awayTeam);
+    const hLogo = resolveTeamLogoByName(hName, p.homeLogo);
+    const aLogo = resolveTeamLogoByName(aName, p.awayLogo);
+    const isUnder = p.side === "UNDER";
+    const evBg = p.isPositiveEv ? "#059669" : "#2563eb";
+    const koText = formatKickoffCompact(p).compactLabel || "Upcoming";
+    const tipCopyStr = `${p.fixture} (${p.league}) -> ${p.marketLine} @ ${Number(p.bookmakerOdds || 0).toFixed(2)} | Fair ${Number(p.fairOdds || 0).toFixed(2)} | Prob ${p.trueProbabilityPct} | EV ${p.expectedValuePct}${p.footballComGameId ? ` | FB #${p.footballComGameId}` : ""}`;
+
+    return `
+      <article class="statprops-card">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5 text-xs font-semibold text-muted">
+            ${countryFlagBadgeHtml(p.country || "International", p.flag || "🌍", true)}
+            <span>${escapeHtml(p.league || "Football")}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-mono text-xs text-muted">${escapeHtml(koText)}</span>
+            <span class="sure-pill-tag" style="background:${evBg};color:#fff;font-weight:800;">EV ${escapeHtml(p.expectedValuePct)}</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 font-bold text-sm truncate">
+            ${crestImg(hLogo, hName, "#059669", 22)}
+            <span class="truncate">${escapeHtml(hName)}</span>
+          </div>
+          <span class="text-xs font-mono text-muted">vs</span>
+          <div class="flex items-center gap-1.5 font-bold text-sm truncate justify-end">
+            <span class="truncate text-right">${escapeHtml(aName)}</span>
+            ${crestImg(aLogo, aName, "#2563eb", 22)}
+          </div>
+        </div>
+
+        <div class="statprops-pick-banner${isUnder ? " is-under" : ""}">
+          <div class="min-w-0">
+            <div class="text-xs font-bold uppercase tracking-wider" style="color:${isUnder ? "#2563eb" : "#059669"};">${escapeHtml(p.side)} · ${escapeHtml(p.scope || "Match Total")}</div>
+            <div class="text-sm font-extrabold truncate">${escapeHtml(p.marketLine)}</div>
+          </div>
+          <span class="sure-pill-tag" style="background:${isUnder ? "#2563eb" : "#059669"};color:#fff;font-weight:800;white-space:nowrap;">@ ${Number(p.bookmakerOdds || 0).toFixed(2)}</span>
+        </div>
+
+        <div class="statprops-metrics">
+          <div class="statprops-metric">
+            <strong>${Number(p.expectedAvg || 0).toFixed(2)}</strong>
+            <span>Exp λ</span>
+          </div>
+          <div class="statprops-metric">
+            <strong>${escapeHtml(p.trueProbabilityPct)}</strong>
+            <span>True Prob</span>
+          </div>
+          <div class="statprops-metric">
+            <strong>${Number(p.fairOdds || 0).toFixed(2)}</strong>
+            <span>Fair Odds</span>
+          </div>
+          <div class="statprops-metric">
+            <strong style="color:${p.isPositiveEv ? "#059669" : "#2563eb"};">${Number(p.bookmakerOdds || 0).toFixed(2)}</strong>
+            <span>Bookie Odds</span>
+          </div>
+        </div>
+
+        <div class="text-xs text-muted" style="line-height:1.45;">
+          <strong class="text-text">Data Logic:</strong> ${escapeHtml(p.logicSummary || "")}
+        </div>
+
+        <div class="flex items-center justify-between gap-2 flex-wrap pt-1" style="border-top:1px solid var(--border-subtle);">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            ${p.footballComGameId ? `<button type="button" class="gameid-chip" data-copy-gameid="${escapeHtml(p.footballComGameId)}" title="Copy Football.com Game ID">FB #${escapeHtml(p.footballComGameId)}</button>` : ""}
+            ${p.sportybetGameId ? `<button type="button" class="gameid-chip" data-copy-gameid="${escapeHtml(p.sportybetGameId)}" title="Copy SportyBet Game ID">SB #${escapeHtml(p.sportybetGameId)}</button>` : ""}
+          </div>
+          <button type="button" class="analyze-inline-btn" data-copy-tip="${escapeHtml(tipCopyStr)}">📋 Copy O/U Tip</button>
+        </div>
+      </article>
+    `;
+  }
+
+  function renderHomeStatPropsCard() {
+    if (!statPropsData && !isLoadingStatProps) {
+      loadStatPropsIntelligence(false);
+    }
+    const cats = statPropsData?.categories || {};
+    const counts = statPropsData?.counts || {};
+    const totalTips = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0);
+
+    return `
+      <section class="panel-section" id="homeStatPropsCard">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.25); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">📊 OVER / UNDER STAT MARKETS</span>
+            <span class="text-xs font-semibold text-muted">Poisson + ESPN Boxscore + Fair Odds across Goals, Throw-ins, SOT, Offside, Bookings, Goal Kicks & Saves</span>
+          </div>
+          <a class="btn-subtle text-xs" href="/ou-props" data-route="/ou-props" style="font-weight:800;color:#059669;">Open O/U Center (${totalTips} Tips) &rarr;</a>
+        </div>
+        <div class="p-3">
+          ${!statPropsData
+            ? `<div class="text-xs text-muted p-2">Scanning live Football.com prop lines & ESPN statistics across all 7 Over/Under markets...</div>`
+            : `<div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px;">
+                ${STAT_OU_MARKETS.map((m) => {
+                  const top = (cats[m.key] || [])[0];
+                  const href = `/ou-props?market=${m.key}`;
+                  if (!top) {
+                    return `
+                      <a class="power-preview-tile" href="${href}" data-route="${href}" style="border-left:3px solid #94a3b8; background: var(--bg-surface);">
+                        <div class="tile-kicker font-bold">${m.icon} ${escapeHtml(m.shortLabel)} O/U</div>
+                        <div class="text-xs text-muted mt-1">Scanning upcoming fixtures...</div>
+                      </a>
+                    `;
+                  }
+                  const isUnder = top.side === "UNDER";
+                  return `
+                    <a class="power-preview-tile is-strong" href="${href}" data-route="${href}" style="border-left:3px solid ${isUnder ? "#2563eb" : "#059669"}; background: var(--bg-surface);">
+                      <div class="flex items-center justify-between gap-1 w-full">
+                        <span class="tile-kicker font-bold" style="color:${isUnder ? "#2563eb" : "#059669"};">${m.icon} ${escapeHtml(m.shortLabel)}</span>
+                        <span class="ev-return-pill" style="background:${isUnder ? "#2563eb" : "#059669"};color:#fff;">EV ${escapeHtml(top.expectedValuePct)}</span>
+                      </div>
+                      <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(cleanTeamDisplayNameClient(top.homeTeam))} vs ${escapeHtml(cleanTeamDisplayNameClient(top.awayTeam))}</div>
+                      <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:${isUnder ? "#2563eb" : "#059669"};">${escapeHtml(top.marketLine)} @ ${Number(top.bookmakerOdds || 0).toFixed(2)}</div>
+                      <div class="text-xs text-muted mt-0.5">Exp λ=${Number(top.expectedAvg || 0).toFixed(2)} · Prob ${escapeHtml(top.trueProbabilityPct)} · Fair ${Number(top.fairOdds || 0).toFixed(2)}</div>
+                    </a>
+                  `;
+                }).join("")}
+              </div>`
+          }
+        </div>
+      </section>
+    `;
+  }
+
+  function renderStatPropsView() {
+    if (!statPropsData && !isLoadingStatProps) {
+      loadStatPropsIntelligence(false);
+    }
+    const activeCat = state.activeStatMarket || "GOALS";
+    const activeSide = state.activeStatSideFilter || "ALL";
+    const activeMeta = STAT_OU_MARKETS.find((m) => m.key === activeCat) || STAT_OU_MARKETS[0];
+    const cats = statPropsData?.categories || {};
+    const counts = statPropsData?.counts || {};
+    const rawList = cats[activeMeta.key] || [];
+    const filteredList = rawList.filter((item) => {
+      if (activeSide === "OVER") return item.side === "OVER";
+      if (activeSide === "UNDER") return item.side === "UNDER";
+      if (activeSide === "PLUS_EV") return item.isPositiveEv;
+      return true;
+    });
+
+    return `
+      <div class="statprops-hero">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">${activeMeta.icon} ${escapeHtml(activeMeta.label.toUpperCase())}</span>
+              <span class="sure-pill-tag" style="background:rgba(59,130,246,0.14);color:var(--text-primary);font-weight:700;">Poisson P(X&gt;line) + ESPN Last-5 Stats + Fair Odds +EV</span>
+            </div>
+            <h1 class="text-xl font-extrabold mt-2">${activeMeta.icon} Over/Under Stat Markets — ${escapeHtml(activeMeta.shortLabel)}</h1>
+            <p class="text-xs text-muted mt-1">Using the exact Poisson &amp; Fair Odds (+EV) engine from live Football.com prop lines and ESPN match telemetry.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" class="analyze-inline-btn" data-statprops-refresh="1" ${isLoadingStatProps ? "disabled" : ""}>${isLoadingStatProps ? "⏳ Refreshing..." : "🔄 Refresh Lines"}</button>
+            <a class="btn-subtle text-xs" href="/" data-route="/">&larr; Back Home</a>
+          </div>
+        </div>
+
+        <div class="statprops-tabs">
+          ${STAT_OU_MARKETS.map((m) => {
+            const isAct = m.key === activeMeta.key ? " is-active" : "";
+            const cnt = counts[m.key] ?? 0;
+            return `<button type="button" class="statprops-tab${isAct}" data-statprops-cat="${m.key}">${m.icon} ${escapeHtml(m.shortLabel)} <span class="font-mono">(${cnt})</span></button>`;
+          }).join("")}
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap mt-3">
+          <button type="button" class="filter-chip${activeSide === "ALL" ? " is-active" : ""}" data-statprops-filter="ALL">All Picks (${rawList.length})</button>
+          <button type="button" class="filter-chip${activeSide === "OVER" ? " is-active" : ""}" data-statprops-filter="OVER">⬆️ Over Only</button>
+          <button type="button" class="filter-chip${activeSide === "UNDER" ? " is-active" : ""}" data-statprops-filter="UNDER">⬇️ Under Only</button>
+          <button type="button" class="filter-chip${activeSide === "PLUS_EV" ? " is-active" : ""}" data-statprops-filter="PLUS_EV">💎 +EV Value Only</button>
+        </div>
+      </div>
+
+      ${!statPropsData
+        ? `<div class="empty-state"><h3>Scanning Live Prop Markets...</h3><p class="text-sm text-muted">Fetching live Football.com O/U lines &amp; ESPN boxscores for Goals, Throw-ins, Shots On Target, Offside, Bookings, Goal Kicks &amp; Saves.</p></div>`
+        : filteredList.length === 0
+          ? `<div class="empty-state"><h3>No matching ${escapeHtml(activeMeta.shortLabel)} tips under current filter</h3><p class="text-sm text-muted">Try switching to "All Picks" or another O/U market above.</p></div>`
+          : `<div class="statprops-grid">${filteredList.map(renderStatPropPickCard).join("")}</div>`
+      }
+    `;
+  }
+
   function renderHomeSecondHalfCard() {
     if (!RT || typeof RT.buildLiveSecondHalfSectionData !== "function") return "";
     if (!secondHalfIntel && !isLoadingSecondHalf) {
@@ -5251,6 +5497,7 @@
       ${renderHomeSureOddsBanner()}
       ${renderHomeSecondHalfCard()}
       ${renderHomeFullTimeDrawCard()}
+      ${renderHomeStatPropsCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSpecialTipsCard()}
       ${renderHomeRunInCard()}
@@ -6751,6 +6998,8 @@
         main.innerHTML = renderSecondHalfHighestView();
       } else if (r === "/ft-draw" || r === "/fulltime-draw" || r === "/full-time-draw" || r === "/draw-tips") {
         main.innerHTML = renderFullTimeDrawView();
+      } else if (r === "/ou-props" || r === "/stat-props") {
+        main.innerHTML = renderStatPropsView();
       } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
         main.innerHTML = renderHandicapValueBetsView();
       } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
@@ -8049,7 +8298,7 @@
     }
 
     // Fast-path: Skip inert elements (backgrounds, containers, plain text) in 0.05ms (zero cascade latency)
-    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-ftdraw-tab], [data-ftdraw-filter], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
+    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-stat-market], [data-statprops-cat], [data-statprops-filter], [data-statprops-refresh], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-ftdraw-tab], [data-ftdraw-filter], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
     if (!actionable) {
       if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
         const sm = document.getElementById("settingsMenu");
@@ -8077,7 +8326,16 @@
       return;
     }
 
-    // Switch Active Sport Filter (Football, Tennis, Basketball, Darts, Ice Hockey)
+    // Switch Active Sport Filter or Over/Under Stat Market pill in Sport Focus bar
+    const statMarketBtn = e.target.closest("[data-stat-market]");
+    if (statMarketBtn) {
+      const mKey = statMarketBtn.getAttribute("data-stat-market") || "GOALS";
+      state.activeStatMarket = mKey;
+      saveState();
+      scheduleUiUpdate(() => navigate(`/ou-props?market=${mKey}`));
+      return;
+    }
+
     const sportBtn = e.target.closest("[data-sport-filter]");
     if (sportBtn) {
       const nextSport = sportBtn.getAttribute("data-sport-filter") || "ALL";
@@ -8088,7 +8346,11 @@
         expandedRuninTeam = null;
       }
       saveState();
-      scheduleRenderAll();
+      if (state.route === "/ou-props") {
+        scheduleUiUpdate(() => navigate("/"));
+      } else {
+        scheduleRenderAll();
+      }
       return;
     }
 
@@ -8362,6 +8624,29 @@
       state.activeFtDrawFilter = ftdFilterBtn.getAttribute("data-ftdraw-filter");
       saveState();
       scheduleRenderMainContent();
+      return;
+    }
+
+    // Switch Over/Under Stat Markets Category / Side Filter / Refresh
+    const statCatBtn = e.target.closest("[data-statprops-cat]");
+    if (statCatBtn) {
+      state.activeStatMarket = statCatBtn.getAttribute("data-statprops-cat") || "GOALS";
+      saveState();
+      renderSubnav();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const statFilterBtn = e.target.closest("[data-statprops-filter]");
+    if (statFilterBtn) {
+      state.activeStatSideFilter = statFilterBtn.getAttribute("data-statprops-filter") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    if (e.target.closest("[data-statprops-refresh]")) {
+      scheduleUiUpdate(() => loadStatPropsIntelligence(true));
       return;
     }
 
@@ -8904,7 +9189,14 @@
     if (pRoute === "/runin" || pRoute === "/run-in-analysis") pRoute = "/run-in";
     if (pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/2h-highest";
     if (pRoute === "/fulltime-draw" || pRoute === "/full-time-draw" || pRoute === "/draw-tips") pRoute = "/ft-draw";
+    if (pRoute === "/stat-props") pRoute = "/ou-props";
     const qs = new URLSearchParams(window.location.search || "");
+    if (qs.get("market") && pRoute === "/ou-props") {
+      state.activeStatMarket = qs.get("market").toUpperCase();
+    }
+    if (qs.get("filter") && pRoute === "/ou-props") {
+      state.activeStatSideFilter = qs.get("filter").toUpperCase();
+    }
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
     if (qs.get("tab")) {
       state.activeIntelTab = qs.get("tab").toUpperCase();
@@ -8941,4 +9233,5 @@
   syncRealtimeFeed(false);
   syncBookmakerMismatchFeed(false, false);
   loadSecondHalfIntelligence(false);
+  loadStatPropsIntelligence(false);
 })();

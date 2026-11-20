@@ -6686,3 +6686,111 @@ ul {
   font-size: 0.67rem;
   color: var(--text-muted);
 }
+
+/* Over/Under Stat Markets (SPORT FOCUS + /ou-props) */
+.sport-pill.is-stat-ou {
+  border-color: rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.06);
+}
+.sport-pill.is-stat-ou.is-active {
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: #ffffff;
+  border-color: #059669;
+  box-shadow: 0 3px 10px rgba(5, 150, 105, 0.28);
+}
+.sport-pill.is-stat-ou.is-active .sport-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+.statprops-hero {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(59, 130, 246, 0.12));
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+.statprops-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.statprops-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.statprops-tab:hover {
+  border-color: rgba(16, 185, 129, 0.55);
+  transform: translateY(-1px);
+}
+.statprops-tab.is-active {
+  background: #059669;
+  color: #ffffff;
+  border-color: #059669;
+}
+.statprops-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 14px;
+}
+.statprops-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+[data-theme="dark"] .statprops-card {
+  background: var(--bg-card, #0f172a);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.statprops-pick-banner {
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(16, 185, 129, 0.11);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.statprops-pick-banner.is-under {
+  background: rgba(59, 130, 246, 0.11);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+.statprops-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+.statprops-metric {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+}
+.statprops-metric strong {
+  display: block;
+  font-size: 0.88rem;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+.statprops-metric span {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}

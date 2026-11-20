@@ -10,6 +10,7 @@
     { "source": "/special-tips", "destination": "/index.html" },
     { "source": "/ft-draw", "destination": "/index.html" },
     { "source": "/fulltime-draw", "destination": "/index.html" },
+    { "source": "/ou-props", "destination": "/index.html" },
     { "source": "/2h-highest", "destination": "/index.html" },
     { "source": "/second-half", "destination": "/index.html" },
     { "source": "/run-in", "destination": "/index.html" },

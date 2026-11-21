@@ -406,7 +406,7 @@
       activeStrongFilter: "ALL", // ALL | STRONG_HOME | STRONG_AWAY
       activeWorstFilter: "ALL", // ALL | WORST_HOME | WORST_AWAY
       activePowerCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY (backwards compatible)
-      activeMismatchCategory: "ALL", // ALL | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
+      activeMismatchCategory: "ALL", // ALL | TODAY | STRONG_HOME | STRONG_AWAY | WORST_HOME | WORST_AWAY | ALL_GAMES
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
@@ -4187,6 +4187,7 @@
     if (!bookmakerScan && !isLoadingBookmakers) return "";
     const sc = bookmakerScan;
     const totalCount = sc?.totalGamesScraped || 0;
+    const todayCount = (sc?.todayMismatchGames || []).length;
     const quads = [
       {
         key: "STRONG_HOME",
@@ -4232,6 +4233,15 @@
           <span>Exposes <strong>Strong Teams given Mistake Big Odds (Opponent Low Odds)</strong> &amp; <strong>Worst Teams given Mistake Low Odds (Opponent Big Odds)</strong> on <strong>football.com</strong> &amp; <strong>sportybet.com</strong>.</span>
           <a href="/odds-mismatch" data-route="/odds-mismatch" class="text-brand font-bold">View All Trap &amp; Mistake Games &rarr;</a>
         </div>
+        ${todayCount > 0 ? `
+        <div class="px-4 py-2 text-xs border-b flex items-center justify-between flex-wrap gap-2" style="background:rgba(217, 119, 6, 0.12);border-color:rgba(217, 119, 6, 0.25);">
+          <div class="flex items-center gap-2">
+            <span class="sure-pill-tag" style="background:#D97706;color:#07100F;font-weight:800;">📅 TODAY'S GAMES · MISMATCH ODDS (${todayCount})</span>
+            <span style="color:var(--text);">All bookmaker trap &amp; mistake odds games playing today (Live &amp; Today's Fixtures).</span>
+          </div>
+          <a href="/odds-mismatch?cat=TODAY" data-route="/odds-mismatch?cat=TODAY" class="text-brand font-bold">Open Today Games (${todayCount}) &rarr;</a>
+        </div>
+        ` : ""}
         <div class="power-preview-grid">
           ${quads
             .map((q) => {
@@ -5781,6 +5791,7 @@
             </div>
           </div>
           <div class="flex items-center gap-2">
+            <button type="button" class="btn-subtle text-xs" style="color:#059669;font-weight:700;" data-copy-tip="${escapeHtml(`${item.homeTeamName} vs ${item.awayTeamName} — ${item.mismatchMarket}${item.mismatchMarket.includes("@") ? "" : ` @ ${item.mismatchBigOdd.toFixed(2)}`}${item.footballCom?.gameId ? ` [FB #${item.footballCom.gameId}]` : ""}${item.sportybet?.gameId ? ` [SB #${item.sportybet.gameId}]` : ""}`)}">Copy Mismatch Tip 📋</button>
             <span class="sure-odds-chip">WIN PICK @ ${item.mismatchBigOdd.toFixed(2)}</span>
           </div>
         </div>
@@ -5792,7 +5803,7 @@
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-xs font-bold uppercase ${isStrong ? "text-brand" : "text-live"}">${isStrong ? "REALITY — STRONG TEAM WINS:" : "REALITY — WORST TEAM LOSES:"}</span>
-              <strong class="text-sm text-text">${escapeHtml(item.mismatchMarket)} @ ${item.mismatchBigOdd.toFixed(2)}</strong>
+              <strong class="text-sm text-text">${escapeHtml(item.mismatchMarket)}${item.mismatchMarket.includes("@") ? "" : ` @ ${item.mismatchBigOdd.toFixed(2)}`}</strong>
               <span class="ppg-chip">Safeguard: ${escapeHtml(item.backupMarket)}</span>
             </div>
             <div class="text-xs text-text-secondary mt-1">${escapeHtml(item.headlineReason)}</div>
@@ -6069,10 +6080,34 @@
     const wa = sportFilter(sc?.worstAwayMismatch || []);
     const allG = sportFilter(sc?.allGames || []);
 
+    const todayIsoStr = new Date().toISOString().slice(0, 10);
+    const todayM = sportFilter(sc?.todayMismatchGames || []).length > 0
+      ? sportFilter(sc?.todayMismatchGames || [])
+      : sportFilter([
+          ...(sc?.strongHomeMismatch || []),
+          ...(sc?.strongAwayMismatch || []),
+          ...(sc?.worstHomeMismatch || []),
+          ...(sc?.worstAwayMismatch || [])
+        ]).filter((g) => g.isLive || g.isoDate === todayIsoStr);
+
+    function renderTodayMismatchSection(list) {
+      return renderMismatchSection(
+        "Today Games — All Mismatch & Trap Odds Games Playing Today",
+        "All bookmaker trap & mistake odds games playing today (Live In-Play and Today's fixtures from Football.com & SportyBet.com) where odds contradict true team strength & PPG.",
+        list,
+        true
+      );
+    }
+
     const blocks = [];
     if (activeCat === "ALL_GAMES") {
       blocks.push(renderAllBookmakerGamesTable(allG));
+    } else if (activeCat === "TODAY") {
+      blocks.push(renderTodayMismatchSection(todayM));
     } else {
+      if (activeCat === "ALL") {
+        blocks.push(renderTodayMismatchSection(todayM));
+      }
       if (activeCat === "ALL" || activeCat === "STRONG_HOME") {
         blocks.push(
           renderMismatchSection(
@@ -6140,6 +6175,7 @@
         ` : ""}
 
         <div class="intel-tabs mt-3" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+          <button type="button" class="filter-chip${activeCat === "TODAY" ? " is-active" : ""}" data-mismatch-cat="TODAY">📅 Today Games (${todayM.length})</button>
           <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-mismatch-cat="ALL">All 4 Trap &amp; Mistake Lists</button>
           <button type="button" class="filter-chip${activeCat === "STRONG_HOME" ? " is-active" : ""}" data-mismatch-cat="STRONG_HOME">Strong Home · Mistake Big Odds (${sh.length})</button>
           <button type="button" class="filter-chip${activeCat === "STRONG_AWAY" ? " is-active" : ""}" data-mismatch-cat="STRONG_AWAY">Strong Away · Mistake Big Odds (${sa.length})</button>

@@ -1297,6 +1297,131 @@ async function runFullBookmakerScan(forceRefresh = false) {
         ...evaluated.filter((x) => x.sport === "football" && !x.isPreMatch5h).slice(0, 80)
       ];
 
+      // 5. ALL MISMATCH ODDS GAMES PLAYING TODAY (Live In-Play + Scheduled Today)
+      const seenTodayKeys = new Set();
+      const todayMismatchGames = [];
+
+      const addTodayMismatch = (item) => {
+        if (!item) return;
+        const key = `${item.eventId || item.matchId || ""}:${item.homeTeamName}:${item.awayTeamName}`;
+        if (seenTodayKeys.has(key)) return;
+        seenTodayKeys.add(key);
+        todayMismatchGames.push({ ...item, isToday: true });
+      };
+
+      for (const list of [strongHomeMismatch, strongAwayMismatch, worstHomeMismatch, worstAwayMismatch]) {
+        for (const g of list) {
+          if (g.isLive || g.isoDate === todayUtcIso) {
+            addTodayMismatch(g);
+          }
+        }
+      }
+
+      for (const g of evaluated) {
+        if (g.isCompleted || g.isAbandoned) continue;
+        const isToday = g.isLive || g.isoDate === todayUtcIso;
+        if (!isToday) continue;
+        const hs = g.homeStats || { ppg: 1.4, formPts: 7, form: ["W", "D", "L"] };
+        const as = g.awayStats || { ppg: 1.3, formPts: 6, form: ["L", "D", "W"] };
+        const odd1 = g.bestOdds?.home || 0;
+        const odd2 = g.bestOdds?.away || 0;
+        if (!odd1 || !odd2) continue;
+
+        if (hs.ppg >= as.ppg + 0.12 && odd1 >= 1.40) {
+          const dc1X = g.bestOdds.dc1X || (g.bestOdds.home && g.bestOdds.draw ? Math.round((1 / (1 / g.bestOdds.home + 1 / g.bestOdds.draw)) * 100) / 100 : null);
+          const mismatchMarket = dc1X ? `1X Double Chance (Home or Draw) @ ${dc1X.toFixed(2)}` : `Home Win (1) @ ${odd1.toFixed(2)}`;
+          addTodayMismatch({
+            ...g,
+            mismatchCategory: "STRONG_HOME",
+            mismatchScore: g.model?.strongHomeScore || 72,
+            targetTeam: g.homeTeamName,
+            opponentTeam: g.awayTeamName,
+            side: "HOME",
+            isInvertedTrap: odd1 >= odd2,
+            mistakeBigOdd: odd1,
+            opponentLowOdd: odd2,
+            mismatchBigOdd: odd1,
+            mismatchMarket,
+            backupMarket: dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`,
+            bestBookmaker: g.bestOdds.homeBookie || "Football.com",
+            edgePct: g.model?.homeEdgePct || 4,
+            trickSummary: `BOOKIE TRICK: ${g.homeTeamName} (Strong Home) given Mistake BIG Odds @ ${odd1.toFixed(2)} while opponent ${g.awayTeamName} has odds @ ${odd2.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.homeTeamName} will NOT lose — Superior ${hs.ppg.toFixed(2)} PPG vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG). Backed with ${mismatchMarket}.`,
+            headlineReason: `Today Mismatch: ${g.homeTeamName} is stronger (${hs.ppg.toFixed(2)} PPG vs ${as.ppg.toFixed(2)} PPG) yet given BIG ODDS of ${odd1.toFixed(2)}!`
+          });
+        } else if (as.ppg >= hs.ppg + 0.12 && odd2 >= 1.40) {
+          const dcX2 = g.bestOdds.dcX2 || (g.bestOdds.away && g.bestOdds.draw ? Math.round((1 / (1 / g.bestOdds.away + 1 / g.bestOdds.draw)) * 100) / 100 : null);
+          const mismatchMarket = dcX2 ? `X2 Double Chance (Away or Draw) @ ${dcX2.toFixed(2)}` : `Away Win (2) @ ${odd2.toFixed(2)}`;
+          addTodayMismatch({
+            ...g,
+            mismatchCategory: "STRONG_AWAY",
+            mismatchScore: g.model?.strongAwayScore || 72,
+            targetTeam: g.awayTeamName,
+            opponentTeam: g.homeTeamName,
+            side: "AWAY",
+            isInvertedTrap: odd2 >= odd1,
+            mistakeBigOdd: odd2,
+            opponentLowOdd: odd1,
+            mismatchBigOdd: odd2,
+            mismatchMarket,
+            backupMarket: dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`,
+            bestBookmaker: g.bestOdds.awayBookie || "Football.com",
+            edgePct: g.model?.awayEdgePct || 4,
+            trickSummary: `BOOKIE TRICK: ${g.awayTeamName} (Strong Away) given Mistake BIG Odds @ ${odd2.toFixed(2)} while opponent ${g.homeTeamName} has odds @ ${odd1.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.awayTeamName} will NOT lose — Superior ${as.ppg.toFixed(2)} PPG vs ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG). Backed with ${mismatchMarket}.`,
+            headlineReason: `Today Mismatch: ${g.awayTeamName} is stronger (${as.ppg.toFixed(2)} PPG vs ${hs.ppg.toFixed(2)} PPG) yet given BIG ODDS of ${odd2.toFixed(2)}!`
+          });
+        } else if (as.ppg >= hs.ppg + 0.15 && (odd1 < odd2 || (odd1 <= 2.50 && odd2 >= 1.80))) {
+          const dcX2 = g.bestOdds.dcX2 || (g.bestOdds.away && g.bestOdds.draw ? Math.round((1 / (1 / g.bestOdds.away + 1 / g.bestOdds.draw)) * 100) / 100 : null);
+          const mismatchMarket = dcX2 ? `Fade ${g.homeTeamName} -> Back ${g.awayTeamName} X2 @ ${dcX2.toFixed(2)}` : `Fade ${g.homeTeamName} -> Back ${g.awayTeamName} Win @ ${odd2.toFixed(2)}`;
+          addTodayMismatch({
+            ...g,
+            mismatchCategory: "WORST_HOME",
+            mismatchScore: g.model?.worstHomeScore || 70,
+            targetTeam: g.homeTeamName,
+            opponentTeam: g.awayTeamName,
+            side: "HOME",
+            isInvertedTrap: odd1 < odd2,
+            worstTeamOdd: odd1,
+            mistakeLowOdd: odd1,
+            opponentBigOdd: odd2,
+            mismatchBigOdd: odd2,
+            mismatchMarket,
+            backupMarket: dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 2.5 Goals @ ${(g.bestOdds.over25 || 1.85).toFixed(2)}`,
+            bestBookmaker: g.bestOdds.awayBookie || "SportyBet",
+            edgePct: g.model?.awayEdgePct || 3,
+            trickSummary: `BOOKIE TRICK: Worst Home ${g.homeTeamName} given Mistake LOW Odds @ ${odd1.toFixed(2)} while opponent ${g.awayTeamName} has BIG Odds @ ${odd2.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.homeTeamName} will LOSE — Weak ${hs.ppg.toFixed(2)} PPG vs ${g.awayTeamName} (${as.ppg.toFixed(2)} PPG).`,
+            headlineReason: `Low-Odd Favorite Trap: ${g.homeTeamName} given mistake low odds of ${odd1.toFixed(2)} despite weak ${hs.ppg.toFixed(2)} PPG!`
+          });
+        } else if (hs.ppg >= as.ppg + 0.15 && (odd2 < odd1 || (odd2 <= 2.50 && odd1 >= 1.80))) {
+          const dc1X = g.bestOdds.dc1X || (g.bestOdds.home && g.bestOdds.draw ? Math.round((1 / (1 / g.bestOdds.home + 1 / g.bestOdds.draw)) * 100) / 100 : null);
+          const mismatchMarket = dc1X ? `Fade ${g.awayTeamName} -> Back ${g.homeTeamName} 1X @ ${dc1X.toFixed(2)}` : `Fade ${g.awayTeamName} -> Back ${g.homeTeamName} Win @ ${odd1.toFixed(2)}`;
+          addTodayMismatch({
+            ...g,
+            mismatchCategory: "WORST_AWAY",
+            mismatchScore: g.model?.worstAwayScore || 70,
+            targetTeam: g.awayTeamName,
+            opponentTeam: g.homeTeamName,
+            side: "AWAY",
+            isInvertedTrap: odd2 < odd1,
+            worstTeamOdd: odd2,
+            mistakeLowOdd: odd2,
+            opponentBigOdd: odd1,
+            mismatchBigOdd: odd1,
+            mismatchMarket,
+            backupMarket: dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 2.5 Goals @ ${(g.bestOdds.over25 || 1.80).toFixed(2)}`,
+            bestBookmaker: g.bestOdds.homeBookie || "SportyBet",
+            edgePct: g.model?.homeEdgePct || 3,
+            trickSummary: `BOOKIE TRICK: Worst Away ${g.awayTeamName} given Mistake LOW Odds @ ${odd2.toFixed(2)} while opponent ${g.homeTeamName} has BIG Odds @ ${odd1.toFixed(2)}.`,
+            realityVerdict: `REALITY: ${g.awayTeamName} will LOSE — Weak ${as.ppg.toFixed(2)} PPG vs ${g.homeTeamName} (${hs.ppg.toFixed(2)} PPG).`,
+            headlineReason: `Low-Odd Favorite Trap: ${g.awayTeamName} given mistake low odds of ${odd2.toFixed(2)} despite weak ${as.ppg.toFixed(2)} PPG!`
+          });
+        }
+      }
+
+      todayMismatchGames.sort((a, b) => (b.isLive ? 1 : 0) - (a.isLive ? 1 : 0) || b.mismatchScore - a.mismatchScore);
+
       const payload = {
         ok: true,
         fetchedAt: new Date().toISOString(),
@@ -1309,6 +1434,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
         preMatch5hCount: preMatch5hPool.length,
         verifiedTeamsCount: evaluated.filter((x) => x.hasVerifiedStats).length,
         dropsTrackedCount: games.filter((x) => x.droppingOdds?.hasDrop).length,
+        todayMismatchGames,
         strongHomeMismatch: strongHomeMismatch.slice(0, 20),
         strongAwayMismatch: strongAwayMismatch.slice(0, 20),
         worstHomeMismatch: worstHomeMismatch.slice(0, 20),

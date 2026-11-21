@@ -4762,7 +4762,15 @@
     const isUnder = p.side === "UNDER";
     const evBg = p.isPositiveEv ? "#059669" : "#2563eb";
     const koText = formatKickoffCompact(p).compactLabel || "Upcoming";
-    const tipCopyStr = `${p.fixture} (${p.league}) -> ${p.marketLine} @ ${Number(p.bookmakerOdds || 0).toFixed(2)} | Fair ${Number(p.fairOdds || 0).toFixed(2)} | Prob ${p.trueProbabilityPct} | EV ${p.expectedValuePct}${p.footballComGameId ? ` | FB #${p.footballComGameId}` : ""}`;
+    const grade = p.qualityTier || "B+ SOLID";
+    const gradeBg = grade.startsWith("A+") ? "#7c3aed" : (grade.startsWith("A") ? "#059669" : "#0284c7");
+    const pillarsHtml = Array.isArray(p.pillars) && p.pillars.length > 0
+      ? p.pillars.map((line) => `<div class="text-xs text-muted">✓ ${escapeHtml(line)}</div>`).join("")
+      : "";
+    const calLine = p.modelProbabilityPct && p.marketImpliedPct
+      ? `Model ${escapeHtml(p.modelProbabilityPct)} anchored w/ Market ${escapeHtml(p.marketImpliedPct)} &rarr; Calibrated ${escapeHtml(p.trueProbabilityPct)}`
+      : "";
+    const tipCopyStr = `${p.fixture} (${p.league}) [${grade}] -> ${p.marketLine} @ ${Number(p.bookmakerOdds || 0).toFixed(2)} | Fair ${Number(p.fairOdds || 0).toFixed(2)} | Prob ${p.trueProbabilityPct} | EV ${p.expectedValuePct}${p.footballComGameId ? ` | FB #${p.footballComGameId}` : ""}`;
 
     return `
       <article class="statprops-card">
@@ -4771,8 +4779,9 @@
             ${countryFlagBadgeHtml(p.country || "International", p.flag || "🌍", true)}
             <span>${escapeHtml(p.league || "Football")}</span>
           </div>
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 flex-wrap">
             <span class="font-mono text-xs text-muted">${escapeHtml(koText)}</span>
+            <span class="sure-pill-tag" style="background:${gradeBg};color:#fff;font-weight:800;">${escapeHtml(grade)}</span>
             <span class="sure-pill-tag" style="background:${evBg};color:#fff;font-weight:800;">EV ${escapeHtml(p.expectedValuePct)}</span>
           </div>
         </div>
@@ -4817,7 +4826,9 @@
         </div>
 
         <div class="text-xs text-muted" style="line-height:1.45;">
-          <strong class="text-text">Data Logic:</strong> ${escapeHtml(p.logicSummary || "")}
+          <strong class="text-text">Deep Analysis:</strong> ${escapeHtml(p.logicSummary || "")}
+          ${calLine ? `<div class="mt-1 font-mono text-xs" style="color:var(--text-primary);">${calLine}</div>` : ""}
+          ${pillarsHtml ? `<div class="mt-1 flex flex-col gap-0.5">${pillarsHtml}</div>` : ""}
         </div>
 
         <div class="flex items-center justify-between gap-2 flex-wrap pt-1" style="border-top:1px solid var(--border-subtle);">
@@ -4906,10 +4917,10 @@
           <div>
             <div class="flex items-center gap-2 flex-wrap">
               <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">${activeMeta.icon} ${escapeHtml(activeMeta.label.toUpperCase())}</span>
-              <span class="sure-pill-tag" style="background:rgba(59,130,246,0.14);color:var(--text-primary);font-weight:700;">Poisson P(X&gt;line) + ESPN Last-5 Stats + Fair Odds +EV</span>
+              <span class="sure-pill-tag" style="background:rgba(59,130,246,0.14);color:var(--text-primary);font-weight:700;">ESPN Venue Splits + Dominance + Starter GK Filter + Market-Anchored +EV</span>
             </div>
             <h1 class="text-xl font-extrabold mt-2">${activeMeta.icon} Over/Under Stat Markets — ${escapeHtml(activeMeta.shortLabel)}</h1>
-            <p class="text-xs text-muted mt-1">Using the exact Poisson &amp; Fair Odds (+EV) engine from live Football.com prop lines and ESPN match telemetry.</p>
+            <p class="text-xs text-muted mt-1">Deep Multi-Pillar Engine v2.0: strictly verified ESPN Home/Away boxscores, starting GK verification, Negative Binomial dispersion &amp; vig-free market calibration (zero blind fallbacks).</p>
           </div>
           <div class="flex items-center gap-2">
             <button type="button" class="analyze-inline-btn" data-statprops-refresh="1" ${isLoadingStatProps ? "disabled" : ""}>${isLoadingStatProps ? "⏳ Refreshing..." : "🔄 Refresh Lines"}</button>

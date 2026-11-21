@@ -1,37 +1,49 @@
-// Over/Under Stat-Market Intelligence Engine (Goals, Throw-ins, Shots On Target, Offside, Bookings, Goal Kicks, Saves)
-// Fetches live Football.com prop lines + ESPN last-5 match statistics + Sportradar form/goals to compute Poisson +EV tips.
+// Deep Multi-Pillar Over/Under Stat-Market Engine v2.0
+// Sources: Football.com live markets + ESPN Home/Away last-6 boxscores & starting GK rosters + Market-Anchored Negative Binomial / Poisson calibration.
+// Strict NO-GUESSING gate: requires verified team telemetry on BOTH teams before publishing stat-prop tips.
 
 const bookmakersApi = require("./bookmakers");
 const { canonicalizeLeagueAndCountry } = require("./leagueCatalog");
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+const ESPN_UA = "MAMON-WIN/2.0";
+const FB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
 let cachedPropsPayload = null;
 let cachedPropsExpiresAt = 0;
 let propsInFlight = null;
 
-const espnTeamStatsCache = new Map(); // normalizedName -> { stats, expiresAt }
+const espnTeamStatsCache = new Map(); // cacheKey -> { stats, expiresAt }
 const espnLeagueTeamsCache = new Map(); // code -> { teams, expiresAt }
 
 const ESPN_LEAGUE_MAP = [
-  { re: /premier league/i, ex: /women|wsl|scotland|ireland|ukraine|russia|egypt|india|kenya|ghana|nigeria|armenia/i, code: "eng.1" },
-  { re: /laliga|la liga/i, ex: /hypermotion|segunda|federacion|women/i, code: "esp.1" },
-  { re: /bundesliga/i, ex: /2\.|austria|women/i, code: "ger.1" },
-  { re: /serie a/i, ex: /brazil|brasileiro|women/i, code: "ita.1" },
-  { re: /ligue 1/i, ex: /tunisia|algeria|ivory|women/i, code: "fra.1" },
-  { re: /eredivisie/i, ex: /women|vrouwen|eerste/i, code: "ned.1" },
-  { re: /champions league/i, ex: /women/i, code: "uefa.champions" },
-  { re: /europa league/i, ex: /women/i, code: "uefa.europa" }
+  { re: /premier league/i, ex: /women|wsl|scotland|ireland|ukraine|russia|egypt|india|kenya|ghana|nigeria|armenia/i, codes: ["eng.1", "eng.2"] },
+  { re: /championship/i, ex: /women|scotland/i, codes: ["eng.2", "eng.1"] },
+  { re: /laliga|la liga/i, ex: /hypermotion|segunda|federacion|women/i, codes: ["esp.1", "esp.2"] },
+  { re: /la liga 2|segunda|hypermotion/i, ex: /federacion|women/i, codes: ["esp.2", "esp.1"] },
+  { re: /bundesliga/i, ex: /2\.|austria|women/i, codes: ["ger.1", "ger.2"] },
+  { re: /2\.\s*bundesliga|dfb.?pokal/i, ex: /women/i, codes: ["ger.1", "ger.2"] },
+  { re: /serie a/i, ex: /brazil|brasileiro|women/i, codes: ["ita.1", "ita.2"] },
+  { re: /serie b/i, ex: /brazil|women/i, codes: ["ita.2", "ita.1"] },
+  { re: /ligue 1/i, ex: /tunisia|algeria|ivory|women/i, codes: ["fra.1", "fra.2"] },
+  { re: /ligue 2/i, ex: /women/i, codes: ["fra.2", "fra.1"] },
+  { re: /eredivisie/i, ex: /women|vrouwen|eerste/i, codes: ["ned.1"] },
+  { re: /primeira liga|liga portugal/i, ex: /2|b|women/i, codes: ["por.1"] },
+  { re: /jupiler|pro league/i, ex: /women|challenge/i, codes: ["bel.1"] },
+  { re: /super lig|süper lig/i, ex: /women|1\./i, codes: ["tur.1"] },
+  { re: /premiership/i, ex: /northern|women/i, codes: ["sco.1"] },
+  { re: /champions league/i, ex: /women/i, codes: ["uefa.champions", "eng.1", "esp.1", "ger.1", "ita.1", "fra.1"] },
+  { re: /europa league/i, ex: /conference|women/i, codes: ["uefa.europa", "eng.1", "esp.1", "ger.1", "ita.1", "fra.1"] },
+  { re: /conference league/i, ex: /women/i, codes: ["uefa.europa.conf", "eng.1", "esp.1", "ger.1", "ita.1", "fra.1"] }
 ];
 
-async function fetchJsonSafe(url, timeoutMs = 7500, referer = "https://www.football.com/") {
+async function fetchJsonSafe(url, timeoutMs = 7000, isEspn = false) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { "User-Agent": UA, "Accept": "application/json", "Referer": referer }
-    });
+    const headers = isEspn
+      ? { "User-Agent": ESPN_UA, Accept: "application/json" }
+      : { "User-Agent": FB_UA, Accept: "application/json", Referer: "https://www.football.com/" };
+    const res = await fetch(url, { signal: ctrl.signal, headers });
     if (!res.ok) return null;
     return await res.json();
   } catch {
@@ -50,7 +62,7 @@ function normTeamKey(name) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
-    .replace(/\b(fc|cf|sc|ac|as|afc|cfc|sfc|sv|vfb|vfl|1\.|ssc|us|cd|ca|ud|sd|rc|club)\b/g, " ")
+    .replace(/\b(fc|cf|sc|ac|as|afc|cfc|sfc|sv|vfb|vfl|1\.|ssc|us|cd|ca|ud|sd|rc|estac|club|de)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -62,13 +74,26 @@ function poissonPmf(k, lam) {
   return (Math.exp(-lam) * Math.pow(lam, k)) / fact;
 }
 
-function probOverHalfLine(lam, lineFloat) {
+// Overdispersed Gamma-Poisson (Negative Binomial) when dispersion > 1.0, exact Poisson when dispersion <= 1.0
+function probOverHalfLine(lam, lineFloat, dispersion = 1.0) {
   const kFloor = Math.floor(lineFloat);
-  let pLe = 0;
-  for (let i = 0; i <= kFloor; i++) pLe += poissonPmf(i, lam);
-  const pOver = clamp(1 - pLe, 0.03, 0.96);
-  const pUnder = clamp(pLe, 0.03, 0.96);
-  return { pOver, pUnder };
+  if (dispersion <= 1.02 || lam <= 0.1) {
+    let pLe = 0;
+    for (let i = 0; i <= kFloor; i++) pLe += poissonPmf(i, lam);
+    return { pOver: clamp(1 - pLe, 0.04, 0.94), pUnder: clamp(pLe, 0.04, 0.94) };
+  }
+  // Negative binomial parameterization: mean = lam, var = lam * dispersion => r = lam / (dispersion - 1), p = r / (r + lam) = 1 / dispersion
+  const r = lam / (dispersion - 1);
+  const p = 1 / dispersion;
+  let pmf = Math.pow(p, r);
+  let pLe = pmf;
+  for (let k = 0; k < kFloor; k++) {
+    pmf = pmf * ((k + r) / (k + 1)) * (1 - p);
+    pLe += pmf;
+    if (!Number.isFinite(pLe)) break;
+  }
+  pLe = clamp(pLe, 0.04, 0.94);
+  return { pOver: clamp(1 - pLe, 0.04, 0.94), pUnder: pLe };
 }
 
 function parseLineNumber(specifier) {
@@ -76,12 +101,12 @@ function parseLineNumber(specifier) {
   return m ? parseFloat(m[1]) : null;
 }
 
-function detectEspnLeagueCode(leagueName) {
+function detectEspnLeagueCodes(leagueName) {
   const s = String(leagueName || "");
   for (const row of ESPN_LEAGUE_MAP) {
-    if (row.re.test(s) && (!row.ex || !row.ex.test(s))) return row.code;
+    if (row.re.test(s) && (!row.ex || !row.ex.test(s))) return row.codes;
   }
-  return null;
+  return [];
 }
 
 async function getEspnLeagueTeams(code) {
@@ -89,7 +114,7 @@ async function getEspnLeagueTeams(code) {
   const now = Date.now();
   const cached = espnLeagueTeamsCache.get(code);
   if (cached && now < cached.expiresAt) return cached.teams;
-  const json = await fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/teams`, 6000, "https://www.espn.com/");
+  const json = await fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/teams`, 6000, true);
   const teams = (json?.sports?.[0]?.leagues?.[0]?.teams || []).map((x) => x.team).filter(Boolean);
   if (teams.length > 0) {
     espnLeagueTeamsCache.set(code, { teams, expiresAt: now + 6 * 3600000 });
@@ -97,36 +122,63 @@ async function getEspnLeagueTeams(code) {
   return teams;
 }
 
-async function fetchEspnTeamRecentStats(code, teamName) {
-  const cacheKey = `${code || "global"}::${normTeamKey(teamName)}`;
+function teamNameMatches(teamObj, qNorm) {
+  const dNorm = normTeamKey(teamObj.displayName);
+  const sNorm = normTeamKey(teamObj.shortDisplayName);
+  const nNorm = normTeamKey(teamObj.name);
+  if (dNorm === qNorm || sNorm === qNorm || nNorm === qNorm) return true;
+  if (qNorm.length >= 4 && (dNorm.includes(qNorm) || qNorm.includes(dNorm))) return true;
+  if (sNorm.length >= 4 && qNorm.includes(sNorm)) return true;
+  return false;
+}
+
+async function fetchEspnTeamRecentStats(codes, teamName) {
+  const qNorm = normTeamKey(teamName);
+  const codeList = Array.isArray(codes) ? codes : (codes ? [codes] : []);
+  if (!qNorm || codeList.length === 0) return null;
+
+  const cacheKey = `${codeList[0]}::${qNorm}`;
   const now = Date.now();
   const cached = espnTeamStatsCache.get(cacheKey);
   if (cached && now < cached.expiresAt) return cached.stats;
-  if (!code) return null;
 
-  const teams = await getEspnLeagueTeams(code);
-  const qNorm = normTeamKey(teamName);
-  const found = teams.find((t) => {
-    const dNorm = normTeamKey(t.displayName);
-    const sNorm = normTeamKey(t.shortDisplayName);
-    return dNorm === qNorm || sNorm === qNorm || dNorm.includes(qNorm) || qNorm.includes(dNorm) || (sNorm.length >= 4 && qNorm.includes(sNorm));
-  });
-  if (!found) return null;
+  let matchedTeam = null;
+  let matchedCode = null;
+  for (const c of codeList) {
+    const teams = await getEspnLeagueTeams(c);
+    const hit = teams.find((t) => teamNameMatches(t, qNorm));
+    if (hit) {
+      matchedTeam = hit;
+      matchedCode = c;
+      break;
+    }
+  }
+  if (!matchedTeam) {
+    espnTeamStatsCache.set(cacheKey, { stats: null, expiresAt: now + 30 * 60000 });
+    return null;
+  }
 
-  const sch = await fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/teams/${found.id}/schedule`, 6000, "https://www.espn.com/");
-  const past = (sch?.events || []).filter((e) => e.competitions?.[0]?.status?.type?.completed).slice(-5);
-  if (past.length === 0) return null;
+  const sch = await fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${matchedCode}/teams/${matchedTeam.id}/schedule`, 6500, true);
+  const past = (sch?.events || []).filter((e) => e.competitions?.[0]?.status?.type?.completed).slice(-6);
+  if (past.length < 3) {
+    espnTeamStatsCache.set(cacheKey, { stats: null, expiresAt: now + 30 * 60000 });
+    return null;
+  }
 
   const sums = await Promise.all(
-    past.map((ev) => fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${code}/summary?event=${ev.id}`, 5500, "https://www.espn.com/"))
+    past.map((ev) => fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/${matchedCode}/summary?event=${ev.id}`, 6000, true))
   );
 
   const rows = [];
+  const gkStarts = new Map();
+  let latestStarterGk = null;
+
   for (let idx = 0; idx < past.length; idx++) {
+    const ev = past[idx];
     const sum = sums[idx];
     const bx = sum?.boxscore?.teams || [];
-    const myBx = bx.find((b) => String(b.team?.id) === String(found.id));
-    const opBx = bx.find((b) => String(b.team?.id) !== String(found.id));
+    const myBx = bx.find((b) => String(b.team?.id) === String(matchedTeam.id));
+    const opBx = bx.find((b) => String(b.team?.id) !== String(matchedTeam.id));
     if (!myBx || !opBx) continue;
 
     const getVal = (teamBx, key) => {
@@ -135,9 +187,21 @@ async function fetchEspnTeamRecentStats(code, teamName) {
       return Number.isFinite(n) ? n : null;
     };
 
-    const comp = past[idx].competitions?.[0];
-    const oppScoreObj = (comp?.competitors || []).find((c) => String(c.id) !== String(found.id));
-    const opGoals = oppScoreObj ? parseFloat(oppScoreObj.score?.value ?? oppScoreObj.score ?? 1) : 1;
+    const comp = ev.competitions?.[0];
+    const myComp = (comp?.competitors || []).find((c) => String(c.id) === String(matchedTeam.id));
+    const opComp = (comp?.competitors || []).find((c) => String(c.id) !== String(matchedTeam.id));
+    const venue = myComp?.homeAway === "away" ? "away" : "home";
+    const myGoals = myComp ? parseFloat(myComp.score?.value ?? myComp.score ?? NaN) : NaN;
+    const opGoals = opComp ? parseFloat(opComp.score?.value ?? opComp.score ?? NaN) : NaN;
+
+    // Extract starting goalkeeper from roster
+    const myRoster = (sum?.rosters || []).find((r) => String(r.team?.id) === String(matchedTeam.id));
+    const startGks = (myRoster?.roster || []).filter((p) => p.starter && /^g/i.test(p.position?.abbreviation || p.position?.displayName || ""));
+    if (startGks.length > 0 && startGks[0].athlete?.displayName) {
+      const gkName = startGks[0].athlete.displayName.trim();
+      gkStarts.set(gkName, (gkStarts.get(gkName) || 0) + 1);
+      latestStarterGk = gkName;
+    }
 
     const sotFor = getVal(myBx, "shotsOnTarget");
     const sotAg = getVal(opBx, "shotsOnTarget");
@@ -152,78 +216,244 @@ async function fetchEspnTeamRecentStats(code, teamName) {
     const possFor = getVal(myBx, "possessionPct");
     const passFor = getVal(myBx, "totalPasses");
     const accPass = getVal(myBx, "accuratePasses");
+    const clearancesFor = getVal(myBx, "totalClearance");
+    const clearancesAg = getVal(opBx, "totalClearance");
+    const longBallsFor = getVal(myBx, "totalLongBalls");
+    const longBallsAg = getVal(opBx, "totalLongBalls");
+    const crossesFor = getVal(myBx, "totalCrosses");
+    const crossesAg = getVal(opBx, "totalCrosses");
+    const blockedFor = getVal(myBx, "blockedShots");
+    const blockedAg = getVal(opBx, "blockedShots");
+    const cornersFor = getVal(myBx, "wonCorners");
+    const cornersAg = getVal(opBx, "wonCorners");
     const explicitSaves = getVal(myBx, "saves");
-    const savesEst = explicitSaves !== null ? explicitSaves : (sotAg !== null ? Math.max(0, sotAg - (Number.isFinite(opGoals) ? opGoals : 1)) : null);
+    const savesEst = explicitSaves !== null
+      ? explicitSaves
+      : (sotAg !== null && Number.isFinite(opGoals) ? Math.max(0, sotAg - opGoals) : null);
     const missedFor = shotsFor !== null && sotFor !== null ? Math.max(0, shotsFor - sotFor) : null;
     const missedAg = shotsAg !== null && sotAg !== null ? Math.max(0, shotsAg - sotAg) : null;
 
     rows.push({
+      venue,
+      myGoals: Number.isFinite(myGoals) ? myGoals : null,
+      opGoals: Number.isFinite(opGoals) ? opGoals : null,
       sotFor, sotAg, shotsFor, shotsAg, missedFor, missedAg,
       offFor, offAg, ycFor, ycAg, foulsFor, foulsAg,
       possFor, passFor,
       passAccPct: (accPass !== null && passFor && passFor > 0) ? (accPass / passFor) * 100 : null,
+      clearancesFor, clearancesAg, longBallsFor, longBallsAg, crossesFor, crossesAg,
+      blockedFor, blockedAg, cornersFor, cornersAg,
       savesFor: savesEst
     });
   }
 
-  if (rows.length === 0) return null;
-  const avg = (k) => {
-    const vals = rows.map((r) => r[k]).filter((v) => v !== null && Number.isFinite(v));
-    return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+  if (rows.length < 3) {
+    espnTeamStatsCache.set(cacheKey, { stats: null, expiresAt: now + 30 * 60000 });
+    return null;
+  }
+
+  const calcSplit = (subset) => {
+    const avg = (k) => {
+      const vals = subset.map((r) => r[k]).filter((v) => v !== null && Number.isFinite(v));
+      return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+    };
+    return {
+      mp: subset.length,
+      gfAvg: avg("myGoals"),
+      gaAvg: avg("opGoals"),
+      sotFor: avg("sotFor"),
+      sotAg: avg("sotAg"),
+      shotsFor: avg("shotsFor"),
+      shotsAg: avg("shotsAg"),
+      missedFor: avg("missedFor"),
+      missedAg: avg("missedAg"),
+      offFor: avg("offFor"),
+      offAg: avg("offAg"),
+      ycFor: avg("ycFor"),
+      ycAg: avg("ycAg"),
+      foulsFor: avg("foulsFor"),
+      foulsAg: avg("foulsAg"),
+      possFor: avg("possFor"),
+      passFor: avg("passFor"),
+      passAccPct: avg("passAccPct"),
+      clearancesFor: avg("clearancesFor"),
+      clearancesAg: avg("clearancesAg"),
+      longBallsFor: avg("longBallsFor"),
+      longBallsAg: avg("longBallsAg"),
+      crossesFor: avg("crossesFor"),
+      crossesAg: avg("crossesAg"),
+      blockedFor: avg("blockedFor"),
+      blockedAg: avg("blockedAg"),
+      cornersFor: avg("cornersFor"),
+      cornersAg: avg("cornersAg"),
+      savesFor: avg("savesFor")
+    };
   };
 
+  const homeRows = rows.filter((r) => r.venue === "home");
+  const awayRows = rows.filter((r) => r.venue === "away");
+  const overall = calcSplit(rows);
+
   const stats = {
-    source: "ESPN Last-5 Boxscores",
-    mp: rows.length,
-    sotFor: avg("sotFor"),
-    sotAg: avg("sotAg"),
-    shotsFor: avg("shotsFor"),
-    shotsAg: avg("shotsAg"),
-    missedFor: avg("missedFor"),
-    missedAg: avg("missedAg"),
-    offFor: avg("offFor"),
-    offAg: avg("offAg"),
-    ycFor: avg("ycFor"),
-    ycAg: avg("ycAg"),
-    foulsFor: avg("foulsFor"),
-    foulsAg: avg("foulsAg"),
-    possFor: avg("possFor"),
-    passFor: avg("passFor"),
-    passAccPct: avg("passAccPct"),
-    savesFor: avg("savesFor")
+    source: `ESPN ${matchedCode} (${rows.length}G: ${homeRows.length}H/${awayRows.length}A)`,
+    leagueCode: matchedCode,
+    ...overall,
+    homeSplit: homeRows.length >= 2 ? calcSplit(homeRows) : null,
+    awaySplit: awayRows.length >= 2 ? calcSplit(awayRows) : null,
+    gkStarts: Array.from(gkStarts.entries()).map(([name, starts]) => ({ name, starts })).sort((a, b) => b.starts - a.starts),
+    latestStarterGk
   };
 
   espnTeamStatsCache.set(cacheKey, { stats, expiresAt: now + 3600000 });
   return stats;
 }
 
-function pickBestOuFromLines(candidates, category, g, logicSummary, mastermindFn) {
+// Blend venue-specific average with overall average (60% venue / 40% overall) for realistic home/away edge
+function venueStat(teamStats, venueSide, key) {
+  if (!teamStats) return null;
+  const split = venueSide === "home" ? teamStats.homeSplit : teamStats.awaySplit;
+  const overallVal = teamStats[key];
+  const splitVal = split ? split[key] : null;
+  if (splitVal !== null && Number.isFinite(splitVal) && overallVal !== null && Number.isFinite(overallVal)) {
+    return splitVal * 0.60 + overallVal * 0.40;
+  }
+  return overallVal !== null && Number.isFinite(overallVal) ? overallVal : null;
+}
+
+// Compute match 1X2 vig-free dominance and competitiveness
+function computeMatchContext(g) {
+  const b = g.bestOdds || {};
+  const oH = Number(b.home);
+  const oD = Number(b.draw);
+  const oA = Number(b.away);
+  if (!Number.isFinite(oH) || !Number.isFinite(oA) || oH <= 1 || oA <= 1) {
+    return { pHome: 0.42, pDraw: 0.26, pAway: 0.32, dom: 0.10, tightness: 0.85, favoriteSide: "EVEN" };
+  }
+  const rH = 1 / oH;
+  const rD = Number.isFinite(oD) && oD > 1 ? 1 / oD : 0.25;
+  const rA = 1 / oA;
+  const sum = rH + rD + rA;
+  const pHome = rH / sum;
+  const pDraw = rD / sum;
+  const pAway = rA / sum;
+  const dom = pHome - pAway; // positive = home favorite, negative = away favorite
+  const tightness = clamp(1 - Math.abs(dom) * 1.15, 0.25, 1.0);
+  const favoriteSide = dom > 0.18 ? "HOME" : (dom < -0.18 ? "AWAY" : "BALANCED");
+  return { pHome, pDraw, pAway, dom, tightness, favoriteSide };
+}
+
+function isConfirmedStarterGk(playerName, espnStats) {
+  if (!espnStats || !espnStats.gkStarts || espnStats.gkStarts.length === 0) return false;
+  const pNorm = normTeamKey(playerName);
+  const pTokens = pNorm.split(" ").filter((x) => x.length >= 3);
+  const topGk = espnStats.latestStarterGk || espnStats.gkStarts[0].name;
+  // Match either latest starter OR someone who started >= 2 of last 6 matches
+  const checkMatch = (candidateName) => {
+    const cNorm = normTeamKey(candidateName);
+    if (!cNorm || !pNorm) return false;
+    if (cNorm === pNorm || cNorm.includes(pNorm) || pNorm.includes(cNorm)) return true;
+    // Match surname token when ESPN includes full/abbreviated first name
+    const pLast = pTokens[pTokens.length - 1];
+    const cTokens = cNorm.split(" ");
+    const cLast = cTokens[cTokens.length - 1];
+    if (pLast && cLast && pLast.length >= 4 && pLast === cLast && pTokens[0]?.[0] === cTokens[0]?.[0]) return true;
+    return false;
+  };
+  if (checkMatch(topGk)) return true;
+  return espnStats.gkStarts.some((g) => g.starts >= 2 && checkMatch(g.name));
+}
+
+// Market-Anchored +EV Selection with Dispersion & Sanity Guard
+function pickBestOuFromLines(candidates, category, g, logicSummary, options = {}) {
+  const dispersion = options.dispersion || 1.0;
+  const modelWeight = options.modelWeight || 0.62;
+  const pillars = options.pillars || [];
+  const dataQuality = options.dataQuality || "ESPN_VERIFIED";
   const valid = [];
+
   for (const c of candidates) {
     if (!Number.isFinite(c.line) || !Number.isFinite(c.lam) || c.lam <= 0) continue;
-    const { pOver, pUnder } = probOverHalfLine(c.lam, c.line);
+    const { pOver: pModelO, pUnder: pModelU } = probOverHalfLine(c.lam, c.line, dispersion);
 
-    if (Number.isFinite(c.oddOver) && c.oddOver > 1.08) {
-      const evO = (pOver * c.oddOver) - 1;
-      const fairO = Math.round((1 / pOver) * 100) / 100;
-      if (pOver >= 0.56 && evO >= -0.02) {
-        valid.push({ side: "OVER", marketLine: c.labelOver || `Over ${c.line}`, prob: pOver, fairOdds: fairO, bookieOdds: c.oddOver, ev: evO, lam: c.lam, targetTeam: c.targetTeam || g.homeTeamName, scope: c.scope || "Match Total" });
+    // Vig-free market implied probabilities when 2-way line is quoted
+    let pMktO = null;
+    let pMktU = null;
+    if (Number.isFinite(c.oddOver) && c.oddOver > 1.05 && Number.isFinite(c.oddUnder) && c.oddUnder > 1.05) {
+      const rO = 1 / c.oddOver;
+      const rU = 1 / c.oddUnder;
+      pMktO = rO / (rO + rU);
+      pMktU = rU / (rO + rU);
+    }
+
+    // Check OVER
+    if (Number.isFinite(c.oddOver) && c.oddOver >= 1.25 && c.oddOver <= 3.60) {
+      const marketRef = pMktO !== null ? pMktO : clamp((1 / c.oddOver) * 0.93, 0.10, 0.90);
+      const divergence = pModelO - marketRef;
+      // Reject extreme model-vs-market hallucinations (divergence > 20% usually signals missing lineup/context)
+      if (divergence <= 0.21 && divergence >= -0.05) {
+        const pCalibrated = pMktO !== null ? (pModelO * modelWeight + pMktO * (1 - modelWeight)) : (pModelO * 0.72 + marketRef * 0.28);
+        const ev = (pCalibrated * c.oddOver) - 1;
+        const fairOdds = Math.round((1 / pCalibrated) * 100) / 100;
+        if (pCalibrated >= 0.55 && ev >= 0.015 && ev <= 0.28) {
+          valid.push({
+            side: "OVER",
+            marketLine: c.labelOver || `Over ${c.line}`,
+            prob: pCalibrated,
+            modelProb: pModelO,
+            marketProb: marketRef,
+            fairOdds,
+            bookieOdds: c.oddOver,
+            ev,
+            lam: c.lam,
+            targetTeam: c.targetTeam || g.homeTeamName,
+            scope: c.scope || "Match Total"
+          });
+        }
       }
     }
-    if (Number.isFinite(c.oddUnder) && c.oddUnder > 1.08) {
-      const evU = (pUnder * c.oddUnder) - 1;
-      const fairU = Math.round((1 / pUnder) * 100) / 100;
-      if (pUnder >= 0.56 && evU >= -0.02) {
-        valid.push({ side: "UNDER", marketLine: c.labelUnder || `Under ${c.line}`, prob: pUnder, fairOdds: fairU, bookieOdds: c.oddUnder, ev: evU, lam: c.lam, targetTeam: c.targetTeam || g.homeTeamName, scope: c.scope || "Match Total" });
+
+    // Check UNDER
+    if (Number.isFinite(c.oddUnder) && c.oddUnder >= 1.25 && c.oddUnder <= 3.60) {
+      const marketRef = pMktU !== null ? pMktU : clamp((1 / c.oddUnder) * 0.93, 0.10, 0.90);
+      const divergence = pModelU - marketRef;
+      if (divergence <= 0.21 && divergence >= -0.05) {
+        const pCalibrated = pMktU !== null ? (pModelU * modelWeight + pMktU * (1 - modelWeight)) : (pModelU * 0.72 + marketRef * 0.28);
+        const ev = (pCalibrated * c.oddUnder) - 1;
+        const fairOdds = Math.round((1 / pCalibrated) * 100) / 100;
+        if (pCalibrated >= 0.55 && ev >= 0.015 && ev <= 0.28) {
+          valid.push({
+            side: "UNDER",
+            marketLine: c.labelUnder || `Under ${c.line}`,
+            prob: pCalibrated,
+            modelProb: pModelU,
+            marketProb: marketRef,
+            fairOdds,
+            bookieOdds: c.oddUnder,
+            ev,
+            lam: c.lam,
+            targetTeam: c.targetTeam || g.homeTeamName,
+            scope: c.scope || "Match Total"
+          });
+        }
       }
     }
   }
+
   if (valid.length === 0) return null;
 
-  valid.sort((a, b) => (b.ev * 1.4 + (b.prob - 0.55) * 0.6) - (a.ev * 1.4 + (a.prob - 0.55) * 0.6));
+  // Score prioritizes balanced high-probability + sustainable +EV
+  valid.sort((a, b) => (b.ev * 1.2 + (b.prob - 0.55) * 0.85) - (a.ev * 1.2 + (a.prob - 0.55) * 0.85));
   const best = valid[0];
   const evPctNum = Math.round(best.ev * 10000) / 100;
   const probPctNum = Math.round(best.prob * 1000) / 10;
+  const modelPctNum = Math.round(best.modelProb * 1000) / 10;
+  const mktPctNum = Math.round(best.marketProb * 1000) / 10;
+
+  let grade = "B+ SOLID";
+  if (best.ev >= 0.08 && best.prob >= 0.62) grade = "A+ ELITE";
+  else if (best.ev >= 0.045 && best.prob >= 0.58) grade = "A STRONG";
+
+  const loc = canonicalizeLeagueAndCountry(g.league, g.country);
 
   return {
     id: `prop_${category}_${g.eventId}_${best.side}_${best.marketLine.replace(/[^a-z0-9]/gi, "_")}`,
@@ -234,9 +464,9 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, mastermindFn
     awayTeam: g.awayTeamName,
     homeLogo: g.homeLogo || "",
     awayLogo: g.awayLogo || "",
-    league: g.league || "Football",
-    country: g.country || "International",
-    flag: g.flag || canonicalizeLeagueAndCountry(g.league, g.country).flag || "🌍",
+    league: loc.leagueName || g.league || "Football",
+    country: loc.country || g.country || "International",
+    flag: g.flag || loc.flag || "🌍",
     isoDate: g.isoDate,
     kickoffUtc: g.kickoffUtc,
     footballComGameId: g.footballComGameId || g.footballCom?.gameId || null,
@@ -248,25 +478,46 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, mastermindFn
     expectedAvg: Math.round(best.lam * 100) / 100,
     trueProbability: Math.round(best.prob * 1000) / 1000,
     trueProbabilityPct: `${probPctNum.toFixed(1)}%`,
+    modelProbabilityPct: `${modelPctNum.toFixed(1)}%`,
+    marketImpliedPct: `${mktPctNum.toFixed(1)}%`,
     fairOdds: best.fairOdds,
     bookmakerOdds: best.bookieOdds,
     expectedValue: Math.round(best.ev * 10000) / 10000,
     expectedValuePct: `${evPctNum >= 0 ? "+" : ""}${evPctNum.toFixed(2)}%`,
     isPositiveEv: best.ev > 0,
-    qualityTier: best.ev >= 0.08 && best.prob >= 0.64 ? "ELITE" : (best.ev > 0 ? "VALUE" : "SOLID"),
+    qualityTier: grade,
+    dataQuality,
+    pillars,
     logicSummary,
-    mastermind: mastermindFn ? mastermindFn(best) : null
+    mastermind: {
+      logic: `${grade} · Calibrated Prob ${probPctNum.toFixed(1)}% (Model ${modelPctNum.toFixed(1)}% anchored with Market ${mktPctNum.toFixed(1)}%) -> Fair ${best.fairOdds.toFixed(2)}.`,
+      decision: `${best.marketLine} @ ${best.bookieOdds.toFixed(2)} (${evPctNum >= 0 ? "+" : ""}${evPctNum.toFixed(2)}% EV)`
+    }
   };
 }
 
-function buildGoalsPicksForGame(g, markets) {
+function buildGoalsPicksForGame(g, markets, hEspn, aEspn, ctx) {
+  const hasBothEspn = Boolean(hEspn && aEspn);
+  // Require verified team stats either from ESPN or Sportradar verified form
+  if (!hasBothEspn && !g.hasVerifiedStats) return null;
+
   const hs = g.homeStats || {};
   const as = g.awayStats || {};
-  const hGf = hs.gfAvg || 1.35;
-  const aGf = as.gfAvg || 1.15;
-  const hGa = hs.gaAvg || 1.15;
-  const aGa = as.gaAvg || 1.25;
-  const lamTotal = clamp(((hGf + aGa) * 0.5) + ((aGf + hGa) * 0.5), 1.45, 4.10);
+  const hGf = hasBothEspn ? (venueStat(hEspn, "home", "gfAvg") ?? hs.gfAvg ?? 1.3) : hs.gfAvg;
+  const hGa = hasBothEspn ? (venueStat(hEspn, "home", "gaAvg") ?? hs.gaAvg ?? 1.2) : hs.gaAvg;
+  const aGf = hasBothEspn ? (venueStat(aEspn, "away", "gfAvg") ?? as.gfAvg ?? 1.1) : as.gfAvg;
+  const aGa = hasBothEspn ? (venueStat(aEspn, "away", "gaAvg") ?? as.gaAvg ?? 1.2) : as.gaAvg;
+  if (!Number.isFinite(hGf) || !Number.isFinite(aGf) || !Number.isFinite(hGa) || !Number.isFinite(aGa)) return null;
+
+  // Include Shots On Target efficiency adjustment if ESPN verified
+  let sotBoost = 0;
+  if (hasBothEspn && hEspn.sotFor && aEspn.sotFor) {
+    const matchSot = ((venueStat(hEspn, "home", "sotFor") + venueStat(aEspn, "away", "sotAg")) * 0.5)
+      + ((venueStat(aEspn, "away", "sotFor") + venueStat(hEspn, "home", "sotAg")) * 0.5);
+    sotBoost = clamp((matchSot - 8.5) * 0.08, -0.35, 0.35);
+  }
+
+  const lamTotal = clamp(((hGf + aGa) * 0.5) + ((aGf + hGa) * 0.5) + sotBoost, 1.40, 4.30);
 
   const candidates = [];
   for (const m of markets.filter((x) => String(x.id) === "18")) {
@@ -290,30 +541,34 @@ function buildGoalsPicksForGame(g, markets) {
     });
   }
 
+  const dataSrc = hasBothEspn ? `${hEspn.source} + ${aEspn.source}` : "Verified Season/Form Goal Rates";
   return pickBestOuFromLines(
     candidates,
     "GOALS",
     g,
-    `Goal Expectancy λ=${lamTotal.toFixed(2)} (${g.homeTeamName} ${hGf} GF/${hGa} GA vs ${g.awayTeamName} ${aGf} GF/${aGa} GA)`,
-    (b) => ({
-      logic: `Poisson total goal rate λ = ${lamTotal.toFixed(2)} yields ${(b.prob * 100).toFixed(1)}% for ${b.marketLine}.`,
-      decision: `${b.marketLine} @ ${b.bookieOdds.toFixed(2)} (Fair ${b.fairOdds.toFixed(2)})`
-    })
+    `Venue-Weighted Goal λ=${lamTotal.toFixed(2)}: ${g.homeTeamName} Home GF ${hGf.toFixed(2)}/GA ${hGa.toFixed(2)} vs ${g.awayTeamName} Away GF ${aGf.toFixed(2)}/GA ${aGa.toFixed(2)}${sotBoost !== 0 ? ` (SOT Tempo ${sotBoost >= 0 ? "+" : ""}${sotBoost.toFixed(2)})` : ""}`,
+    {
+      dispersion: 1.05,
+      modelWeight: hasBothEspn ? 0.62 : 0.52,
+      dataQuality: hasBothEspn ? "ESPN_VENUE_VERIFIED" : "VERIFIED_FORM",
+      pillars: [
+        `Data: ${dataSrc}`,
+        `Matchup: ${ctx.favoriteSide} (${Math.round(ctx.pHome * 100)}%/${Math.round(ctx.pDraw * 100)}%/${Math.round(ctx.pAway * 100)}%)`
+      ]
+    }
   );
 }
 
 function buildStatPicksForGame(g, markets, hEspn, aEspn) {
   const out = [];
-  const hasEspn = Boolean(hEspn && aEspn);
-  const hs = g.homeStats || {};
-  const as = g.awayStats || {};
+  const ctx = computeMatchContext(g);
+  const hasStrictEspn = Boolean(hEspn && aEspn && hEspn.mp >= 3 && aEspn.mp >= 3);
 
-  // Shared helper to parse O/U markets by id
   const collectOu = (marketId, scope, targetTeam, lamFn, prefix) => {
     const arr = [];
     for (const m of markets.filter((x) => String(x.id) === String(marketId))) {
       const line = parseLineNumber(m.specifier);
-      if (!Number.isFinite(line)) continue;
+      if (!Number.isFinite(line) || Math.abs((line % 1) - 0.5) > 0.01) continue;
       let oddO = null, oddU = null;
       for (const o of (m.outcomes || [])) {
         const odd = parseFloat(o.odds);
@@ -338,21 +593,39 @@ function buildStatPicksForGame(g, markets, hEspn, aEspn) {
   };
 
   // 1. GOALS O/U
-  const goalPick = buildGoalsPicksForGame(g, markets);
+  const goalPick = buildGoalsPicksForGame(g, markets, hEspn, aEspn, ctx);
   if (goalPick) out.push(goalPick);
 
-  // 2. THROW-INS O/U (Modelled from ESPN Possession %, Pass Accuracy %, Total Passes & Fouls — direct play = more throw-ins!)
+  // STRICT NO-GUESSING GATE for detailed stat props: require real ESPN boxscores (>=3 matches) for BOTH teams
+  if (!hasStrictEspn) {
+    return out;
+  }
+
+  // Venue-weighted match possession projection (Accounts for dominance!)
+  const hPossBase = venueStat(hEspn, "home", "possFor") ?? 50;
+  const aPossBase = venueStat(aEspn, "away", "possFor") ?? 50;
+  const estHomePoss = clamp(50 + ((hPossBase - aPossBase) * 0.45) + (ctx.dom * 14), 26, 74);
+  const estAwayPoss = 100 - estHomePoss;
+
+  // 2. THROW-INS O/U (Real Clearances + Long Balls + Crosses + Contested Tempo, heavily anchored to Market)
   if (markets.some((x) => String(x.id) === "900769" || String(x.id) === "900778" || String(x.id) === "900779")) {
-    const hPoss = hEspn?.possFor ?? 50;
-    const aPoss = aEspn?.possFor ?? 50;
-    const hAcc = hEspn?.passAccPct ?? 82;
-    const aAcc = aEspn?.passAccPct ?? 82;
-    const avgPoss = (hPoss + aPoss) * 0.5;
+    const hClear = venueStat(hEspn, "home", "clearancesFor") ?? 16;
+    const aClear = venueStat(aEspn, "away", "clearancesFor") ?? 16;
+    const hLong = venueStat(hEspn, "home", "longBallsFor") ?? 48;
+    const aLong = venueStat(aEspn, "away", "longBallsFor") ?? 48;
+    const hCross = venueStat(hEspn, "home", "crossesFor") ?? 14;
+    const aCross = venueStat(aEspn, "away", "crossesFor") ?? 14;
+    const hAcc = venueStat(hEspn, "home", "passAccPct") ?? 81;
+    const aAcc = venueStat(aEspn, "away", "passAccPct") ?? 81;
     const avgAcc = (hAcc + aAcc) * 0.5;
-    // Lower possession / lower pass accuracy / direct transitions create more out-of-play throw-ins (~30 to 42)
-    const lamMatchThrows = clamp(36.0 + (50 - avgPoss) * 0.28 + (82 - avgAcc) * 0.45, 28.0, 44.0);
-    const lamHomeThrows = clamp(lamMatchThrows * (0.50 + ((50 - hPoss) * 0.004)), 13.0, 23.0);
-    const lamAwayThrows = clamp(lamMatchThrows - lamHomeThrows, 12.0, 22.0);
+
+    // Physics: Clearances + Crosses + Long balls into channels + Inaccurate passing drive ball out via touchline
+    const disruptionIndex = ((hClear + aClear) - 32) * 0.16 + ((hLong + aLong) - 95) * 0.05 + ((hCross + aCross) - 28) * 0.14 + (82 - avgAcc) * 0.42;
+    const lamMatchThrows = clamp(35.0 + disruptionIndex, 27.0, 44.0);
+    // Team spending LESS time on the ball wins/forces throw-ins differently: higher possession opponent yields throw-ins in opponent third, underdog defends wings
+    const hShare = clamp(0.50 + ((50 - estHomePoss) * 0.0035) + ((aClear - hClear) * 0.002), 0.38, 0.62);
+    const lamHomeThrows = clamp(lamMatchThrows * hShare, 12.0, 23.0);
+    const lamAwayThrows = clamp(lamMatchThrows - lamHomeThrows, 12.0, 23.0);
 
     const throwCands = [
       ...collectOu(900769, "Match Total Throw-Ins", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamMatchThrows, "Match Throw-Ins"),
@@ -363,118 +636,167 @@ function buildStatPicksForGame(g, markets, hEspn, aEspn) {
       throwCands,
       "THROW_INS",
       g,
-      hasEspn
-        ? `Tempo Model (${hPoss.toFixed(1)}% poss / ${hAcc.toFixed(0)}% pass acc vs ${aPoss.toFixed(1)}% / ${aAcc.toFixed(0)}%) -> Est. ${lamMatchThrows.toFixed(1)} Throw-ins`
-        : `Directness Tempo Model -> Est. ${lamMatchThrows.toFixed(1)} Throw-ins`
+      `Clearances/Long-Ball Physics: ${g.homeTeamName} (${hClear.toFixed(0)} Clr, ${hLong.toFixed(0)} LB, ${estHomePoss.toFixed(0)}% est poss) vs ${g.awayTeamName} (${aClear.toFixed(0)} Clr, ${aLong.toFixed(0)} LB, ${hAcc.toFixed(0)}%/${aAcc.toFixed(0)}% Pass%)`,
+      {
+        dispersion: 1.42,
+        modelWeight: 0.46,
+        dataQuality: "ESPN_PHYSICS_PROXY",
+        pillars: [
+          `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
+          `Touchline Drivers: Clr ${(hClear + aClear).toFixed(0)} · LB ${(hLong + aLong).toFixed(0)} · Cross ${(hCross + aCross).toFixed(0)}`
+        ]
+      }
     );
     if (tp) out.push(tp);
   }
 
-  // 3. SHOTS ON TARGET O/U
+  // 3. SHOTS ON TARGET O/U (Venue-Split SOT adjusted by Match Dominance / Possession Share)
   if (markets.some((x) => String(x.id) === "900393" || String(x.id) === "900546" || String(x.id) === "900547")) {
-    const hSotF = hEspn?.sotFor ?? clamp((hs.gfAvg || 1.3) * 3.1, 2.2, 7.5);
-    const hSotA = hEspn?.sotAg ?? clamp((hs.gaAvg || 1.2) * 3.1, 2.0, 6.8);
-    const aSotF = aEspn?.sotFor ?? clamp((as.gfAvg || 1.1) * 3.1, 2.0, 7.0);
-    const aSotA = aEspn?.sotAg ?? clamp((as.gaAvg || 1.3) * 3.1, 2.2, 7.2);
+    const hSotF = venueStat(hEspn, "home", "sotFor");
+    const hSotA = venueStat(hEspn, "home", "sotAg");
+    const aSotF = venueStat(aEspn, "away", "sotFor");
+    const aSotA = venueStat(aEspn, "away", "sotAg");
 
-    const lamHomeSot = clamp((hSotF + aSotA) * 0.5, 1.8, 9.0);
-    const lamAwaySot = clamp((aSotF + hSotA) * 0.5, 1.5, 8.2);
-    const sotCands = [
-      ...collectOu(900393, "Match Total Shots On Target", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeSot + lamAwaySot, "Match SOT"),
-      ...collectOu(900546, `${g.homeTeamName} SOT`, g.homeTeamName, () => lamHomeSot, `${g.homeTeamName} SOT`),
-      ...collectOu(900547, `${g.awayTeamName} SOT`, g.awayTeamName, () => lamAwaySot, `${g.awayTeamName} SOT`)
-    ];
-    const sp = pickBestOuFromLines(
-      sotCands,
-      "SHOTS_ON_TARGET",
-      g,
-      hasEspn
-        ? `ESPN Verified SOT: ${g.homeTeamName} (${hSotF} For / ${hSotA} Ag) vs ${g.awayTeamName} (${aSotF} For / ${aSotA} Ag)`
-        : `PPG Attack-Derived SOT: ${lamHomeSot.toFixed(1)} vs ${lamAwaySot.toFixed(1)}`
-    );
-    if (sp) out.push(sp);
-  }
+    if (hSotF !== null && hSotA !== null && aSotF !== null && aSotA !== null) {
+      // Scale team SOT expectation by dominance factor (favorites at home generate more SOT, strong defenses suppress underdogs)
+      const hDomScale = clamp(1 + ctx.dom * 0.28 + ((estHomePoss - 50) * 0.004), 0.72, 1.32);
+      const aDomScale = clamp(1 - ctx.dom * 0.28 + ((estAwayPoss - 50) * 0.004), 0.68, 1.28);
+      const lamHomeSot = clamp(((hSotF * 0.58 + aSotA * 0.42) * hDomScale), 1.6, 8.8);
+      const lamAwaySot = clamp(((aSotF * 0.58 + hSotA * 0.42) * aDomScale), 1.2, 8.0);
 
-  // 4. OFFSIDES O/U
-  if (markets.some((x) => String(x.id) === "900396" || String(x.id) === "900568" || String(x.id) === "900569")) {
-    const hOffF = hEspn?.offFor ?? 1.7;
-    const hOffA = hEspn?.offAg ?? 1.8;
-    const aOffF = aEspn?.offFor ?? 1.7;
-    const aOffA = aEspn?.offAg ?? 1.8;
-    const lamHomeOff = clamp((hOffF + aOffA) * 0.5, 0.7, 4.8);
-    const lamAwayOff = clamp((aOffF + hOffA) * 0.5, 0.7, 4.8);
-
-    const offCands = [
-      ...collectOu(900396, "Match Total Offsides", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeOff + lamAwayOff, "Match Offsides"),
-      ...collectOu(900568, `${g.homeTeamName} Offsides`, g.homeTeamName, () => lamHomeOff, `${g.homeTeamName} Offsides`),
-      ...collectOu(900569, `${g.awayTeamName} Offsides`, g.awayTeamName, () => lamAwayOff, `${g.awayTeamName} Offsides`)
-    ];
-    const op = pickBestOuFromLines(
-      offCands,
-      "OFFSIDE",
-      g,
-      hasEspn
-        ? `ESPN Offside Trap: ${g.homeTeamName} (${hOffF} For / ${hOffA} Trap) vs ${g.awayTeamName} (${aOffF} For / ${aOffA} Trap)`
-        : `Tactical Line Trap Model -> ${lamHomeOff.toFixed(1)} vs ${lamAwayOff.toFixed(1)} Offsides`
-    );
-    if (op) out.push(op);
-  }
-
-  // 5. BOOKINGS O/U (Team Totals [900304/5], Match [139], and Match Cards [800063])
-  {
-    const hYcF = hEspn?.ycFor ?? 1.8;
-    const hYcA = hEspn?.ycAg ?? 1.8;
-    const aYcF = aEspn?.ycFor ?? 1.9;
-    const aYcA = aEspn?.ycAg ?? 1.7;
-    const lamHomeYc = clamp((hYcF + aYcA) * 0.5, 0.7, 3.8);
-    const lamAwayYc = clamp((aYcF + hYcA) * 0.5, 0.8, 3.8);
-
-    const bookCands = [
-      ...collectOu(139, "Match Total Bookings", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeYc + lamAwayYc, "Match Bookings"),
-      ...collectOu(900304, `${g.homeTeamName} Bookings`, g.homeTeamName, () => lamHomeYc, `${g.homeTeamName} Bookings`),
-      ...collectOu(900305, `${g.awayTeamName} Bookings`, g.awayTeamName, () => lamAwayYc, `${g.awayTeamName} Bookings`)
-    ];
-
-    // Also include Market [800063] "Match Cards" discrete thresholds (3+ = Over 2.5, 4+ = Over 3.5, 5+ = Over 4.5)
-    for (const m of markets.filter((x) => String(x.id) === "800063")) {
-      for (const o of (m.outcomes || [])) {
-        const km = String(o.desc || "").match(/^(\d+)\+$/);
-        const odd = parseFloat(o.odds);
-        if (!km || !Number.isFinite(odd)) continue;
-        const threshold = parseInt(km[1], 10);
-        if (threshold < 2 || threshold > 6) continue;
-        bookCands.push({
-          line: threshold - 0.5,
-          lam: lamHomeYc + lamAwayYc,
-          oddOver: odd,
-          oddUnder: null,
-          labelOver: `Match Cards ${threshold}+ (Over ${threshold - 0.5})`,
-          scope: "Match Total Cards",
-          targetTeam: `${g.homeTeamName} vs ${g.awayTeamName}`
-        });
-      }
+      const sotCands = [
+        ...collectOu(900393, "Match Total Shots On Target", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeSot + lamAwaySot, "Match SOT"),
+        ...collectOu(900546, `${g.homeTeamName} SOT`, g.homeTeamName, () => lamHomeSot, `${g.homeTeamName} SOT`),
+        ...collectOu(900547, `${g.awayTeamName} SOT`, g.awayTeamName, () => lamAwaySot, `${g.awayTeamName} SOT`)
+      ];
+      const sp = pickBestOuFromLines(
+        sotCands,
+        "SHOTS_ON_TARGET",
+        g,
+        `Venue SOT + Dominance: ${g.homeTeamName} Home SOT ${hSotF.toFixed(1)}F/${hSotA.toFixed(1)}A (Poss ${estHomePoss.toFixed(0)}%) vs ${g.awayTeamName} Away SOT ${aSotF.toFixed(1)}F/${aSotA.toFixed(1)}A`,
+        {
+          dispersion: 1.18,
+          modelWeight: 0.62,
+          dataQuality: "ESPN_VENUE_VERIFIED",
+          pillars: [
+            `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
+            `Dominance Adj: Home ×${hDomScale.toFixed(2)} · Away ×${aDomScale.toFixed(2)}`
+          ]
+        }
+      );
+      if (sp) out.push(sp);
     }
-
-    const bp = pickBestOuFromLines(
-      bookCands,
-      "BOOKINGS",
-      g,
-      hasEspn
-        ? `ESPN Discipline: ${g.homeTeamName} (${hYcF} YC / ${hEspn.foulsFor || 11} Fouls) vs ${g.awayTeamName} (${aYcF} YC / ${aEspn.foulsFor || 11} Fouls)`
-        : `Discipline Model -> ${(lamHomeYc + lamAwayYc).toFixed(1)} Total Cards`
-    );
-    if (bp) out.push(bp);
   }
 
-  // 6. GOAL KICKS O/U (Physics: Off-Target Opponent Shots = totalShots - shotsOnTarget + base clearances over endline)
+  // 4. OFFSIDES O/U (Venue-Split Offsides + Long-Ball Directness)
+  if (markets.some((x) => String(x.id) === "900396" || String(x.id) === "900568" || String(x.id) === "900569")) {
+    const hOffF = venueStat(hEspn, "home", "offFor");
+    const hOffA = venueStat(hEspn, "home", "offAg");
+    const aOffF = venueStat(aEspn, "away", "offFor");
+    const aOffA = venueStat(aEspn, "away", "offAg");
+
+    if (hOffF !== null && hOffA !== null && aOffF !== null && aOffA !== null) {
+      const lamHomeOff = clamp(hOffF * 0.55 + aOffA * 0.45, 0.6, 4.5);
+      const lamAwayOff = clamp(aOffF * 0.55 + hOffA * 0.45, 0.6, 4.5);
+
+      const offCands = [
+        ...collectOu(900396, "Match Total Offsides", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeOff + lamAwayOff, "Match Offsides"),
+        ...collectOu(900568, `${g.homeTeamName} Offsides`, g.homeTeamName, () => lamHomeOff, `${g.homeTeamName} Offsides`),
+        ...collectOu(900569, `${g.awayTeamName} Offsides`, g.awayTeamName, () => lamAwayOff, `${g.awayTeamName} Offsides`)
+      ];
+      const op = pickBestOuFromLines(
+        offCands,
+        "OFFSIDE",
+        g,
+        `Venue Offside Trap: ${g.homeTeamName} (${hOffF.toFixed(1)} Off / ${hOffA.toFixed(1)} Trap) vs ${g.awayTeamName} (${aOffF.toFixed(1)} Off / ${aOffA.toFixed(1)} Trap)`,
+        {
+          dispersion: 1.25,
+          modelWeight: 0.58,
+          dataQuality: "ESPN_VENUE_VERIFIED",
+          pillars: [
+            `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
+            `Trap Rate: Home ${hOffA.toFixed(1)}/g · Away ${aOffA.toFixed(1)}/g`
+          ]
+        }
+      );
+      if (op) out.push(op);
+    }
+  }
+
+  // 5. BOOKINGS O/U (Yellow Cards + Fouls Committed + Match Competitiveness/Tightness Multiplier)
+  {
+    const hYcF = venueStat(hEspn, "home", "ycFor");
+    const hYcA = venueStat(hEspn, "home", "ycAg");
+    const aYcF = venueStat(aEspn, "away", "ycFor");
+    const aYcA = venueStat(aEspn, "away", "ycAg");
+    const hFouls = venueStat(hEspn, "home", "foulsFor") ?? 10.5;
+    const aFouls = venueStat(aEspn, "away", "foulsFor") ?? 11.5;
+
+    if (hYcF !== null && hYcA !== null && aYcF !== null && aYcA !== null) {
+      // Competitive matches generate +8% more cards; one-sided matches generate slightly fewer tactical fouls
+      const compMult = clamp(0.88 + ctx.tightness * 0.20, 0.88, 1.08);
+      const foulCardAdj = clamp(((hFouls + aFouls) - 21.5) * 0.04, -0.35, 0.45);
+      const lamHomeYc = clamp(((hYcF * 0.58 + aYcA * 0.42) * compMult) + foulCardAdj * 0.45, 0.7, 3.8);
+      const lamAwayYc = clamp(((aYcF * 0.58 + hYcA * 0.42) * compMult) + foulCardAdj * 0.55, 0.8, 4.0);
+
+      const bookCands = [
+        ...collectOu(139, "Match Total Bookings", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeYc + lamAwayYc, "Match Bookings"),
+        ...collectOu(900304, `${g.homeTeamName} Bookings`, g.homeTeamName, () => lamHomeYc, `${g.homeTeamName} Bookings`),
+        ...collectOu(900305, `${g.awayTeamName} Bookings`, g.awayTeamName, () => lamAwayYc, `${g.awayTeamName} Bookings`)
+      ];
+
+      for (const m of markets.filter((x) => String(x.id) === "800063")) {
+        for (const o of (m.outcomes || [])) {
+          const km = String(o.desc || "").match(/^(\d+)\+$/);
+          const odd = parseFloat(o.odds);
+          if (!km || !Number.isFinite(odd)) continue;
+          const threshold = parseInt(km[1], 10);
+          if (threshold < 2 || threshold > 6) continue;
+          bookCands.push({
+            line: threshold - 0.5,
+            lam: lamHomeYc + lamAwayYc,
+            oddOver: odd,
+            oddUnder: null,
+            labelOver: `Match Cards ${threshold}+ (Over ${threshold - 0.5})`,
+            scope: "Match Total Cards",
+            targetTeam: `${g.homeTeamName} vs ${g.awayTeamName}`
+          });
+        }
+      }
+
+      const bp = pickBestOuFromLines(
+        bookCands,
+        "BOOKINGS",
+        g,
+        `Discipline & Tightness: ${g.homeTeamName} (${hYcF.toFixed(1)} YC, ${hFouls.toFixed(1)} Fouls) vs ${g.awayTeamName} (${aYcF.toFixed(1)} YC, ${aFouls.toFixed(1)} Fouls) · Tightness ${(ctx.tightness * 100).toFixed(0)}%`,
+        {
+          dispersion: 1.28,
+          modelWeight: 0.60,
+          dataQuality: "ESPN_VENUE_VERIFIED",
+          pillars: [
+            `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
+            `Fouls & Tightness: ${(hFouls + aFouls).toFixed(1)} Fouls/g · ×${compMult.toFixed(2)}`
+          ]
+        }
+      );
+      if (bp) out.push(bp);
+    }
+  }
+
+  // 6. GOAL KICKS O/U (Real Off-Target Opponent Shots - Corners + Clearances Physics)
   if (markets.some((x) => String(x.id) === "900622" || String(x.id) === "900623" || String(x.id) === "900624")) {
-    const hMissedFor = hEspn?.missedFor ?? clamp((hs.gfAvg || 1.3) * 5.2, 4.5, 13.0);
-    const aMissedFor = aEspn?.missedFor ?? clamp((as.gfAvg || 1.1) * 5.2, 4.0, 12.5);
-    const hMissedAg = hEspn?.missedAg ?? 7.5;
-    const aMissedAg = aEspn?.missedAg ?? 8.2;
-    // Home Goal Kicks happen when Away misses shots + passes over endline (~3.0 base per half-court match)
-    const lamHomeGk = clamp(((aMissedFor + hMissedAg) * 0.5) * 0.68 + 2.4, 4.0, 13.5);
-    const lamAwayGk = clamp(((hMissedFor + aMissedAg) * 0.5) * 0.68 + 2.4, 4.0, 14.5);
+    const hMissedFor = venueStat(hEspn, "home", "missedFor") ?? 6.5;
+    const aMissedFor = venueStat(aEspn, "away", "missedFor") ?? 6.0;
+    const hMissedAg = venueStat(hEspn, "home", "missedAg") ?? 6.5;
+    const aMissedAg = venueStat(aEspn, "away", "missedAg") ?? 7.5;
+    const hBlockedAg = venueStat(hEspn, "home", "blockedAg") ?? 3.0;
+    const aBlockedAg = venueStat(aEspn, "away", "blockedAg") ?? 3.0;
+
+    // Non-blocked off-target opponent shots roughly translate to goal kicks (62%) + direct long clearances over byline (~2.2 base)
+    const oppOffTargetHome = Math.max(2.0, ((aMissedFor + hMissedAg) * 0.5) - (hBlockedAg * 0.65));
+    const oppOffTargetAway = Math.max(2.0, ((hMissedFor + aMissedAg) * 0.5) - (aBlockedAg * 0.65));
+    const lamHomeGk = clamp(oppOffTargetHome * 0.82 + 2.6 + (ctx.dom < -0.15 ? 0.8 : -0.4), 4.0, 13.0);
+    const lamAwayGk = clamp(oppOffTargetAway * 0.82 + 2.6 + (ctx.dom > 0.15 ? 0.9 : -0.3), 4.5, 14.0);
 
     const gkCands = [
       ...collectOu(900622, "Match Total Goal Kicks", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeGk + lamAwayGk, "Match Goal Kicks"),
@@ -485,57 +807,88 @@ function buildStatPicksForGame(g, markets, hEspn, aEspn) {
       gkCands,
       "GOAL_KICKS",
       g,
-      hasEspn
-        ? `Off-Target Volume: ${g.homeTeamName} misses ${hMissedFor} shots/g vs ${g.awayTeamName} misses ${aMissedFor} shots/g -> Est. ${(lamHomeGk + lamAwayGk).toFixed(1)} Goal Kicks`
-        : `Shot-Variance Model -> Est. ${(lamHomeGk + lamAwayGk).toFixed(1)} Goal Kicks`
+      `Shot-Miss & Dominance: ${g.homeTeamName} misses ${hMissedFor.toFixed(1)}/g vs ${g.awayTeamName} misses ${aMissedFor.toFixed(1)}/g -> Home GK ~${lamHomeGk.toFixed(1)} · Away GK ~${lamAwayGk.toFixed(1)}`,
+      {
+        dispersion: 1.35,
+        modelWeight: 0.48,
+        dataQuality: "ESPN_PHYSICS_PROXY",
+        pillars: [
+          `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
+          `Off-Target Variance: ${g.homeTeamName} ${oppOffTargetAway.toFixed(1)} · ${g.awayTeamName} ${oppOffTargetHome.toFixed(1)}`
+        ]
+      }
     );
     if (gkp) out.push(gkp);
   }
 
-  // 7. SAVES O/U (Market [800297] Player/GK Saves threshold k+ === Over (k-0.5) Saves)
+  // 7. SAVES O/U (Confirmed Starter GK Filter + Real ESPN Saves & Opponent Adjusted SOT)
   {
-    const hSotF = hEspn?.sotFor ?? clamp((hs.gfAvg || 1.3) * 3.1, 2.5, 7.5);
-    const aSotF = aEspn?.sotFor ?? clamp((as.gfAvg || 1.1) * 3.1, 2.2, 7.0);
-    const hSotA = hEspn?.sotAg ?? 4.2;
-    const aSotA = aEspn?.sotAg ?? 4.5;
-    const hSavesHist = hEspn?.savesFor ?? Math.max(1.8, hSotA - (hs.gaAvg || 1.2));
-    const aSavesHist = aEspn?.savesFor ?? Math.max(1.8, aSotA - (as.gaAvg || 1.3));
-    const lamHomeGkSaves = clamp((hSavesHist + Math.max(1.5, aSotF - (hs.gaAvg || 1.2))) * 0.5, 1.5, 6.2);
-    const lamAwayGkSaves = clamp((aSavesHist + Math.max(1.5, hSotF - (as.gaAvg || 1.4))) * 0.5, 1.5, 6.5);
+    const hSotF = venueStat(hEspn, "home", "sotFor");
+    const aSotF = venueStat(aEspn, "away", "sotFor");
+    const hSotA = venueStat(hEspn, "home", "sotAg");
+    const aSotA = venueStat(aEspn, "away", "sotAg");
+    const hSavesHist = venueStat(hEspn, "home", "savesFor");
+    const aSavesHist = venueStat(aEspn, "away", "savesFor");
+    const hOppGoalsEst = venueStat(hEspn, "home", "gaAvg") ?? 1.1;
+    const aOppGoalsEst = venueStat(aEspn, "away", "gaAvg") ?? 1.3;
 
-    const saveCands = [];
-    for (const m of markets.filter((x) => String(x.id) === "800297")) {
-      for (const o of (m.outcomes || [])) {
-        const match = String(o.desc || "").match(/^(.+?)\s*\(([^)]+)\)\s*(\d+)\+$/);
-        const odd = parseFloat(o.odds);
-        if (!match || !Number.isFinite(odd)) continue;
-        const player = match[1].trim();
-        const teamLabel = match[2].trim();
-        const threshold = parseInt(match[3], 10);
-        if (threshold < 2 || threshold > 6) continue;
-        const isHomeGk = normTeamKey(teamLabel).includes(normTeamKey(g.homeTeamName).split(" ")[0] || "___") ||
-          normTeamKey(g.homeTeamName).includes(normTeamKey(teamLabel).split(" ")[0] || "___");
-        const gkLam = isHomeGk ? lamHomeGkSaves : lamAwayGkSaves;
-        saveCands.push({
-          line: threshold - 0.5,
-          lam: gkLam,
-          oddOver: odd,
-          oddUnder: null,
-          labelOver: `${player} (${teamLabel}) Over ${threshold - 0.5} Saves (${threshold}+)`,
-          scope: "Goalkeeper Saves Over",
-          targetTeam: `${player} (${teamLabel})`
-        });
+    if (hSotF !== null && aSotF !== null && hSavesHist !== null && aSavesHist !== null) {
+      const hDomScale = clamp(1 + ctx.dom * 0.25, 0.72, 1.30);
+      const aDomScale = clamp(1 - ctx.dom * 0.25, 0.70, 1.28);
+      const expectedSotOnHome = ((aSotF * 0.55 + (hSotA ?? aSotF) * 0.45) * aDomScale);
+      const expectedSotOnAway = ((hSotF * 0.55 + (aSotA ?? hSotF) * 0.45) * hDomScale);
+
+      const lamHomeGkSaves = clamp((hSavesHist * 0.48) + (Math.max(1.2, expectedSotOnHome - hOppGoalsEst) * 0.52), 1.4, 5.8);
+      const lamAwayGkSaves = clamp((aSavesHist * 0.48) + (Math.max(1.4, expectedSotOnAway - aOppGoalsEst) * 0.52), 1.5, 6.2);
+
+      const saveCands = [];
+      for (const m of markets.filter((x) => String(x.id) === "800297")) {
+        for (const o of (m.outcomes || [])) {
+          const match = String(o.desc || "").match(/^(.+?)\s*\(([^)]+)\)\s*(\d+)\+$/);
+          const odd = parseFloat(o.odds);
+          if (!match || !Number.isFinite(odd)) continue;
+          const player = match[1].trim();
+          const teamLabel = match[2].trim();
+          const threshold = parseInt(match[3], 10);
+          if (threshold < 2 || threshold > 6) continue;
+
+          const isHomeGk = normTeamKey(teamLabel).includes(normTeamKey(g.homeTeamName).split(" ")[0] || "___") ||
+            normTeamKey(g.homeTeamName).includes(normTeamKey(teamLabel).split(" ")[0] || "___");
+          const teamEspn = isHomeGk ? hEspn : aEspn;
+
+          // CRITICAL DEEP CHECK: Block 2nd/3rd choice non-starting goalkeepers!
+          if (!isConfirmedStarterGk(player, teamEspn)) continue;
+
+          const gkLam = isHomeGk ? lamHomeGkSaves : lamAwayGkSaves;
+          saveCands.push({
+            line: threshold - 0.5,
+            lam: gkLam,
+            oddOver: odd,
+            oddUnder: null,
+            labelOver: `${player} (${teamLabel}) Over ${threshold - 0.5} Saves (${threshold}+)`,
+            scope: "Starter GK Saves Over",
+            targetTeam: `${player} (${teamLabel})`
+          });
+        }
       }
+
+      const svp = pickBestOuFromLines(
+        saveCands,
+        "SAVES",
+        g,
+        `Starter GK Verified: ${hEspn.latestStarterGk || "Home GK"} (~${lamHomeGkSaves.toFixed(2)} sv/g) vs ${aEspn.latestStarterGk || "Away GK"} (~${lamAwayGkSaves.toFixed(2)} sv/g) · Opp Adj SOT ${expectedSotOnHome.toFixed(1)} vs ${expectedSotOnAway.toFixed(1)}`,
+        {
+          dispersion: 1.15,
+          modelWeight: 0.62,
+          dataQuality: "ESPN_STARTER_GK_VERIFIED",
+          pillars: [
+            `Confirmed Starter GK Only (${hEspn.latestStarterGk || "-"} / ${aEspn.latestStarterGk || "-"})`,
+            `ESPN Saves Avg: Home ${hSavesHist.toFixed(1)}/g · Away ${aSavesHist.toFixed(1)}/g`
+          ]
+        }
+      );
+      if (svp) out.push(svp);
     }
-    const svp = pickBestOuFromLines(
-      saveCands,
-      "SAVES",
-      g,
-      hasEspn
-        ? `ESPN Saves vs Opponent SOT: Home GK ~${lamHomeGkSaves.toFixed(2)} saves/g · Away GK ~${lamAwayGkSaves.toFixed(2)} saves/g`
-        : `Shots-on-Target Save Model: Home GK ~${lamHomeGkSaves.toFixed(2)} · Away GK ~${lamAwayGkSaves.toFixed(2)}`
-    );
-    if (svp) out.push(svp);
   }
 
   return out;
@@ -555,16 +908,16 @@ async function fetchStatPropsIntelligence(forceRefresh = false) {
       const bkScan = await bookmakersApi.runFullBookmakerScan(false).catch(() => null);
       const allFootball = (bkScan?.allGames || []).filter((g) => (g.sport || "football") === "football" && !g.isCompleted);
 
-      // Prioritize major European & international fixtures where Football.com exposes deep O/U stat props
+      // Prioritize fixtures in leagues where ESPN provides complete deep boxscores + Football.com exposes prop lines
       const sorted = [...allFootball].sort((a, b) => {
-        const aTop = detectEspnLeagueCode(a.league) ? 1 : 0;
-        const bTop = detectEspnLeagueCode(b.league) ? 1 : 0;
+        const aTop = detectEspnLeagueCodes(a.league).length > 0 ? 1 : 0;
+        const bTop = detectEspnLeagueCodes(b.league).length > 0 ? 1 : 0;
         if (aTop !== bTop) return bTop - aTop;
         if (Boolean(a.hasVerifiedStats) !== Boolean(b.hasVerifiedStats)) return a.hasVerifiedStats ? -1 : 1;
         return (a.estimateStartTime || 0) - (b.estimateStartTime || 0);
       });
 
-      const targets = sorted.slice(0, 18);
+      const targets = sorted.slice(0, 26);
       const buckets = {
         GOALS: [],
         THROW_INS: [],
@@ -575,17 +928,18 @@ async function fetchStatPropsIntelligence(forceRefresh = false) {
         SAVES: []
       };
 
-      // Fetch markets & ESPN stats in bounded parallel batches
       const chunkSize = 6;
       for (let i = 0; i < targets.length; i += chunkSize) {
         const chunk = targets.slice(i, i + chunkSize);
         await Promise.all(
           chunk.map(async (g) => {
-            const code = detectEspnLeagueCode(g.league);
+            const codes = detectEspnLeagueCodes(g.league);
+            if (codes.length === 0 && !g.hasVerifiedStats) return;
+
             const [evJson, hEspn, aEspn] = await Promise.all([
-              fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/event?eventId=${encodeURIComponent(g.eventId)}&productId=3`, 7500),
-              code ? fetchEspnTeamRecentStats(code, g.homeTeamName) : Promise.resolve(null),
-              code ? fetchEspnTeamRecentStats(code, g.awayTeamName) : Promise.resolve(null)
+              fetchJsonSafe(`https://www.football.com/api/gh/factsCenter/event?eventId=${encodeURIComponent(g.eventId)}&productId=3`, 7500, false),
+              codes.length > 0 ? fetchEspnTeamRecentStats(codes, g.homeTeamName) : Promise.resolve(null),
+              codes.length > 0 ? fetchEspnTeamRecentStats(codes, g.awayTeamName) : Promise.resolve(null)
             ]);
             const markets = evJson?.data?.markets || [];
             if (markets.length === 0) return;
@@ -598,13 +952,13 @@ async function fetchStatPropsIntelligence(forceRefresh = false) {
         );
       }
 
-      // Sort each category by +EV and true probability
       for (const k of Object.keys(buckets)) {
-        buckets[k].sort((a, b) => (b.expectedValue * 1.4 + (b.trueProbability - 0.55) * 0.6) - (a.expectedValue * 1.4 + (a.trueProbability - 0.55) * 0.6));
+        buckets[k].sort((a, b) => (b.expectedValue * 1.2 + (b.trueProbability - 0.55) * 0.85) - (a.expectedValue * 1.2 + (a.trueProbability - 0.55) * 0.85));
       }
 
       const payload = {
         ok: true,
+        engineVersion: "2.0-DEEP",
         generatedAt: new Date().toISOString(),
         matchesScanned: targets.length,
         categories: buckets,

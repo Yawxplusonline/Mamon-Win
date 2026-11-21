@@ -394,7 +394,7 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, options = {}
         const pCalibrated = pMktO !== null ? (pModelO * modelWeight + pMktO * (1 - modelWeight)) : (pModelO * 0.72 + marketRef * 0.28);
         const ev = (pCalibrated * c.oddOver) - 1;
         const fairOdds = Math.round((1 / pCalibrated) * 100) / 100;
-        if (pCalibrated >= 0.55 && ev >= 0.015 && ev <= 0.28) {
+        if (pCalibrated >= 0.57 && ev >= 0.02 && ev <= 0.25) {
           valid.push({
             side: "OVER",
             marketLine: c.labelOver || `Over ${c.line}`,
@@ -420,7 +420,7 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, options = {}
         const pCalibrated = pMktU !== null ? (pModelU * modelWeight + pMktU * (1 - modelWeight)) : (pModelU * 0.72 + marketRef * 0.28);
         const ev = (pCalibrated * c.oddUnder) - 1;
         const fairOdds = Math.round((1 / pCalibrated) * 100) / 100;
-        if (pCalibrated >= 0.55 && ev >= 0.015 && ev <= 0.28) {
+        if (pCalibrated >= 0.57 && ev >= 0.02 && ev <= 0.25) {
           valid.push({
             side: "UNDER",
             marketLine: c.labelUnder || `Under ${c.line}`,
@@ -783,45 +783,7 @@ function buildStatPicksForGame(g, markets, hEspn, aEspn) {
     }
   }
 
-  // 6. GOAL KICKS O/U (Real Off-Target Opponent Shots - Corners + Clearances Physics)
-  if (markets.some((x) => String(x.id) === "900622" || String(x.id) === "900623" || String(x.id) === "900624")) {
-    const hMissedFor = venueStat(hEspn, "home", "missedFor") ?? 6.5;
-    const aMissedFor = venueStat(aEspn, "away", "missedFor") ?? 6.0;
-    const hMissedAg = venueStat(hEspn, "home", "missedAg") ?? 6.5;
-    const aMissedAg = venueStat(aEspn, "away", "missedAg") ?? 7.5;
-    const hBlockedAg = venueStat(hEspn, "home", "blockedAg") ?? 3.0;
-    const aBlockedAg = venueStat(aEspn, "away", "blockedAg") ?? 3.0;
-
-    // Non-blocked off-target opponent shots roughly translate to goal kicks (62%) + direct long clearances over byline (~2.2 base)
-    const oppOffTargetHome = Math.max(2.0, ((aMissedFor + hMissedAg) * 0.5) - (hBlockedAg * 0.65));
-    const oppOffTargetAway = Math.max(2.0, ((hMissedFor + aMissedAg) * 0.5) - (aBlockedAg * 0.65));
-    const lamHomeGk = clamp(oppOffTargetHome * 0.82 + 2.6 + (ctx.dom < -0.15 ? 0.8 : -0.4), 4.0, 13.0);
-    const lamAwayGk = clamp(oppOffTargetAway * 0.82 + 2.6 + (ctx.dom > 0.15 ? 0.9 : -0.3), 4.5, 14.0);
-
-    const gkCands = [
-      ...collectOu(900622, "Match Total Goal Kicks", `${g.homeTeamName} vs ${g.awayTeamName}`, () => lamHomeGk + lamAwayGk, "Match Goal Kicks"),
-      ...collectOu(900623, `${g.homeTeamName} Goal Kicks`, g.homeTeamName, () => lamHomeGk, `${g.homeTeamName} Goal Kicks`),
-      ...collectOu(900624, `${g.awayTeamName} Goal Kicks`, g.awayTeamName, () => lamAwayGk, `${g.awayTeamName} Goal Kicks`)
-    ];
-    const gkp = pickBestOuFromLines(
-      gkCands,
-      "GOAL_KICKS",
-      g,
-      `Shot-Miss & Dominance: ${g.homeTeamName} misses ${hMissedFor.toFixed(1)}/g vs ${g.awayTeamName} misses ${aMissedFor.toFixed(1)}/g -> Home GK ~${lamHomeGk.toFixed(1)} · Away GK ~${lamAwayGk.toFixed(1)}`,
-      {
-        dispersion: 1.35,
-        modelWeight: 0.48,
-        dataQuality: "ESPN_PHYSICS_PROXY",
-        pillars: [
-          `ESPN Boxscores: ${hEspn.source} · ${aEspn.source}`,
-          `Off-Target Variance: ${g.homeTeamName} ${oppOffTargetAway.toFixed(1)} · ${g.awayTeamName} ${oppOffTargetHome.toFixed(1)}`
-        ]
-      }
-    );
-    if (gkp) out.push(gkp);
-  }
-
-  // 7. SAVES O/U (Confirmed Starter GK Filter + Real ESPN Saves & Opponent Adjusted SOT)
+  // 6. SAVES O/U (Confirmed Starter GK Filter + Real ESPN Saves & Opponent Attacking Pressure Gate)
   {
     const hSotF = venueStat(hEspn, "home", "sotFor");
     const aSotF = venueStat(aEspn, "away", "sotFor");
@@ -856,8 +818,11 @@ function buildStatPicksForGame(g, markets, hEspn, aEspn) {
             normTeamKey(g.homeTeamName).includes(normTeamKey(teamLabel).split(" ")[0] || "___");
           const teamEspn = isHomeGk ? hEspn : aEspn;
 
-          // CRITICAL DEEP CHECK: Block 2nd/3rd choice non-starting goalkeepers!
+          // Block 2nd/3rd choice non-starting keepers AND avoid GKs whose team faces weak attacking pressure
           if (!isConfirmedStarterGk(player, teamEspn)) continue;
+          const oppWinProb = isHomeGk ? ctx.pAway : ctx.pHome;
+          const expSotOnMe = isHomeGk ? expectedSotOnHome : expectedSotOnAway;
+          if (oppWinProb < 0.30 && expSotOnMe < 4.5) continue;
 
           const gkLam = isHomeGk ? lamHomeGkSaves : lamAwayGkSaves;
           saveCands.push({
@@ -920,11 +885,10 @@ async function fetchStatPropsIntelligence(forceRefresh = false) {
       const targets = sorted.slice(0, 26);
       const buckets = {
         GOALS: [],
-        THROW_INS: [],
         SHOTS_ON_TARGET: [],
         OFFSIDE: [],
         BOOKINGS: [],
-        GOAL_KICKS: [],
+        THROW_INS: [],
         SAVES: []
       };
 

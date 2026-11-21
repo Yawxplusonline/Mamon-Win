@@ -1071,10 +1071,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
             odd1 >= odd2 ||
             (odd1 >= 1.55 && odd1 <= 3.30 && g.model.homeEdgePct >= 2 && hs.ppg >= 1.55 && hs.formPts >= 7);
           const notDropRisk = g.ppgSchedule?.home?.trajectory !== "DROP_RED";
-          const hasStrongPpg = hs.ppg >= 1.50 && hs.homePpg >= 1.50 && (hs.ppg >= as.ppg + 0.18 || g.ppgSchedule?.home?.trajectory === "GAIN_BLUE");
+          const hasStrongPpg = hs.ppg >= 1.60 && hs.homePpg >= 1.65 && (hs.ppg >= as.ppg + 0.30 || g.ppgSchedule?.home?.trajectory === "GAIN_BLUE");
           return (
-            odd1 >= 1.45 &&
-            odd1 <= 3.30 &&
+            odd1 >= 1.32 &&
+            odd1 <= 3.10 &&
             hasStrongPpg &&
             homeStronger &&
             mistakeBigOddsGiven &&
@@ -1084,17 +1084,12 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .map((g) => {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
-          const isTwoWay = g.sport === "tennis" || g.sport === "basketball" || g.sport === "darts";
-          const dc1X = !isTwoWay ? (g.bestOdds.dc1X || (g.bestOdds.home && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.home + 1/g.bestOdds.draw)) * 100) / 100 : null)) : null;
+          const dc1X = g.bestOdds.dc1X || (g.bestOdds.home && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.home + 1/g.bestOdds.draw)) * 100) / 100 : null);
           const hs = g.homeStats;
           const as = g.awayStats;
           const isInvertedTrap = odd1 >= odd2;
-          const mismatchMarket = isTwoWay
-            ? (g.sport === "tennis" ? `Match Winner (1) @ ${odd1.toFixed(2)} / Set Handicap +1.5` : g.sport === "basketball" ? `Winner (Home) @ ${odd1.toFixed(2)} / +4.5 Spread` : `Winner (1) @ ${odd1.toFixed(2)} / Leg Handicap +1.5`)
-            : (dc1X ? `1X Double Chance (Home or Draw) @ ${dc1X.toFixed(2)}` : `Home Win (1) @ ${odd1.toFixed(2)}`);
-          const backupMarket = isTwoWay
-            ? (g.sport === "tennis" ? `Over 20.5 Games` : g.sport === "basketball" ? `Over Total Points` : `Over 8.5 Legs`)
-            : (dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`);
+          const mismatchMarket = dc1X ? `1X Double Chance (Home or Draw) @ ${dc1X.toFixed(2)}` : `Home Win (1) @ ${odd1.toFixed(2)}`;
+          const backupMarket = dc1X ? `1X Double Chance @ ${dc1X.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.25).toFixed(2)}`;
           return {
             ...g,
             mismatchCategory: "STRONG_HOME",
@@ -1132,10 +1127,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
             odd2 >= odd1 ||
             (odd2 >= 1.55 && odd2 <= 3.40 && g.model.awayEdgePct >= 2 && as.ppg >= 1.55 && as.formPts >= 7);
           const notDropRisk = g.ppgSchedule?.away?.trajectory !== "DROP_RED";
-          const hasStrongPpg = as.ppg >= 1.48 && as.awayPpg >= 1.38 && (as.ppg >= hs.ppg + 0.18 || g.ppgSchedule?.away?.trajectory === "GAIN_BLUE");
+          const hasStrongPpg = as.ppg >= 1.60 && as.awayPpg >= 1.45 && (as.ppg >= hs.ppg + 0.28 || g.ppgSchedule?.away?.trajectory === "GAIN_BLUE");
           return (
-            odd2 >= 1.48 &&
-            odd2 <= 3.40 &&
+            odd2 >= 1.40 &&
+            odd2 <= 3.15 &&
             hasStrongPpg &&
             awayStronger &&
             mistakeBigOddsGiven &&
@@ -1145,17 +1140,12 @@ async function runFullBookmakerScan(forceRefresh = false) {
         .map((g) => {
           const odd1 = g.bestOdds.home;
           const odd2 = g.bestOdds.away;
-          const isTwoWay = g.sport === "tennis" || g.sport === "basketball" || g.sport === "darts";
-          const dcX2 = !isTwoWay ? (g.bestOdds.dcX2 || (g.bestOdds.away && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.away + 1/g.bestOdds.draw)) * 100) / 100 : null)) : null;
+          const dcX2 = g.bestOdds.dcX2 || (g.bestOdds.away && g.bestOdds.draw ? Math.round((1 / (1/g.bestOdds.away + 1/g.bestOdds.draw)) * 100) / 100 : null);
           const hs = g.homeStats;
           const as = g.awayStats;
           const isInvertedTrap = odd2 >= odd1;
-          const mismatchMarket = isTwoWay
-            ? (g.sport === "tennis" ? `Match Winner (2) @ ${odd2.toFixed(2)} / Set Handicap +1.5` : g.sport === "basketball" ? `Winner (Away) @ ${odd2.toFixed(2)} / +4.5 Spread` : `Winner (2) @ ${odd2.toFixed(2)} / Leg Handicap +1.5`)
-            : (dcX2 ? `X2 Double Chance (Away or Draw) @ ${dcX2.toFixed(2)}` : `Away Win (2) @ ${odd2.toFixed(2)}`);
-          const backupMarket = isTwoWay
-            ? (g.sport === "tennis" ? `Over 20.5 Games` : g.sport === "basketball" ? `Over Total Points` : `Over 8.5 Legs`)
-            : (dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.28).toFixed(2)}`);
+          const mismatchMarket = dcX2 ? `X2 Double Chance (Away or Draw) @ ${dcX2.toFixed(2)}` : `Away Win (2) @ ${odd2.toFixed(2)}`;
+          const backupMarket = dcX2 ? `X2 Double Chance @ ${dcX2.toFixed(2)}` : `Over 1.5 Goals @ ${(g.bestOdds.over15 || 1.28).toFixed(2)}`;
           return {
             ...g,
             mismatchCategory: "STRONG_AWAY",

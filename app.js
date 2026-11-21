@@ -439,6 +439,7 @@
       // Migrate legacy multi-sport state: Football Only
       merged.activeSport = "football";
       merged.activeRuninSport = "football";
+      if (merged.activeStatMarket === "GOAL_KICKS") merged.activeStatMarket = "SHOTS_ON_TARGET";
       if (merged.matchFilter === "ALL" || merged.matchFilter === "FOLLOWING" || !merged.matchFilter) {
         merged.matchFilter = "LIVE";
       }
@@ -1324,11 +1325,10 @@
 
   const STAT_OU_MARKETS = [
     { key: "GOALS", label: "Goals O/U", shortLabel: "Goals", icon: "⚽" },
-    { key: "THROW_INS", label: "Throw-ins O/U", shortLabel: "Throw-ins", icon: "🤾" },
     { key: "SHOTS_ON_TARGET", label: "Shots On Target O/U", shortLabel: "Shots On Target", icon: "🎯" },
     { key: "OFFSIDE", label: "Offside O/U", shortLabel: "Offside", icon: "🚩" },
     { key: "BOOKINGS", label: "Bookings O/U", shortLabel: "Bookings", icon: "🟨" },
-    { key: "GOAL_KICKS", label: "Goal Kicks O/U", shortLabel: "Goal Kicks", icon: "🥅" },
+    { key: "THROW_INS", label: "Throw-ins O/U", shortLabel: "Throw-ins", icon: "🤾" },
     { key: "SAVES", label: "Saves O/U", shortLabel: "Saves", icon: "🧤" }
   ];
 
@@ -5413,6 +5413,46 @@
     `;
   }
 
+  function renderWinningOnlyBanner() {
+    const shTotal = (RT?.buildLiveSecondHalfSectionData && secondHalfIntel)
+      ? (RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel).livePriorityPicks?.length || 0)
+      : 0;
+    const ouTotal = Object.values(statPropsData?.counts || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    const strongCount = (bookmakerScan?.strongHomeMismatch?.length || 0) + (bookmakerScan?.strongAwayMismatch?.length || 0);
+    const trapCount = (bookmakerScan?.worstHomeMismatch?.length || 0) + (bookmakerScan?.worstAwayMismatch?.length || 0);
+
+    return `
+      <section class="panel-section" id="winningFocusBanner" style="border:1px solid rgba(16,185,129,0.45); background:linear-gradient(135deg, rgba(16,185,129,0.12), rgba(249,115,22,0.08)); margin-bottom:14px;">
+        <div class="p-3">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">🏆 WINNING-ONLY FOCUS MODE</span>
+              <span class="text-xs font-bold text-text">System focused strictly on top-performing verified sections (low-accuracy Goal Kicks &amp; weak favorite traps excluded)</span>
+            </div>
+          </div>
+          <div class="grid gap-2 mt-2.5" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+            <a class="power-preview-tile is-strong" href="/2h-highest" data-route="/2h-highest" style="border-left:3px solid #f97316; background: var(--bg-surface);">
+              <div class="text-xs font-extrabold" style="color:#ea580c;">🔥 2H Highest Scoring (${shTotal} Live)</div>
+              <div class="text-xs text-muted mt-0.5">HT 0-0 / Tight-HT → 2nd Half Goals</div>
+            </a>
+            <a class="power-preview-tile is-strong" href="/ou-props?market=SHOTS_ON_TARGET" data-route="/ou-props?market=SHOTS_ON_TARGET" style="border-left:3px solid #059669; background: var(--bg-surface);">
+              <div class="text-xs font-extrabold" style="color:#059669;">🎯 Winning O/U Props (${ouTotal} Verified)</div>
+              <div class="text-xs text-muted mt-0.5">Goals · SOT · Offside · Cards · Throws · Starter GK</div>
+            </a>
+            <a class="power-preview-tile is-strong" href="/handicap" data-route="/handicap" style="border-left:3px solid #2563eb; background: var(--bg-surface);">
+              <div class="text-xs font-extrabold" style="color:#2563eb;">💎 Strong PPG &amp; -1 EH (${strongCount} Signals)</div>
+              <div class="text-xs text-muted mt-0.5">Strict ≥1.60 PPG GAIN_BLUE vs DROP_RED</div>
+            </a>
+            <a class="power-preview-tile" href="/worst-teams" data-route="/worst-teams" style="border-left:3px solid #dc2626; background: var(--bg-surface);">
+              <div class="text-xs font-extrabold" style="color:#dc2626;">🛡️ Trap Shield (${trapCount} Fades)</div>
+              <div class="text-xs text-muted mt-0.5">Blocks low-odd weak favorites automatically</div>
+            </a>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
   function renderHomeView() {
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || { key: "football", label: "Football", icon: "⚽" };
@@ -5426,17 +5466,14 @@
       : (state.selectedDate === "UPCOMING_ALL" ? "📅 Upcoming Fixtures & Schedule" : `📅 Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`);
 
     return `
-      ${renderHomeSureOddsBanner()}
+      ${renderWinningOnlyBanner()}
       ${renderHomeSecondHalfCard()}
-      ${renderHomeFullTimeDrawCard()}
       ${renderHomeStatPropsCard()}
       ${renderHomeHandicapValueCard()}
-      ${renderHomeSpecialTipsCard()}
-      ${renderHomeRunInCard()}
+      ${renderHomeSureOddsBanner()}
+      ${renderHomeBookmakerMismatchCard()}
       ${liveMatchesPool.length > 0 ? renderHomeLiveCard(liveMatchesPool, spDef) : ""}
       ${renderMatchesPanel(liveMatches, upcomingTitle, true, true, "UPCOMING")}
-      ${renderMarketIntelligenceStrip()}
-      ${renderHomeBookmakerMismatchCard()}
       ${renderStandingsPanel()}
     `;
   }

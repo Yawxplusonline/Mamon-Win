@@ -117,27 +117,6 @@ function parseBookieMarkets(markets = []) {
         }
       }
     }
-    // Tennis / Darts 2-way Winner (Market 186) & Basketball Winner incl. Overtime (Market 219)
-    else if (id === "186" || id === "219") {
-      const hasExplicitIds = outcomes.some((o) => String(o.id) === "4" || String(o.id) === "5" || /\bhome\b|\baway\b/i.test(o.desc || ""));
-      for (let oi = 0; oi < outcomes.length; oi++) {
-        const o = outcomes[oi];
-        const odd = parseFloat(o.odds);
-        const prob = parseFloat(o.probability);
-        if (!Number.isFinite(odd) || odd <= 1) continue;
-        const oid = String(o.id || "");
-        const odesc = String(o.desc || "");
-        const isHomeOut = oid === "4" || /\bhome\b|^1$/i.test(odesc) || (!hasExplicitIds && oi === 0);
-        const isAwayOut = oid === "5" || /\baway\b|^2$/i.test(odesc) || (!hasExplicitIds && oi === 1);
-        if (isHomeOut && !out.home) {
-          out.home = odd;
-          if (Number.isFinite(prob)) out.probHome = prob;
-        } else if (isAwayOut && !out.away) {
-          out.away = odd;
-          if (Number.isFinite(prob)) out.probAway = prob;
-        }
-      }
-    }
     // Double Chance (Market 10)
     else if (id === "10") {
       for (const o of outcomes) {
@@ -465,8 +444,7 @@ function deriveParticipantStats(game, side, providedStats) {
   const o2 = b.away || 2.0;
   const isHome = side === "home";
   const myOdd = isHome ? o1 : o2;
-  const isTwoWay = game.sport === "tennis" || game.sport === "basketball" || game.sport === "darts";
-  const drawImp = (!isTwoWay && b.draw) ? (1 / b.draw) : 0;
+  const drawImp = b.draw ? (1 / b.draw) : 0;
   const overround = (1 / o1) + (1 / o2) + drawImp;
   const rawP = (1 / myOdd) / overround;
   const p = Math.max(0.12, Math.min(0.88, rawP));
@@ -477,7 +455,7 @@ function deriveParticipantStats(game, side, providedStats) {
 
   const formPts = Math.max(2, Math.min(15, Math.round(p * 15.5)));
   const winsCount = Math.min(5, Math.max(0, Math.floor(formPts / 3)));
-  const drawsCount = isTwoWay ? 0 : Math.min(Math.max(0, 5 - winsCount), Math.max(0, Math.floor(formPts % 3)));
+  const drawsCount = Math.min(Math.max(0, 5 - winsCount), Math.max(0, Math.floor(formPts % 3)));
   const lossesCount = Math.max(0, 5 - winsCount - drawsCount);
   const form = [
     ...Array(winsCount).fill("W"),
@@ -485,21 +463,8 @@ function deriveParticipantStats(game, side, providedStats) {
     ...Array(lossesCount).fill("L")
   ].slice(0, 5);
 
-  const gfAvg = game.sport === "basketball"
-    ? Math.round((95 + p * 30) * 10) / 10
-    : game.sport === "hockey"
-    ? Math.round((2.2 + p * 2.4) * 10) / 10
-    : (game.sport === "tennis" || game.sport === "darts")
-    ? Math.round((3.8 + p * 3.5) * 10) / 10
-    : Math.round((1.0 + p * 1.6) * 10) / 10;
-
-  const gaAvg = game.sport === "basketball"
-    ? Math.round((115 - p * 25) * 10) / 10
-    : game.sport === "hockey"
-    ? Math.round((4.2 - p * 2.2) * 10) / 10
-    : (game.sport === "tennis" || game.sport === "darts")
-    ? Math.round((6.5 - p * 3.5) * 10) / 10
-    : Math.round((2.2 - p * 1.5) * 10) / 10;
+  const gfAvg = Math.round((1.0 + p * 1.6) * 10) / 10;
+  const gaAvg = Math.round((2.2 - p * 1.5) * 10) / 10;
 
   return {
     mp: 10,
@@ -781,7 +746,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
       const ofSchedulePromise = onefootballApi.fetchOneFootballSchedule(forceRefresh).catch(() => ({ ok: false, matches: [] }));
 
       const sportFetches = SPORTS_CONFIG.map(async (sp) => {
-        const marketParam = "marketId=1%2C10%2C14%2C16%2C18%2C29%2C186%2C202%2C219%2C225";
+        const marketParam = "marketId=1%2C10%2C14%2C16%2C18%2C29%2C202";
         const fbBase = "https://www.football.com/api/gh/factsCenter";
         const sbBase = "https://www.sportybet.com/api/gh/factsCenter";
         const upcUrls = [

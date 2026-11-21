@@ -100,20 +100,17 @@
     if (!m || m.status !== "LIVE") {
       return { liveClock: m?.displayTime || "", halfLabel: "", periodSubScore: "" };
     }
-    const sport = String(m.sport || "football").toLowerCase();
+    const sport = "football";
     const rawStatus = String(m.matchStatus || m.halfLabel || m.minute || m.displayTime || "").trim();
     const playedSecs = String(m.playedSeconds || "").trim();
-    const remTime = String(m.remainingTimeInPeriod || "").trim();
     const rawPeriod = String(m.livePeriod || m.period || "").trim();
 
     let liveClock = "";
-    if (sport === "basketball" || sport === "hockey") {
-      liveClock = remTime || playedSecs || (m.liveClock && m.liveClock !== "LIVE" ? String(m.liveClock) : "");
-    } else if (playedSecs && playedSecs.includes(":")) {
+    if (playedSecs && playedSecs.includes(":")) {
       const [mmStr, ssStr] = playedSecs.split(":");
       const mins = parseInt(mmStr, 10);
       const secs = parseInt(ssStr, 10);
-      if (sport === "football" && Number.isFinite(mins)) {
+      if (Number.isFinite(mins)) {
         liveClock = secs > 0 ? `${mins + 1}'` : `${mins}'`;
       } else {
         liveClock = playedSecs;
@@ -139,27 +136,16 @@
       halfLabel = "Extra Time";
     } else if (/^pen/i.test(rawStatus)) {
       halfLabel = "Penalties";
-    } else if (/^q\s*([1-4])/i.test(rawStatus)) {
-      halfLabel = `Q${rawStatus.match(/^q\s*([1-4])/i)[1]}`;
-    } else if (/set\s*(\d+)/i.test(rawStatus)) {
-      halfLabel = `Set ${rawStatus.match(/set\s*(\d+)/i)[1]}`;
-    } else if (/period\s*(\d+)/i.test(rawStatus)) {
-      const p = rawStatus.match(/period\s*(\d+)/i)[1];
-      halfLabel = p === "1" ? "1st Period" : p === "2" ? "2nd Period" : p === "3" ? "3rd Period" : `Period ${p}`;
-    } else if (sport === "football") {
-      if (rawPeriod === "1") halfLabel = "1st Half";
-      else if (rawPeriod === "2") halfLabel = "2nd Half";
-      else if (typeof m.minute === "number") halfLabel = m.minute <= 45 ? "1st Half" : "2nd Half";
-      else if (liveClock && parseInt(liveClock, 10) > 0) halfLabel = parseInt(liveClock, 10) <= 45 ? "1st Half" : "2nd Half";
-      else halfLabel = "In Play";
-    } else if (sport === "tennis") {
-      halfLabel = rawPeriod ? `Set ${rawPeriod}` : "In Play";
-    } else if (sport === "basketball") {
-      halfLabel = rawPeriod ? `Q${rawPeriod}` : "In Play";
-    } else if (sport === "hockey") {
-      halfLabel = rawPeriod ? `Period ${rawPeriod}` : "In Play";
+    } else if (rawPeriod === "1") {
+      halfLabel = "1st Half";
+    } else if (rawPeriod === "2") {
+      halfLabel = "2nd Half";
+    } else if (typeof m.minute === "number") {
+      halfLabel = m.minute <= 45 ? "1st Half" : "2nd Half";
+    } else if (liveClock && parseInt(liveClock, 10) > 0) {
+      halfLabel = parseInt(liveClock, 10) <= 45 ? "1st Half" : "2nd Half";
     } else {
-      halfLabel = rawStatus && !/^(live|running|scheduled|null)$/i.test(rawStatus) ? rawStatus : "In Play";
+      halfLabel = "In Play";
     }
 
     if (!liveClock) {
@@ -170,13 +156,7 @@
     const gScores = Array.isArray(m.gameScore) ? m.gameScore.filter(Boolean) : [];
     if (gScores.length > 0) {
       const fmtList = gScores.map((s) => s.replace(/:/g, "-"));
-      if (sport === "football") {
-        periodSubScore = `1H ${fmtList[0]}`;
-      } else if (sport === "tennis") {
-        periodSubScore = fmtList.join(", ") + (m.pointScore ? ` · ${m.pointScore.replace(/:/g, "-")}` : "");
-      } else {
-        periodSubScore = fmtList.join(" · ");
-      }
+      periodSubScore = `1H ${fmtList[0]}`;
     }
 
     return { liveClock, halfLabel, periodSubScore };
@@ -437,7 +417,7 @@
       active2hTab: "LIVE_2H", // LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
       active2hFilter: "ALL", // ALL | UEFA | DOMESTIC
       activeRuninLeague: "england",
-      activeRuninSport: "football", // football | tennis | basketball | darts | hockey
+      activeRuninSport: "football",
       activeRuninSportLeague: "ALL",
       activeRuninFilter: "ALL", // ALL | FAVORABLE | TOUGH | STRONG_PPG_EASY | STRONG_PPG
       standingsLeague: "england-premier-league",
@@ -654,10 +634,10 @@
         scheduleBackgroundUiRefresh(pendingRenderAll, Math.max(600, 1400 - timeSinceUserActive));
         return;
       }
-      // 2. Throttle background updates so they don't fire faster than once per 1.5 seconds
+      // 2. Throttle background updates so they don't churn the Home DOM while browsing
       const now = Date.now();
-      if (now - lastBackgroundRenderMs < 1200) {
-        scheduleBackgroundUiRefresh(pendingRenderAll, 1200 - (now - lastBackgroundRenderMs));
+      if (now - lastBackgroundRenderMs < 4000) {
+        scheduleBackgroundUiRefresh(pendingRenderAll, 4000 - (now - lastBackgroundRenderMs));
         return;
       }
       lastBackgroundRenderMs = now;
@@ -1274,9 +1254,10 @@
       return a.country.localeCompare(b.country);
     });
 
-    const hasMore = sortedCountries.length > 18 && !state.showAllCountries;
-    const renderList = hasMore ? sortedCountries.slice(0, 18) : sortedCountries;
-    const remainingCount = hasMore ? sortedCountries.slice(18).reduce((acc, c) => acc + c.count, 0) : 0;
+    const initialCountriesLimit = state.route === "/" ? 6 : 14;
+    const hasMore = sortedCountries.length > initialCountriesLimit && !state.showAllCountries;
+    const renderList = hasMore ? sortedCountries.slice(0, initialCountriesLimit) : sortedCountries;
+    const remainingCount = hasMore ? sortedCountries.slice(initialCountriesLimit).reduce((acc, c) => acc + c.count, 0) : 0;
 
     const cardsHtml = renderList
       .map((cb) => {
@@ -1329,7 +1310,7 @@
     const toggleHtml = hasMore ? `
       <div class="p-4 flex justify-center">
         <button type="button" class="analyze-inline-btn" data-toggle-all-countries="1" style="padding: 10px 24px; font-weight: 700; background: var(--card); border: 1px solid var(--brand); color: var(--brand); cursor: pointer;">
-          🌍 Show All Global Competitions (+${sortedCountries.length - 18} More Countries · ${remainingCount} Matches) ▾
+          🌍 Show All Global Competitions (+${sortedCountries.length - initialCountriesLimit} More Countries · ${remainingCount} Matches) ▾
         </button>
       </div>
     ` : "";
@@ -2574,7 +2555,6 @@
     }
 
     let groupsHtml = "";
-    const nonFootballSports = ["tennis", "basketball", "darts", "hockey"];
     if ((isLoadingRealtime && liveMatches.length === 0) || (isLoadingBookmakers && !bookmakerScan && filtered.length === 0)) {
       groupsHtml = `
         <div class="p-4 flex flex-col gap-3">
@@ -2584,22 +2564,7 @@
     } else if (isScopedList) {
       groupsHtml = renderCountryGroupedLeagues(sortMatchesInOrder(sourcePool), false);
     } else if (activeSportKey !== "all") {
-      // SINGLE SPORT ACTIVE: Non-football sports render the Run-In Difficulty Table format for Live & Upcoming, or Completed list for FT
-      if (nonFootballSports.includes(activeSportKey) && state.matchFilter !== "FT") {
-        const spMeta = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey) || spDef;
-        groupsHtml = renderNonFootballRuninSection(spMeta.key, {
-          mode: isLiveSection ? "LIVE" : "SCHEDULED",
-          dateFilter: isLiveSection ? null : (state.matchFilter === "FT" ? null : state.selectedDate),
-          showHeader: true,
-          scopePrefix: isLiveSection ? "live" : "sched"
-        }) || `
-          <div class="empty-state">
-            <span style="font-size:32px;">${spMeta.icon}</span>
-            <h3>No ${isLiveSection ? "live" : "upcoming"} ${escapeHtml(spMeta.label)} Run-In data available</h3>
-            <p class="text-sm">Waiting for real-time fixtures &amp; Sportradar opponent records.</p>
-          </div>
-        `;
-      } else if (filtered.length === 0) {
+      if (filtered.length === 0) {
         if (isLiveSection) {
           groupsHtml = `
             <div class="empty-state">
@@ -2645,14 +2610,6 @@
       const sectionsHtml = sportsToGroup
         .map((sp) => {
           const spMatches = filtered.filter((m) => (m.sport || "football").toLowerCase() === sp.key);
-          if (sp.key !== "football" && state.matchFilter !== "FT") {
-            return renderNonFootballRuninSection(sp.key, {
-              mode: isLiveSection ? "LIVE" : "SCHEDULED",
-              dateFilter: isLiveSection ? null : (state.matchFilter === "FT" ? null : state.selectedDate),
-              showHeader: true,
-              scopePrefix: isLiveSection ? "live" : "sched"
-            });
-          }
           if (spMatches.length === 0) return "";
 
           const subLeaguesHtml = renderCountryGroupedLeagues(spMatches, state.matchFilter === "FT");
@@ -3954,43 +3911,7 @@
     `;
   }
 
-  function renderNonFootballRuninSection(sportKey, opts = {}) {
-    const data = buildSportRuninData(sportKey, opts);
-    if (!data.ok || data.table.length === 0) return "";
-    const spMeta = RUNIN_SPORTS.find((s) => s.key === sportKey) || { key: sportKey, label: sportKey.toUpperCase(), icon: "🏆", entityLabel: "Team" };
-    const modeLabel = opts.mode === "LIVE" ? "Live In-Play" : opts.mode === "SCHEDULED" ? "Upcoming" : "Live & Upcoming";
-    const scopeKey = `${opts.scopePrefix || "sp"}:${sportKey}:${opts.mode || "ALL"}`;
-    const tableHtml = renderRuninTableBlock(data.table, {
-      scopeKey,
-      entityLabel: spMeta.entityLabel,
-      inlineLimit: 5
-    });
-
-    if (opts.showHeader === false) return tableHtml;
-
-    return `
-      <div class="sport-category-card" data-sport-runin="${spMeta.key}">
-        <div class="sport-category-header is-centered">
-          <span class="sport-hdr-spacer" aria-hidden="true"></span>
-          <div class="sport-hdr-center">
-            <span class="sport-category-icon">${spMeta.icon}</span>
-            <div>
-              <h3 class="sport-category-title">${escapeHtml(spMeta.label)} — Run-In Difficulty Table</h3>
-              <span class="sport-category-subtitle">${data.gamesCount} ${modeLabel} Matches · ${data.table.length} Competitors · Played Scores, Upcoming &amp; Strong PPG Tips</span>
-            </div>
-          </div>
-          <div class="sport-hdr-right">
-            <a class="sport-category-filter-btn" href="/run-in?sport=${escapeHtml(spMeta.key)}" data-route="/run-in?sport=${escapeHtml(spMeta.key)}">
-              Open ${escapeHtml(spMeta.label)} Run-In Center &rarr;
-            </a>
-          </div>
-        </div>
-        ${tableHtml}
-      </div>
-    `;
-  }
-
-  // ============ DEDICATED /run-in SOCCERSTATS.COM & MULTI-SPORT RUN-IN ANALYSIS VIEW ============
+  // ============ DEDICATED /run-in SOCCERSTATS.COM RUN-IN ANALYSIS VIEW ============
   function renderRunInAnalysisView() {
     const activeSport = String(state.activeRuninSport || "football").toLowerCase();
     const activeFilter = String(state.activeRuninFilter || "ALL").toUpperCase();
@@ -6149,9 +6070,6 @@
       .map((sp) => {
         const spGames = games.filter((g) => (g.sport || "football").toLowerCase() === sp.key);
         if (spGames.length === 0) return "";
-        if (sp.key !== "football") {
-          return renderNonFootballRuninSection(sp.key, { mode: "ALL", scopePrefix: "cat" });
-        }
         return `
           <div class="sport-category-card mb-4">
             <div class="sport-category-header is-centered">
@@ -7739,13 +7657,14 @@
       }
     }
     const converted = [];
+    const convertedKeys = new Set();
 
     for (const g of bookmakerScan.allGames) {
       if (isNcaaOrWomenMatch(g)) continue;
-      const matchId = `bm-${g.eventId}`;
-
       const sport = (g.sport || "football").toLowerCase();
-      const sportName = g.sportName || (sport === "tennis" ? "Tennis" : sport === "basketball" ? "Basketball" : sport === "hockey" ? "Ice Hockey" : sport === "darts" ? "Darts" : "Football");
+      if (sport !== "football") continue;
+      const matchId = `bm-${g.eventId}`;
+      const sportName = "Football";
       const homeName = cleanTeamDisplayNameClient(g.homeTeamName || "Home");
       const awayName = cleanTeamDisplayNameClient(g.awayTeamName || "Away");
       const homeLogoBest = g.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : "");
@@ -7978,7 +7897,9 @@
             awayVenue: g.awayStats.awayPpg || g.awayStats.ppg
           };
         }
-        if (sport === "football" && RT?.buildMatchAnalysis) {
+        const bmSig = `${g.bestOdds?.home || ""}|${g.bestOdds?.draw || ""}|${g.bestOdds?.away || ""}|${g.score || ""}|${isGameLive}`;
+        if ((!existing.analysis || existing._bmSig !== bmSig) && RT?.buildMatchAnalysis) {
+          existing._bmSig = bmSig;
           existing.analysis = RT.buildMatchAnalysis(existing, null);
         }
         continue;
@@ -8061,69 +7982,18 @@
         communityVote: { home: 65, draw: 15, away: 20, total: 100 }
       };
 
-      if (sport === "football" && RT?.buildMatchAnalysis) {
+      newMatch._bmSig = `${g.bestOdds?.home || ""}|${g.bestOdds?.draw || ""}|${g.bestOdds?.away || ""}|${g.score || ""}|${isGameLive}`;
+      if (RT?.buildMatchAnalysis) {
         newMatch.analysis = RT.buildMatchAnalysis(newMatch, null);
-      } else {
-        const hPpgVal = Number(g.homeStats?.ppg || 1.5);
-        const aPpgVal = Number(g.awayStats?.ppg || 1.3);
-        const hOddVal = Number(g.bestOdds?.home || 1.85);
-        const aOddVal = Number(g.bestOdds?.away || 1.95);
-        const pickHomeSide = hPpgVal > aPpgVal + 0.05 ? true : aPpgVal > hPpgVal + 0.05 ? false : hOddVal <= aOddVal;
-        const pickCode = pickHomeSide
-          ? (g.sport === "tennis" ? "WIN_1" : (g.bestOdds?.dc1X ? "1X" : "HOME"))
-          : (g.sport === "tennis" ? "WIN_2" : (g.bestOdds?.dcX2 ? "X2" : "AWAY"));
-        const pickOdd = pickHomeSide
-          ? (g.bestOdds?.dc1X || hOddVal)
-          : (g.bestOdds?.dcX2 || aOddVal);
-        const pickTarget = pickHomeSide ? homeName : awayName;
-        const runinConf = RT?.evaluateRuninTableConfirmation
-          ? RT.evaluateRuninTableConfirmation({
-              homeName,
-              awayName,
-              leagueSlug: newMatch.leagueSlug,
-              homePpg: hPpgVal,
-              awayPpg: aPpgVal,
-              homeDrop: g.ppgSchedule?.home?.trajectory === "DROP_RED",
-              awayDrop: g.ppgSchedule?.away?.trajectory === "DROP_RED",
-              marketCode: pickCode
-            })
-          : null;
-        newMatch.analysis = {
-          confidencePct: runinConf?.confirmed ? 76 : 64,
-          bestPick: {
-            code: pickCode,
-            label: `${pickTarget} (${pickCode})`,
-            odds: pickOdd,
-            prob: pickOdd > 1 ? Math.min(0.88, Math.max(0.45, +(1 / pickOdd).toFixed(2))) : 0.65,
-            reason: runinConf?.summary || `${pickTarget} Run-In & odds edge (${hPpgVal.toFixed(2)} vs ${aPpgVal.toFixed(2)} PPG)`,
-            runinConfirmed: Boolean(runinConf?.confirmed),
-            runinConfirmation: runinConf
-          },
-          factors: {
-            ppg: {
-              homeOverall: hPpgVal,
-              awayOverall: aPpgVal,
-              gap: Math.abs(hPpgVal - aPpgVal),
-              scheduleStrength: {
-                home: {
-                  isDropRed: g.ppgSchedule?.home?.trajectory === "DROP_RED",
-                  isGainBlue: g.ppgSchedule?.home?.trajectory === "GAIN_BLUE",
-                  reason: g.ppgSchedule?.home?.reason || ""
-                },
-                away: {
-                  isDropRed: g.ppgSchedule?.away?.trajectory === "DROP_RED",
-                  isGainBlue: g.ppgSchedule?.away?.trajectory === "GAIN_BLUE",
-                  reason: g.ppgSchedule?.away?.reason || ""
-                }
-              }
-            }
-          }
-        };
       }
 
-      // Ensure no duplicate match is ever added
-      const alreadyInConverted = converted.some((c) => areMatchesIdentical(c, newMatch)) || liveMatches.some((ex) => areMatchesIdentical(ex, newMatch));
-      if (!alreadyInConverted) {
+      // O(1) duplicate guard across converted & existing liveMatches
+      const pairH = normDedupeTeam(homeName);
+      const pairA = normDedupeTeam(awayName);
+      const pairKey = (pairH && pairA) ? `${sport}:${pairH}|${pairA}` : matchId;
+      const swappedKey = (pairH && pairA) ? `${sport}:${pairA}|${pairH}` : matchId;
+      if (!convertedKeys.has(pairKey) && !convertedKeys.has(swappedKey) && !matchLookupByTeams.has(pairKey) && !matchLookupSwapped.has(pairKey)) {
+        convertedKeys.add(pairKey);
         converted.push(newMatch);
       }
     }
@@ -8201,9 +8071,9 @@
 
     if (RT?.hydrateWeatherForMatches && RT?.isTipEligiblePreMatch5h) {
       const topWeatherCandidates = liveMatches
-        .filter((m) => (m.sport || "football").toLowerCase() === "football" && !m.weather?.ok && RT.isTipEligiblePreMatch5h(m))
+        .filter((m) => !m.weather?.ok && RT.isTipEligiblePreMatch5h(m))
         .sort((a, b) => (b.analysis?.confidencePct || 0) - (a.analysis?.confidencePct || 0))
-        .slice(0, 24);
+        .slice(0, 6);
       if (topWeatherCandidates.length > 0) {
         RT.hydrateWeatherForMatches(topWeatherCandidates).then((changed) => {
           if (changed) {
@@ -8243,7 +8113,7 @@
         renderMainContent();
       }
       if (showSuccessToast && bookmakerScan) {
-        showToast(`Scraped ${bookmakerScan.totalGamesScraped} games from SportyBet & Football.com across 5 sports.`);
+        showToast(`Synced ${bookmakerScan.totalGamesScraped} football games from SportyBet & Football.com.`);
       }
     }
   }

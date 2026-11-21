@@ -54,7 +54,7 @@ const SOCCERSTATS_LEAGUES = [
   { code: "finland", espnCode: "fin.1", mamonSlug: "finland-veikkausliiga", name: "Veikkausliiga", country: "Finland", flag: "🇫🇮", path: "finland/veikkausliiga/finland", priority: 40 }
 ];
 
-const CORE_TOP_CODES = SOCCERSTATS_LEAGUES.map((l) => l.code);
+const CORE_TOP_CODES = SOCCERSTATS_LEAGUES.slice(0, 12).map((l) => l.code);
 
 const leagueCache = new Map(); // code -> { expiresAt, payload }
 const inFlight = new Map();

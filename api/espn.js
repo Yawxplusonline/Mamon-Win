@@ -58,11 +58,31 @@ module.exports = async function handler(req, res) {
           if (upstream.ok) {
             pruneEspnCache();
             apiCache.set(relPath, {
+              ok: true,
+              status: upstream.status,
               body: text,
               expiresAt: Date.now() + getCacheTtlMs(relPath)
             });
+            return { ok: true, status: upstream.status, body: text };
           }
-          return { ok: upstream.ok, status: upstream.status, body: text };
+          // Cache rate-limit / 403 / 404 responses for 3 minutes and return graceful JSON so the browser never spams 403 errors
+          const fallbackBody = JSON.stringify({
+            ok: false,
+            blocked: upstream.status === 403 || upstream.status === 429,
+            upstreamStatus: upstream.status,
+            entries: [],
+            events: [],
+            children: [],
+            articles: []
+          });
+          pruneEspnCache();
+          apiCache.set(relPath, {
+            ok: false,
+            status: 200,
+            body: fallbackBody,
+            expiresAt: Date.now() + 180000
+          });
+          return { ok: false, status: 200, body: fallbackBody };
         })
         .finally(() => {
           inFlight.delete(relPath);
@@ -77,8 +97,8 @@ module.exports = async function handler(req, res) {
     res.setHeader("X-Cache", "MISS");
     res.end(result.body);
   } catch (err) {
-    res.statusCode = 502;
+    res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ error: err?.message || "Upstream fetch error" }));
+    res.end(JSON.stringify({ ok: false, error: err?.message || "Upstream fetch error", entries: [], events: [], children: [], articles: [] }));
   }
 };

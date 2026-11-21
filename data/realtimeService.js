@@ -370,7 +370,8 @@ window.MAMON_REALTIME = (() => {
     const espnCode = meta.espnCode || slugToEspnCode.get(leagueParam) || slugToEspnCode.get(meta.mamonSlug) || "";
     if (!espnCode) return null;
     try {
-      const stRes = await fetchJson(`https://site.api.espn.com/apis/v2/sports/soccer/${espnCode}/standings`, 5500);
+      const stRes = await fetchJson(`https://site.api.espn.com/apis/v2/sports/soccer/${espnCode}/standings`, 5000);
+      if (!stRes || stRes.blocked || stRes.ok === false) return null;
       const children = stRes?.children || [];
       const entries = [];
       for (const ch of children) {
@@ -4740,10 +4741,11 @@ window.MAMON_REALTIME = (() => {
       })
     );
 
-    const standingsPromiseAll = Promise.all(
+      const standingsPromiseAll = Promise.all(
       standingsTargets.map(async (lgMeta) => {
         try {
-          const stRes = await fetchJson(`https://site.api.espn.com/apis/v2/sports/soccer/${lgMeta.code}/standings`, 5000);
+          const stRes = await fetchJson(`https://site.api.espn.com/apis/v2/sports/soccer/${lgMeta.code}/standings`, 4500);
+          if (!stRes || stRes.blocked || stRes.ok === false) return;
 
           const entries = stRes?.children?.[0]?.standings?.entries || stRes?.standings?.entries || [];
           if (entries.length === 0) return;
@@ -6623,20 +6625,18 @@ window.MAMON_REALTIME = (() => {
       })
     ];
 
-    // Step 1: Fetch standings + global 3-day all/scoreboard + OneFootball real matches in parallel
-    // (all/scoreboard already aggregates all leagues globally; skipping 10 separate priority requests saves TCP socket pool)
+    // Step 1: Fetch top-4 standings + today's master scoreboard + OneFootball real matches in parallel (fast-path: skip redundant multi-day/secondary ESPN floods)
     const standingsPromise = fetchStandingsAndInjuries(true);
     const priorityPromise = Promise.resolve([]);
 
     const allScoreboardPromise = Promise.all(
-      datesToFetch.map((dt) =>
-        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${dt.ymd}`, 5000)
+      datesToFetch.slice(0, 2).map((dt) =>
+        fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${dt.ymd}`, 4500)
           .then((json) => ({ code: null, json }))
       )
     );
 
-    // Guaranteed Live Master Scoreboard: capture ALL currently in-play matches globally without date cutoff
-    const liveMasterScoreboardPromise = fetchJson("https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard", 5000)
+    const liveMasterScoreboardPromise = fetchJson("https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard", 4500)
       .then((json) => ({ code: null, json }))
       .catch(() => null);
 
@@ -6815,25 +6815,15 @@ window.MAMON_REALTIME = (() => {
       DATA.NEWS = [...liveArticles.slice(0, 6), ...DATA.NEWS];
     }
 
-    // Launch immediate city weather + pitch hydration in parallel for Top Today Power & >=5h Sure-Odds candidates + background-hydrate top 24 fixtures
-    const initialPower = buildTodayPowerRankings(activeMatches);
-    const topPre5Candidates = activeMatches
+    // Launch lightweight city weather + top-4 fixture hydration (prevents 6-socket browser pool starvation; modals enrich full details on demand)
+    const initialWeatherTargets = activeMatches
       .filter((m) => isTipEligiblePreMatch5h(m))
-      .sort((a, b) => (b.analysis?.confidencePct || 0) - (a.analysis?.confidencePct || 0))
-      .slice(0, 18);
-    const initialWeatherTargets = [
-      ...topPre5Candidates,
-      ...initialPower.strongHome.slice(0, 6).map((x) => x.match),
-      ...initialPower.strongAway.slice(0, 6).map((x) => x.match),
-      ...initialPower.worstHome.slice(0, 6).map((x) => x.match),
-      ...initialPower.worstAway.slice(0, 6).map((x) => x.match)
-    ];
+      .slice(0, 6);
 
     const isHydratableEspnMatch = (m) => /^\d+$/.test(String(m?.espnId || "").trim()) || /^\d+$/.test(String(m?.homeEspnId || "").trim()) || /^\d+$/.test(String(m?.awayEspnId || "").trim());
-    const hydrationQueue = [
-      ...activeMatches.filter((m) => isTipEligiblePreMatch5h(m) && isHydratableEspnMatch(m)).slice(0, 12),
-      ...activeMatches.filter((m) => isHydratableEspnMatch(m)).slice(0, 12)
-    ].filter((m, idx, arr) => arr.indexOf(m) === idx).slice(0, 20);
+    const hydrationQueue = activeMatches
+      .filter((m) => isHydratableEspnMatch(m))
+      .slice(0, 4);
     if (typeof onProgress === "function") {
       let progressTimer = null;
       const notifyProgress = () => {
@@ -6867,25 +6857,11 @@ window.MAMON_REALTIME = (() => {
 
       if (hydrationQueue.length > 0) {
         (async () => {
-          for (let i = 0; i < hydrationQueue.length; i += 4) {
-            const batch = hydrationQueue.slice(i, i + 4);
+          for (let i = 0; i < hydrationQueue.length; i += 2) {
+            const batch = hydrationQueue.slice(i, i + 2);
             await Promise.all(batch.map((m) => enrichMatchDetails(m).catch(() => m)));
           }
           notifyProgress();
-          const postPower = buildTodayPowerRankings(activeMatches);
-          const postWeatherTargets = [
-            ...postPower.strongHome.slice(0, 6),
-            ...postPower.strongAway.slice(0, 6),
-            ...postPower.worstHome.slice(0, 6),
-            ...postPower.worstAway.slice(0, 6)
-          ].map((x) => x.match);
-          const wChanged2 = await hydrateWeatherForMatches(postWeatherTargets);
-          if (wChanged2) {
-            postWeatherTargets.forEach((m) => {
-              if (!m.enriched) m.analysis = buildMatchAnalysis(m);
-            });
-            notifyProgress();
-          }
         })().catch(() => {});
       }
     }

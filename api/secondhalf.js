@@ -2,7 +2,7 @@
 // Aggregates real ESPN match goal minutes (1H vs 2H), per-league 2H dominance,
 // per-team 2H scoring rates, and 1st-Half Draw -> 2nd-Half Goal breakout teams.
 
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+const UA = "MAMON-WIN/2.0";
 
 const TARGET_LEAGUES = [
   // UEFA Club Competitions

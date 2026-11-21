@@ -410,10 +410,13 @@
       activeHandicapFilter: "ALL", // ALL | SAFE_PLUS | DOUBLE_CHANCE | FAVORITE_MINUS | HIGH_PROB
       activeSpecialTipTab: "5MIN_DRAW", // 5MIN_DRAW | NO_3_ROW | SLIPS | LEAGUES
       activeSpecialTipFilter: "ALL", // ALL | TODAY | HIGH_PROB | HIGH_EV
-      activeStatMarket: "GOALS", // GOALS | SHOT_ON_TARGET | THROW_INS
+      activeStatMarket: "GOALS", // GOALS | SHOTS_ON_TARGET | THROW_INS
       activeStatSideFilter: "ALL", // ALL | OVER | UNDER | PLUS_EV
-      active2hTab: "LIVE_2H", // LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
+      active2hTab: "TODAY_2H", // TODAY_2H | LIVE_2H | LEAGUES_2H | TEAMS_2H | HT_DRAW_2H
       active2hFilter: "ALL", // ALL | UEFA | DOMESTIC
+      active2hTodayFilter: "ALL", // ALL | COMBO | HT_DRAW | HIGH_2H | LIVE_NOW
+      active2hTodaySort: "SCORE", // SCORE | TIME
+      active2hSearch: "",
       activeRuninLeague: "england",
       activeRuninSport: "football",
       activeRuninSportLeague: "ALL",
@@ -4610,26 +4613,38 @@
     if (!secondHalfIntel && !isLoadingSecondHalf) {
       loadSecondHalfIntelligence(false);
     }
-    const shData = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel);
+    const shData = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel, bookmakerScan);
     const liveTop = (shData.livePriorityPicks.length > 0 ? shData.livePriorityPicks : shData.liveAll).slice(0, 2);
     const topLeague = (shData.leaguesRanked || [])[0] || null;
     const topTeam = (shData.teams2hScorers || [])[0] || null;
     const topHtKing = (shData.htDrawBreakoutTeams || [])[0] || null;
-    const totalSignals = shData.livePriorityPicks.length + (shData.leaguesRanked?.length || 0);
+    const todayAllCount = shData.todayAll?.length || 0;
+    const todayCombos = shData.todayCombosCount || 0;
+    const topTodayCombo = (shData.todayAll || [])[0] || null;
+    const totalSignals = Math.max(todayAllCount, shData.livePriorityPicks.length + (shData.leaguesRanked?.length || 0));
 
     return `
       <section class="panel-section sh2-home-card" id="secondHalfHighestHomeCard">
         <div class="panel-header" style="border-bottom: 1px solid rgba(249, 115, 22, 0.25); padding: 12px 16px;">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="sure-pill-tag" style="background:#f97316;color:#fff;font-weight:800;">🔥 2ND HALF HIGHEST SCORING</span>
-            <span class="sure-pill-tag" style="background:rgba(16,185,129,0.14);color:var(--text);border:1px solid rgba(16,185,129,0.35);font-weight:700;">${shData.liveAll.length} Live · ${shData.liveHtDraws.length} HT Draws · ${shData.leaguesRanked?.length || 0} Leagues (UCL/UEL/UECL + Domestic)</span>
+            <span class="sure-pill-tag" style="background:#f97316;color:#fff;font-weight:800;">🔥 1ST HALF DRAW &amp; 2ND HALF HIGHEST SCORING</span>
+            <span class="sure-pill-tag" style="background:rgba(16,185,129,0.14);color:var(--text);border:1px solid rgba(16,185,129,0.35);font-weight:700;">${todayAllCount} Today Games (${todayCombos} Combos) · ${shData.liveAll.length} Live · ${shData.leaguesRanked?.length || 0} Leagues</span>
           </div>
           <div class="flex items-center gap-2">
-            <a class="btn-subtle text-xs" href="/2h-highest" data-route="/2h-highest" style="font-weight:800;color:#ea580c;">Open 2H Highest Center (${totalSignals}+ Signals) &rarr;</a>
+            <a class="btn-subtle text-xs" href="/2h-highest?tab=TODAY_2H" data-route="/2h-highest?tab=TODAY_2H" style="font-weight:800;color:#ea580c;">Open All Today's Games (${todayAllCount}) &rarr;</a>
           </div>
         </div>
         <div class="p-3">
           <div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px;">
+            <a class="power-preview-tile is-strong" href="/2h-highest?tab=TODAY_2H" data-route="/2h-highest?tab=TODAY_2H" style="border-left: 3px solid #ea580c; background: var(--bg-surface);">
+              <div class="flex items-center justify-between gap-1 w-full">
+                <span class="tile-kicker font-bold" style="color:#ea580c;">📅 TODAY: 1H DRAW &amp; 2H HIGHEST</span>
+                <span class="ev-return-pill" style="background:#ea580c;color:#fff;">${todayAllCount} Games</span>
+              </div>
+              <div class="font-bold text-sm mt-1 truncate w-full">${topTodayCombo ? `${escapeHtml(cleanTeamDisplayNameClient(topTodayCombo.homeName))} vs ${escapeHtml(cleanTeamDisplayNameClient(topTodayCombo.awayName))}` : "All Today's Matches + Easy Tips"}</div>
+              <div class="text-xs text-muted mt-0.5 truncate w-full">${todayCombos} 1H Draw + 2H Combos · ${shData.todayStrongHtDrawsCount || 0} Strong 1H X · ${shData.todayStrong2hCount || 0} Strong 2H</div>
+              <div class="text-xs font-bold mt-1.5" style="color:#ea580c;">⚡ View All Today's Tips Side-by-Side &rarr;</div>
+            </a>
             ${liveTop.map((item) => {
               const m = item.match;
               const hName = cleanTeamDisplayNameClient(item.homeName);
@@ -4706,9 +4721,12 @@
       loadSecondHalfIntelligence(false);
     }
 
-    const activeTab = state.active2hTab || "LIVE_2H";
+    const activeTab = state.active2hTab || "TODAY_2H";
     const activeFilter = state.active2hFilter || "ALL";
-    const data = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel);
+    const activeTodayFilter = state.active2hTodayFilter || "ALL";
+    const activeTodaySort = state.active2hTodaySort || "SCORE";
+    const searchQuery = String(state.active2hSearch || "").trim().toLowerCase();
+    const data = RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel, bookmakerScan);
 
     const filterScope = (arr) => {
       if (activeFilter === "UEFA") return (arr || []).filter((x) => x.category === "UEFA");
@@ -4738,7 +4756,117 @@
 
     let tabBodyHtml = "";
 
-    if (activeTab === "LIVE_2H") {
+    if (activeTab === "TODAY_2H") {
+      const todayBase = data.todayAll || [];
+      let todayFiltered = todayBase.filter((g) => {
+        if (activeTodayFilter === "COMBO" && !g.isCombo && !(g.isHtDrawLanded && g.prob2hHighest >= 54)) return false;
+        if (activeTodayFilter === "HT_DRAW" && g.htDrawVerdict !== "STRONG" && g.htDrawVerdict !== "LANDED") return false;
+        if (activeTodayFilter === "HIGH_2H" && g.shVerdict !== "STRONG") return false;
+        if (activeTodayFilter === "LIVE_NOW" && !g.isLive) return false;
+        if (searchQuery) {
+          const blob = `${g.homeName} ${g.awayName} ${g.leagueName} ${g.country} ${g.footballComGameId || ""} ${g.sportybetGameId || ""}`.toLowerCase();
+          if (!blob.includes(searchQuery)) return false;
+        }
+        return true;
+      });
+
+      if (activeTodaySort === "TIME") {
+        todayFiltered = [...todayFiltered].sort((a, b) => (b.isLive ? 1 : 0) - (a.isLive ? 1 : 0) || a.kickoffMs - b.kickoffMs || b.comboScore - a.comboScore);
+      }
+
+      tabBodyHtml = `
+        <div class="panel-section p-3 mb-4" style="border:1px solid rgba(249,115,22,0.28);background:var(--bg-surface);">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button type="button" class="filter-chip${activeTodayFilter === "ALL" ? " is-active" : ""}" data-2h-today-filter="ALL">📅 All Today's Games (${todayBase.length})</button>
+              <button type="button" class="filter-chip${activeTodayFilter === "COMBO" ? " is-active" : ""}" data-2h-today-filter="COMBO">🔥 1H Draw + 2H Combos (${data.todayCombosCount || 0})</button>
+              <button type="button" class="filter-chip${activeTodayFilter === "HT_DRAW" ? " is-active" : ""}" data-2h-today-filter="HT_DRAW">⚖️ Strong 1H Draw (${data.todayStrongHtDrawsCount || 0})</button>
+              <button type="button" class="filter-chip${activeTodayFilter === "HIGH_2H" ? " is-active" : ""}" data-2h-today-filter="HIGH_2H">⚽ Strong 2H Highest (${data.todayStrong2hCount || 0})</button>
+              <button type="button" class="filter-chip${activeTodayFilter === "LIVE_NOW" ? " is-active" : ""}" data-2h-today-filter="LIVE_NOW">🔴 Live Today (${data.todayLiveCount || 0})</button>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button type="button" class="btn-subtle text-xs" data-2h-today-sort="1" style="font-weight:700;">
+                ${activeTodaySort === "TIME" ? "🕒 Sort: Kickoff Time" : "⭐ Sort: Best Tip Score"}
+              </button>
+              <input id="sh2TodaySearch" type="search" value="${escapeHtml(state.active2hSearch || "")}" placeholder="Filter team, league or FB ID..." class="px-2.5 py-1.5 rounded text-xs" style="border:1px solid var(--line-soft);background:var(--bg);color:var(--text);min-width:210px;" />
+            </div>
+          </div>
+          <div class="text-xs text-muted mt-2">Showing <strong class="text-text">${todayFiltered.length}</strong> of <strong class="text-text">${todayBase.length}</strong> today's football fixtures — every match pairs a <strong>1st Half Draw (HT X)</strong> tip and a <strong>2nd Half Highest Scoring (2H &gt; 1H)</strong> tip for instant staking access.</div>
+        </div>
+
+        ${todayFiltered.length === 0
+          ? `<div class="panel-section p-4 text-sm text-muted">No today's games match this filter or search. Click <strong>All Today's Games</strong> above to view the full slate.</div>`
+          : `<div class="sh2-grid">
+              ${todayFiltered.map((g) => {
+                const hName = cleanTeamDisplayNameClient(g.homeName);
+                const aName = cleanTeamDisplayNameClient(g.awayName);
+                const hLogo = resolveTeamLogoByName(hName, g.homeLogo);
+                const aLogo = resolveTeamLogoByName(aName, g.awayLogo);
+                const cardCls = g.isHigh1HTrap ? "is-trap" : (g.isCombo || g.isHtDrawLanded) ? "is-ht-draw" : "";
+                const badgeCls = g.isHigh1HTrap ? "is-red" : (g.isCombo || g.isHtDrawLanded) ? "is-green" : "";
+                const koText = g.isLive
+                  ? `🔴 LIVE ${g.minute}' (${g.scoreText})`
+                  : `🕒 ${g.kickoffLabel}${g.countdownLabel ? ` · ${g.countdownLabel}` : ""}`;
+                const htColor = g.htDrawVerdict === "LANDED" || g.htDrawVerdict === "STRONG" ? "#059669" : g.htDrawVerdict === "LEAN" ? "#7c3aed" : "#64748b";
+                const shColor = g.isHigh1HTrap ? "#dc2626" : g.shVerdict === "STRONG" ? "#ea580c" : g.shVerdict === "LEAN" ? "#2563eb" : "#64748b";
+                const copyStr = `${hName} vs ${aName} (${koText}) — 1H Draw Tip: ${g.htDrawTip} | 2H Tip: ${g.shHighestTip}${g.footballComGameId ? ` [FB #${g.footballComGameId}]` : ""}`;
+
+                return `
+                  <article class="sh2-card ${cardCls}" ${g.matchId ? `data-match-id="${escapeHtml(String(g.matchId))}" style="cursor:pointer;"` : ""}>
+                    <div class="sh2-card-head">
+                      <span class="sh2-league-pill">${countryFlagBadgeHtml(g.country, g.flag, true)} ${escapeHtml(g.country)} · ${escapeHtml(g.leagueName)}</span>
+                      <span class="sh2-badge ${badgeCls}">${escapeHtml(g.easyBadge)}</span>
+                    </div>
+
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <div class="flex items-center gap-1.5 min-w-0">
+                        ${crestImg(hLogo, hName, "#f97316", 20)}
+                        <span class="font-extrabold text-sm truncate">${escapeHtml(hName)}</span>
+                        <span class="text-xs text-muted">${g.isLive ? `<strong class="font-mono text-text px-1.5 py-0.5 rounded" style="background:var(--bg-subtle);">${escapeHtml(g.scoreText)}</strong>` : "vs"}</span>
+                        <span class="font-extrabold text-sm truncate">${escapeHtml(aName)}</span>
+                        ${crestImg(aLogo, aName, "#3b82f6", 20)}
+                      </div>
+                      <div class="flex items-center gap-1.5 text-xs font-mono">
+                        ${g.footballComGameId ? `<span class="game-id-pill" data-copy-gameid="${escapeHtml(String(g.footballComGameId))}" title="Copy Football.com Game ID">FB #${escapeHtml(String(g.footballComGameId))}</span>` : ""}
+                        ${g.sportybetGameId ? `<span class="game-id-pill">SB #${escapeHtml(String(g.sportybetGameId))}</span>` : ""}
+                        <span class="text-muted">${escapeHtml(koText)}</span>
+                      </div>
+                    </div>
+
+                    <div class="grid gap-2 mt-1" style="grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));">
+                      <div class="p-2 rounded" style="background:rgba(124,58,237,0.06);border-left:3px solid ${htColor};">
+                        <div class="flex items-center justify-between gap-1 text-xs">
+                          <span class="font-extrabold" style="color:${htColor};">⚖️ 1st Half Draw (HT X)</span>
+                          <span class="font-mono font-bold">${g.probHtDrawPct}% · Fair ${g.fairHtDrawOdds.toFixed(2)}</span>
+                        </div>
+                        <div class="text-xs font-semibold text-text mt-1">${escapeHtml(g.htDrawTip)}</div>
+                      </div>
+                      <div class="p-2 rounded" style="background:rgba(249,115,22,0.07);border-left:3px solid ${shColor};">
+                        <div class="flex items-center justify-between gap-1 text-xs">
+                          <span class="font-extrabold" style="color:${shColor};">🔥 2nd Half Highest (2H&gt;1H)</span>
+                          <span class="font-mono font-bold">${g.prob2hHighest}% · O0.5 ${g.prob2hOver05}%</span>
+                        </div>
+                        <div class="text-xs font-semibold text-text mt-1">${escapeHtml(g.shHighestTip)}</div>
+                      </div>
+                    </div>
+
+                    ${(g.reasons || []).length > 0 ? `
+                      <div class="sh2-proof-chips">
+                        ${g.reasons.map((r) => `<span class="sh2-proof-chip">📊 ${escapeHtml(r)}</span>`).join("")}
+                      </div>
+                    ` : ""}
+
+                    <div class="sh2-tip-box flex items-center justify-between gap-2 flex-wrap">
+                      <span class="text-xs"><strong>🎯 Easy Tip:</strong> ${escapeHtml(g.easyTip)}</span>
+                      <button type="button" class="btn-subtle text-xs" style="color:#ea580c;font-weight:700;white-space:nowrap;" data-copy-tip="${escapeHtml(copyStr)}">Copy Tip 📋</button>
+                    </div>
+                  </article>
+                `;
+              }).join("")}
+            </div>`
+        }
+      `;
+    } else if (activeTab === "LIVE_2H") {
       const liveCardsHtml = data.liveAll.length > 0
         ? `<div class="sh2-grid">
             ${data.liveAll.map((item) => {
@@ -4955,14 +5083,14 @@
           </div>`;
     }
 
-    const showScopeFilters = activeTab !== "LIVE_2H";
+    const showScopeFilters = activeTab !== "LIVE_2H" && activeTab !== "TODAY_2H";
 
     return `
       <section class="sh2-hero">
         <div class="sh2-hero-top">
           <div>
-            <h1 class="sh2-hero-title">🔥 2nd Half Highest Scoring Intelligence Center</h1>
-            <p class="sh2-hero-sub">Extracted directly from live in-play matches + verified goal-minute history across <strong>UEFA Champions League, UEFA Europa League, UEFA Conference League</strong> &amp; 17 Domestic Leagues. Pinpoints leagues with highest 2H scoring share, teams that explode after Half-Time, and <strong>1H Draw → 2H Goal Kings</strong>.</p>
+            <h1 class="sh2-hero-title">🔥 1st Half Draw &amp; 2nd Half Highest Scoring Intelligence Center</h1>
+            <p class="sh2-hero-sub">All today's football fixtures scored side-by-side for <strong>1st Half Draw (HT X)</strong> and <strong>2nd Half Highest Scoring (2H &gt; 1H)</strong>, plus live in-play tracking &amp; goal-minute history across UEFA (UCL/UEL/UECL) &amp; 17 Domestic Leagues.</p>
           </div>
           <button type="button" class="btn-subtle" data-2h-refresh style="background:rgba(249,115,22,0.2);color:#fed7aa;border:1px solid rgba(251,146,60,0.45);font-weight:700;">
             ${isLoadingSecondHalf ? "⏳ Syncing..." : "🔄 Refresh 2H Engine"}
@@ -4970,8 +5098,12 @@
         </div>
         <div class="sh2-hero-stats">
           <div class="sh2-stat-box">
+            <div class="sh2-stat-num">${(data.todayAll || []).length}</div>
+            <div class="sh2-stat-lbl">Today's Games (${data.todayCombosCount || 0} Combos)</div>
+          </div>
+          <div class="sh2-stat-box">
             <div class="sh2-stat-num">${data.liveAll.length}</div>
-            <div class="sh2-stat-lbl">Live Matches Tracked (${data.liveHtDraws.length} HT Draw)</div>
+            <div class="sh2-stat-lbl">Live Tracked (${data.liveHtDraws.length} HT Draw)</div>
           </div>
           <div class="sh2-stat-box">
             <div class="sh2-stat-num">${data.leaguesAnalyzed || data.leaguesRanked.length}</div>
@@ -4985,15 +5117,12 @@
             <div class="sh2-stat-num">${data.htDrawBreakoutTeams.length}</div>
             <div class="sh2-stat-lbl">1H Draw → 2H Goal Kings</div>
           </div>
-          <div class="sh2-stat-box">
-            <div class="sh2-stat-num">${data.totalMatchesAnalyzed || 0}</div>
-            <div class="sh2-stat-lbl">Real Matches Verified</div>
-          </div>
         </div>
       </section>
 
       <div class="sh2-controls-bar">
         <div class="sh2-tabs">
+          <button type="button" class="filter-chip${activeTab === "TODAY_2H" ? " is-active" : ""}" data-2h-tab="TODAY_2H">📅 Today's Games: 1H Draw &amp; 2H (${(data.todayAll || []).length})</button>
           <button type="button" class="filter-chip${activeTab === "LIVE_2H" ? " is-active" : ""}" data-2h-tab="LIVE_2H">🔴 Live Games (${data.liveAll.length})</button>
           <button type="button" class="filter-chip${activeTab === "LEAGUES_2H" ? " is-active" : ""}" data-2h-tab="LEAGUES_2H">🏆 High-2H Leagues (${data.leaguesRanked.length})</button>
           <button type="button" class="filter-chip${activeTab === "TEAMS_2H" ? " is-active" : ""}" data-2h-tab="TEAMS_2H">⚽ 2H Scoring Teams (${data.teams2hScorers.length})</button>
@@ -5145,9 +5274,11 @@
   }
 
   function renderWinningOnlyBanner() {
-    const shTotal = (RT?.buildLiveSecondHalfSectionData && secondHalfIntel)
-      ? (RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel).livePriorityPicks?.length || 0)
-      : 0;
+    const shSec = RT?.buildLiveSecondHalfSectionData
+      ? RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel, bookmakerScan)
+      : null;
+    const shTotal = shSec?.todayAll?.length || shSec?.livePriorityPicks?.length || 0;
+    const shCombos = shSec?.todayCombosCount || 0;
     const ouTotal = Object.values(statPropsData?.counts || {}).reduce((a, b) => a + (Number(b) || 0), 0);
     const strongCount = (bookmakerScan?.strongHomeMismatch?.length || 0) + (bookmakerScan?.strongAwayMismatch?.length || 0);
     const trapCount = (bookmakerScan?.worstHomeMismatch?.length || 0) + (bookmakerScan?.worstAwayMismatch?.length || 0);
@@ -5162,9 +5293,9 @@
             </div>
           </div>
           <div class="grid gap-2 mt-2.5" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <a class="power-preview-tile is-strong" href="/2h-highest" data-route="/2h-highest" style="border-left:3px solid #f97316; background: var(--bg-surface);">
-              <div class="text-xs font-extrabold" style="color:#ea580c;">🔥 2H Highest Scoring (${shTotal} Live)</div>
-              <div class="text-xs text-muted mt-0.5">HT 0-0 / Tight-HT → 2nd Half Goals</div>
+            <a class="power-preview-tile is-strong" href="/2h-highest?tab=TODAY_2H" data-route="/2h-highest?tab=TODAY_2H" style="border-left:3px solid #f97316; background: var(--bg-surface);">
+              <div class="text-xs font-extrabold" style="color:#ea580c;">🔥 Today: 1H Draw &amp; 2H (${shTotal} Games)</div>
+              <div class="text-xs text-muted mt-0.5">${shCombos} 1H Draw + 2H Combos · All Today's Tips</div>
             </a>
             <a class="power-preview-tile is-strong" href="/ou-props?market=SHOTS_ON_TARGET" data-route="/ou-props?market=SHOTS_ON_TARGET" style="border-left:3px solid #059669; background: var(--bg-surface);">
               <div class="text-xs font-extrabold" style="color:#059669;">🎯 Winning O/U Props (${ouTotal} Verified)</div>
@@ -7945,7 +8076,7 @@
     }
 
     // Fast-path: Skip inert elements (backgrounds, containers, plain text) in 0.05ms (zero cascade latency)
-    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-stat-market], [data-statprops-cat], [data-statprops-filter], [data-statprops-refresh], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-refresh], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
+    const actionable = e.target.closest("button, a, input, select, textarea, [data-route], [data-filter], [data-date], [data-match-id], [data-news-id], [data-legal], [data-select-tier], [data-drop-filter], [data-ppg-cat], [data-sport-filter], [data-stat-market], [data-statprops-cat], [data-statprops-filter], [data-statprops-refresh], [data-tier-jump], [data-runin-sport], [data-runin-league], [data-runin-filter], [data-runin-refresh], [data-toggle-runin-team], [data-strong-filter], [data-worst-filter], [data-intel-tab], [data-power-cat], [data-mismatch-cat], [data-rescan-bookmakers], [data-handicap-filter], [data-special-tab], [data-special-filter], [data-2h-tab], [data-2h-filter], [data-2h-today-filter], [data-2h-today-sort], [data-2h-refresh], [data-copy-tip], [data-copy-gameid], [data-quick-stake], [data-regen-slip], [data-toggle-factors], [data-hydrate-match], [data-follow-club], [data-follow-league], [data-standings-tab], [data-runin-tip-copy], [data-toggle-all-countries], [data-close-modal], [data-match-tab], #settingsBtn, #toggleThemeBtn, #toggleTickerBtn, #refreshMatchesBtn, #copySureSlipBtn, #expandAllFactorsBtn, #modalBackdrop");
     if (!actionable) {
       if (!e.target.closest("#settingsMenu") && !e.target.closest("#settingsBtn")) {
         const sm = document.getElementById("settingsMenu");
@@ -8247,6 +8378,21 @@
     const sh2FilterBtn = e.target.closest("[data-2h-filter]");
     if (sh2FilterBtn) {
       state.active2hFilter = sh2FilterBtn.getAttribute("data-2h-filter");
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const sh2TodayFilterBtn = e.target.closest("[data-2h-today-filter]");
+    if (sh2TodayFilterBtn) {
+      state.active2hTodayFilter = sh2TodayFilterBtn.getAttribute("data-2h-today-filter") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    if (e.target.closest("[data-2h-today-sort]")) {
+      state.active2hTodaySort = state.active2hTodaySort === "TIME" ? "SCORE" : "TIME";
       saveState();
       scheduleRenderMainContent();
       return;
@@ -8560,6 +8706,25 @@
       state.activeRuninSportLeague = e.target.value || "ALL";
       saveState();
       scheduleRenderMainContent();
+    }
+  });
+
+  let sh2SearchTimer = null;
+  document.addEventListener("input", (e) => {
+    if (e.target && e.target.id === "sh2TodaySearch") {
+      const val = e.target.value || "";
+      state.active2hSearch = val;
+      if (sh2SearchTimer) clearTimeout(sh2SearchTimer);
+      sh2SearchTimer = setTimeout(() => {
+        scheduleUiUpdate(() => {
+          renderMainContent();
+          const el = document.getElementById("sh2TodaySearch");
+          if (el) {
+            el.focus();
+            try { el.setSelectionRange(val.length, val.length); } catch {}
+          }
+        });
+      }, 60);
     }
   });
 

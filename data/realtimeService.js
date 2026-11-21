@@ -6960,7 +6960,7 @@ window.MAMON_REALTIME = (() => {
     }
   }
 
-  function buildLiveSecondHalfSectionData(matches = [], analyticsOverride = null) {
+  function buildLiveSecondHalfSectionData(matches = [], analyticsOverride = null, bookmakerScanOverride = null) {
     const intel = analyticsOverride || secondHalfAnalyticsCache || {
       ok: false,
       leaguesRanked: [],
@@ -7166,8 +7166,396 @@ window.MAMON_REALTIME = (() => {
       nextMatch: findMatchForTeam(t.team, t.leagueSlug)
     }));
 
+    // ============ ALL TODAY'S GAMES: 1ST HALF DRAW (HT X) & 2ND HALF HIGHEST SCORING TIPS ============
+    const todayIsoStr = isoDate(new Date());
+    const liveItemByKey = new Map();
+    for (const li of liveItems) {
+      const k = `${normTeamMatchKey(li.homeName)}::${normTeamMatchKey(li.awayName)}`;
+      if (k) liveItemByKey.set(k, li);
+      if (li.match?.id) liveItemByKey.set(`id:${li.match.id}`, li);
+    }
+
+    const bkGames = bookmakerScanOverride?.allGames || [];
+    const bkByKey = new Map();
+    for (const g of bkGames) {
+      if (g.sport && String(g.sport).toLowerCase() !== "football") continue;
+      const k = `${normTeamMatchKey(g.homeTeamName)}::${normTeamMatchKey(g.awayTeamName)}`;
+      if (k && !bkByKey.has(k)) bkByKey.set(k, g);
+    }
+
+    const todayAll = [];
+    const seenTodayKeys = new Set();
+
+    const isSameLocalToday = (koMs, explicitDateStr) => {
+      if (explicitDateStr === todayIsoStr) return true;
+      if (Number.isFinite(koMs) && isoDate(new Date(koMs)) === todayIsoStr) return true;
+      return false;
+    };
+
+    const isSameTodayFixture = (h1, a1, ko1, h2, a2, ko2) => {
+      if (!h1 || !a1 || !h2 || !a2) return false;
+      if (Number.isFinite(ko1) && Number.isFinite(ko2) && Math.abs(ko1 - ko2) > 4 * 3600000) return false;
+      if (matchTeamsSimilar(h1, h2) && matchTeamsSimilar(a1, a2)) return true;
+      const sideClose = (x, y) => {
+        if (matchTeamsSimilar(x, y)) return true;
+        const wx = normTeamMatchKey(x).split(" ").filter((w) => w.length >= 5);
+        const wy = normTeamMatchKey(y).split(" ").filter((w) => w.length >= 5);
+        return wx.some((a) => wy.some((b) => a === b || a.slice(0, 5) === b.slice(0, 5)));
+      };
+      return sideClose(h1, h2) && sideClose(a1, a2);
+    };
+
+    const scoreTodayGame = ({
+      rawMatch,
+      bkGame,
+      homeName,
+      awayName,
+      homeLogo,
+      awayLogo,
+      leagueName,
+      leagueSlug,
+      country,
+      flag,
+      koMs,
+      kickoffLabel,
+      countdownLabel,
+      isLive
+    }) => {
+      const matchKey = `${normTeamMatchKey(homeName)}::${normTeamMatchKey(awayName)}`;
+      if (!homeName || !awayName || seenTodayKeys.has(matchKey)) return;
+      if (isNcaaOrWomenSoccer(leagueName, homeName, awayName)) return;
+
+      const fbId = bkGame?.footballCom?.gameId || rawMatch?.footballComGameId || null;
+      const sbId = bkGame?.sportybet?.gameId || rawMatch?.sportybetGameId || null;
+      const dupExisting = todayAll.find((ex) =>
+        (fbId && ex.footballComGameId && String(ex.footballComGameId) === String(fbId)) ||
+        (sbId && ex.sportybetGameId && String(ex.sportybetGameId) === String(sbId)) ||
+        isSameTodayFixture(ex.homeName, ex.awayName, ex.kickoffMs, homeName, awayName, koMs)
+      );
+      if (dupExisting) {
+        if (fbId && !dupExisting.footballComGameId) dupExisting.footballComGameId = fbId;
+        if (sbId && !dupExisting.sportybetGameId) dupExisting.sportybetGameId = sbId;
+        if (dupExisting.country === "International" && country && country !== "International") {
+          dupExisting.country = country;
+          dupExisting.flag = flag || getCountryFlag(country);
+        }
+        seenTodayKeys.add(matchKey);
+        return;
+      }
+      seenTodayKeys.add(matchKey);
+
+      const liveItem = (rawMatch?.id ? liveItemByKey.get(`id:${rawMatch.id}`) : null) || liveItemByKey.get(matchKey) || null;
+      const ms = String(leagueSlug || rawMatch?.league || "").toLowerCase();
+      const mn = String(leagueName || "").toLowerCase();
+      const lgHist = leagueBySlug.get(ms) || leagueByName.get(mn) || null;
+      const homeKey = normTeamMatchKey(homeName);
+      const awayKey = normTeamMatchKey(awayName);
+      const homeHist = team2hMap.get(homeKey) || null;
+      const awayHist = team2hMap.get(awayKey) || null;
+      const homeHtHist = htDrawMap.get(homeKey) || null;
+      const awayHtHist = htDrawMap.get(awayKey) || null;
+
+      const hs = bkGame?.homeStats || rawMatch?.homeStats || null;
+      const as = bkGame?.awayStats || rawMatch?.awayStats || null;
+      const oddH = Number(bkGame?.bestOdds?.home || rawMatch?.odds?.home || 0) || null;
+      const oddD = Number(bkGame?.bestOdds?.draw || rawMatch?.odds?.draw || 0) || null;
+      const oddA = Number(bkGame?.bestOdds?.away || rawMatch?.odds?.away || 0) || null;
+      const oddU25 = Number(bkGame?.bestOdds?.under25 || bkGame?.footballCom?.under25 || bkGame?.sportybet?.under25 || 0) || null;
+      const oddO25 = Number(bkGame?.bestOdds?.over25 || bkGame?.footballCom?.over25 || bkGame?.sportybet?.over25 || 0) || null;
+
+      const homePpg = Number(hs?.ppg || rawMatch?.analysis?.factors?.ppg?.homeOverall || 1.38);
+      const awayPpg = Number(as?.ppg || rawMatch?.analysis?.factors?.ppg?.awayOverall || 1.32);
+      const ppgGap = Math.abs(homePpg - awayPpg);
+
+      const expHome = Number(rawMatch?.analysis?.expectedGoals?.home) ||
+        (hs && as ? ((Number(hs.gfAvg || 1.2) + Number(as.gaAvg || 1.2)) * 0.5) : null) ||
+        (oddH && oddA ? clamp(1.35 + ((oddA - oddH) * 0.14), 0.70, 2.30) : 1.24);
+      const expAway = Number(rawMatch?.analysis?.expectedGoals?.away) ||
+        (hs && as ? ((Number(as.gfAvg || 1.05) + Number(hs.gaAvg || 1.15)) * 0.5) : null) ||
+        (oddH && oddA ? clamp(1.12 + ((oddH - oddA) * 0.14), 0.60, 2.15) : 1.06);
+
+      const totalModelXg = clamp(expHome + expAway, 1.50, 3.80);
+      const lgShare1h = lgHist ? clamp((100 - lgHist.pct2hGoals) / 100, 0.34, 0.50) : 0.44;
+      const share1h = clamp(lgShare1h * 0.60 + 0.44 * 0.40, 0.36, 0.49);
+
+      const lam1hH = clamp(expHome * share1h, 0.28, 1.45);
+      const lam1hA = clamp(expAway * share1h, 0.24, 1.35);
+      let pHtDraw = 0;
+      for (let gCount = 0; gCount <= 4; gCount++) {
+        pHtDraw += poissonPmf(gCount, lam1hH) * poissonPmf(gCount, lam1hA);
+      }
+
+      // Low-scoring cagey 1H & PPG parity uplifts; heavy favorite dampening
+      if (lam1hH + lam1hA <= 1.02) pHtDraw += 0.025;
+      if (ppgGap <= 0.32) pHtDraw += 0.022;
+      if (oddU25 && oddU25 <= 1.78) pHtDraw += 0.024;
+      if (oddO25 && oddO25 <= 1.52) pHtDraw -= 0.038;
+      if (oddH && oddA && Math.min(oddH, oddA) <= 1.42) pHtDraw -= 0.055;
+      pHtDraw = clamp(pHtDraw, 0.22, 0.56);
+
+      // Compute Live 1H / 2H adjustments when match is currently in-play
+      const homeScore = liveItem ? liveItem.homeScore : Number(rawMatch?.homeScore || 0);
+      const awayScore = liveItem ? liveItem.awayScore : Number(rawMatch?.awayScore || 0);
+      const minute = liveItem ? liveItem.minute : Number(rawMatch?.minute || 0);
+      const isHalfTime = liveItem ? Boolean(liveItem.sh?.isHalfTime) : false;
+      const isSecondHalf = liveItem ? (Boolean(liveItem.sh?.isSecondHalf) || minute > 45) : false;
+      const firstHalfGoals = liveItem ? liveItem.firstHalfGoals : (homeScore + awayScore);
+      const secondHalfGoalsCurrent = liveItem ? liveItem.secondHalfGoalsCurrent : 0;
+
+      let htDrawVerdict = "LEAN";
+      let htDrawBadge = "LEAN 1H DRAW";
+      let htDrawTip = "Lean 1st Half Draw (0-0 / 1-1)";
+      let isHtDrawLanded = false;
+
+      if (isLive && (isHalfTime || isSecondHalf)) {
+        const htTied = (homeScore === awayScore && isHalfTime) ||
+          (rawMatch?.linescores?.home?.length >= 1 && Number(rawMatch.linescores.home[0]) === Number(rawMatch.linescores.away?.[0])) ||
+          (liveItem && liveItem.isHtDraw);
+        if (htTied) {
+          isHtDrawLanded = true;
+          pHtDraw = 1.0;
+          htDrawVerdict = "LANDED";
+          htDrawBadge = "HT DRAW HIT";
+          htDrawTip = `1H Draw Landed (${homeScore}-${awayScore} / 1H ${firstHalfGoals}g)`;
+        } else {
+          pHtDraw = 0;
+          htDrawVerdict = "MISSED";
+          htDrawBadge = "1H SETTLED";
+          htDrawTip = `1H Finished (${firstHalfGoals}g in 1H)`;
+        }
+      } else if (isLive) {
+        const rem1hFrac = clamp((45 - minute) / 45, 0.04, 1);
+        const remLamH = Math.max(0.04, lam1hH * rem1hFrac);
+        const remLamA = Math.max(0.04, lam1hA * rem1hFrac);
+        const diffNow = homeScore - awayScore;
+        let remDrawP = 0;
+        for (let dh = 0; dh <= 3; dh++) {
+          const da = dh + diffNow;
+          if (da >= 0 && da <= 3) {
+            remDrawP += poissonPmf(dh, remLamH) * poissonPmf(da, remLamA);
+          }
+        }
+        pHtDraw = clamp(remDrawP, 0.08, 0.88);
+      }
+
+      const probHtDrawPct = Math.round(pHtDraw * 100);
+      const fairHtDrawOdds = probHtDrawPct >= 99 ? 1.01 : Number((1 / clamp(pHtDraw, 0.16, 0.90)).toFixed(2));
+      if (!isLive || (!isHalfTime && !isSecondHalf)) {
+        if (probHtDrawPct >= 44) {
+          htDrawVerdict = "STRONG";
+          htDrawBadge = "BACK 1H DRAW";
+          htDrawTip = `Back 1st Half Draw (X) · ${probHtDrawPct}% (Fair ${fairHtDrawOdds.toFixed(2)})`;
+        } else if (probHtDrawPct >= 38) {
+          htDrawVerdict = "LEAN";
+          htDrawBadge = "1H DRAW WATCH";
+          htDrawTip = `Lean 1st Half Draw (0-0/1-1) · ${probHtDrawPct}%`;
+        } else {
+          htDrawVerdict = "AVOID";
+          htDrawBadge = "OPEN 1H";
+          htDrawTip = `Open 1H Setup (${probHtDrawPct}% Draw) — Favor 2H Goals`;
+        }
+      }
+
+      // Compute 2nd Half Highest Scoring Half (2H > 1H) for Today's game
+      let prob2hHighest = 55;
+      let prob2hOver05 = 76;
+      let isHigh1HTrap = false;
+      let shHighestTip = "Back 2nd Half Highest Scoring Half (2H > 1H)";
+
+      if (liveItem) {
+        prob2hHighest = Number(liveItem.prob2ndHalf || 55);
+        prob2hOver05 = Number(liveItem.probOver05 || 72);
+        isHigh1HTrap = Boolean(liveItem.isHigh1HTrap);
+        shHighestTip = liveItem.recommendedMarket;
+      } else {
+        let base2h = lgHist ? Number(lgHist.pct2hHigherThan1h) : 54;
+        if (homeHist) base2h += (homeHist.pct2hFor - 54) * 0.34;
+        if (awayHist) base2h += (awayHist.pct2hFor - 54) * 0.34;
+        if (probHtDrawPct >= 41 && (homeHtHist || awayHtHist || (lgHist?.pctHtDrawWith2hGoals || 0) >= 72)) {
+          base2h += 6;
+        }
+        if (totalModelXg >= 2.25 && ppgGap <= 0.65) base2h += 3;
+        if (oddH && oddA && Math.min(oddH, oddA) <= 1.25 && totalModelXg >= 3.20) base2h -= 4;
+        prob2hHighest = clamp(Math.round(base2h), 42, 79);
+        prob2hOver05 = clamp(
+          Math.round(67 + totalModelXg * 6.5 + (lgHist ? (lgHist.pctHtDrawWith2hGoals - 72) * 0.25 : 0)),
+          62,
+          93
+        );
+        if (prob2hHighest >= 60) {
+          shHighestTip = "Strong 2nd Half Highest Scoring (2H > 1H) + Over 0.5 2H";
+        } else if (prob2hHighest >= 54) {
+          shHighestTip = "Lean 2nd Half Highest Scoring (2H > 1H)";
+        } else {
+          shHighestTip = "Watch 1H Score at HT Before Backing 2H Highest";
+        }
+      }
+
+      const shVerdict = isHigh1HTrap
+        ? "TRAP"
+        : (prob2hHighest >= 59 ? "STRONG" : prob2hHighest >= 53 ? "LEAN" : "WATCH");
+
+      const isCombo = !isHigh1HTrap &&
+        (htDrawVerdict === "STRONG" || htDrawVerdict === "LEAN" || htDrawVerdict === "LANDED") &&
+        (shVerdict === "STRONG" || (isLive && prob2hHighest >= 56));
+
+      const comboScore = Math.round(
+        (isHtDrawLanded ? 30 : probHtDrawPct * 0.72) +
+        prob2hHighest * 0.88 +
+        (lgHist ? 6 : 0) +
+        (homeHist || awayHist ? 6 : 0) +
+        (homeHtHist || awayHtHist ? 8 : 0) +
+        (isCombo ? 12 : 0) -
+        (isHigh1HTrap ? 35 : 0)
+      );
+
+      let easyBadge = "TODAY ANALYSIS";
+      let easyTip = `${htDrawTip} | ${shHighestTip}`;
+      if (isHigh1HTrap) {
+        easyBadge = "1H TRAP ALERT";
+        easyTip = "High 1H goals already scored — avoid 2H Highest Scoring Half.";
+      } else if (isHtDrawLanded && prob2hHighest >= 54) {
+        easyBadge = "HT DRAW -> BACK 2H>";
+        easyTip = `1H Draw Landed (${homeScore}-${awayScore}) — Back 2nd Half Highest & Over 0.5 2H Goals (${prob2hHighest}% 2H Edge)`;
+      } else if (isCombo) {
+        easyBadge = "1H DRAW + 2H COMBO";
+        easyTip = `1st Half Draw (${probHtDrawPct}%) -> Back 2nd Half Highest Scoring (${prob2hHighest}% 2H>1H)`;
+      } else if (htDrawVerdict === "STRONG") {
+        easyBadge = "STRONG 1H DRAW (X)";
+        easyTip = `Back 1st Half Draw (X) @ Fair ${fairHtDrawOdds.toFixed(2)} (${probHtDrawPct}% Prob)`;
+      } else if (shVerdict === "STRONG") {
+        easyBadge = "2H HIGHEST SCORING";
+        easyTip = `Back 2nd Half Highest Scoring (${prob2hHighest}% 2H>1H · ${prob2hOver05}% 2H O0.5)`;
+      } else if (isLive) {
+        easyBadge = `LIVE ${minute}' TRACKED`;
+      }
+
+      const reasons = [];
+      if (lgHist) reasons.push(`${lgHist.name}: ${lgHist.pct2hHigherThan1h}% 2H>1H`);
+      if (homeHist) reasons.push(`${homeName}: ${homeHist.pct2hFor}% goals in 2H`);
+      if (awayHist) reasons.push(`${awayName}: ${awayHist.pct2hFor}% goals in 2H`);
+      if (homeHtHist) reasons.push(`${homeName}: ${homeHtHist.htDrawBreakoutRatePct}% 1H Draw→2H`);
+      if (awayHtHist) reasons.push(`${awayName}: ${awayHtHist.htDrawBreakoutRatePct}% 1H Draw→2H`);
+      if (ppgGap <= 0.35 && hs && as) reasons.push(`Tight PPG Parity (${homePpg.toFixed(2)} vs ${awayPpg.toFixed(2)})`);
+      if (oddU25 && oddU25 <= 1.80) reasons.push(`Low-Score Pricing (U2.5 @ ${oddU25.toFixed(2)})`);
+
+      const loc = resolveCanonicalLocation(country || "", leagueName || "", "football");
+
+      todayAll.push({
+        id: rawMatch?.id || bkGame?.matchId || bkGame?.eventId || matchKey,
+        matchId: rawMatch?.id || bkGame?.matchId || bkGame?.eventId || "",
+        homeName,
+        awayName,
+        homeLogo: homeLogo || "",
+        awayLogo: awayLogo || "",
+        leagueName: loc.league || leagueName || "Football",
+        country: loc.country || country || "International",
+        flag: flag || getCountryFlag(loc.country || country || "International"),
+        kickoffMs: Number.isFinite(koMs) ? koMs : Date.now() + 3600000,
+        kickoffLabel: kickoffLabel || "Today",
+        countdownLabel: countdownLabel || "",
+        isLive: Boolean(isLive),
+        minute,
+        homeScore,
+        awayScore,
+        scoreText: isLive ? `${homeScore}-${awayScore}` : null,
+        isHalfTime,
+        isSecondHalf,
+        firstHalfGoals,
+        secondHalfGoalsCurrent,
+        footballComGameId: bkGame?.footballCom?.gameId || rawMatch?.footballComGameId || null,
+        sportybetGameId: bkGame?.sportybet?.gameId || rawMatch?.sportybetGameId || null,
+        oddH,
+        oddD,
+        oddA,
+        oddU25,
+        probHtDrawPct,
+        fairHtDrawOdds,
+        htDrawVerdict,
+        htDrawBadge,
+        htDrawTip,
+        isHtDrawLanded,
+        prob2hHighest,
+        prob2hOver05,
+        shVerdict,
+        shHighestTip,
+        isHigh1HTrap,
+        isCombo,
+        comboScore,
+        easyBadge,
+        easyTip,
+        reasons: reasons.slice(0, 4)
+      });
+    };
+
+    for (const m of matches || []) {
+      if ((m.sport || "football").toLowerCase() !== "football") continue;
+      if (isMatchAbandonedOrInterrupted(m)) continue;
+      if (m.status === "FT" || m.status === "AET" || m.status === "PEN") continue;
+      const liveNow = isMatchTrulyLive(m);
+      const koMs = resolveKickoffMs(m);
+      if (!liveNow && !isSameLocalToday(koMs, m.date)) continue;
+
+      const { homeName, awayName } = getTeamNamesFromMatch(m);
+      const mk = `${normTeamMatchKey(homeName)}::${normTeamMatchKey(awayName)}`;
+      const bkMatch = bkByKey.get(mk) ||
+        bkGames.find((g) => isSameTodayFixture(homeName, awayName, koMs, g.homeTeamName, g.awayTeamName, resolveKickoffMs(g))) ||
+        null;
+      scoreTodayGame({
+        rawMatch: m,
+        bkGame: bkMatch,
+        homeName,
+        awayName,
+        homeLogo: m.homeLogo || DATA.TEAMS?.[m.home]?.logo || "",
+        awayLogo: m.awayLogo || DATA.TEAMS?.[m.away]?.logo || "",
+        leagueName: m.leagueName || DATA.LEAGUES?.[m.league]?.name || "Football",
+        leagueSlug: m.leagueSlug || m.league || "",
+        country: m.leagueCountry || m.country || "",
+        flag: m.flag || "",
+        koMs,
+        kickoffLabel: m.displayTime || (Number.isFinite(koMs) ? formatLocalTime(new Date(koMs).toISOString()) : "Today"),
+        countdownLabel: formatPreMatchBadge(m),
+        isLive: liveNow
+      });
+    }
+
+    for (const g of bkGames) {
+      if (g.sport && String(g.sport).toLowerCase() !== "football") continue;
+      if (isMatchAbandonedOrInterrupted(g) || g.isFinished) continue;
+      const koMs = resolveKickoffMs(g);
+      if (!g.isLive && !isSameLocalToday(koMs, g.isoDate)) continue;
+      if (todayAll.some((ex) => isSameTodayFixture(ex.homeName, ex.awayName, ex.kickoffMs, g.homeTeamName, g.awayTeamName, koMs))) continue;
+      scoreTodayGame({
+        rawMatch: null,
+        bkGame: g,
+        homeName: g.homeTeamName,
+        awayName: g.awayTeamName,
+        homeLogo: g.homeLogo || (g.homeUid ? `https://img.sportradar.com/ls/crest/medium/${g.homeUid}.png` : ""),
+        awayLogo: g.awayLogo || (g.awayUid ? `https://img.sportradar.com/ls/crest/medium/${g.awayUid}.png` : ""),
+        leagueName: g.league || "League Match",
+        leagueSlug: "",
+        country: g.country || "International",
+        flag: "",
+        koMs,
+        kickoffLabel: Number.isFinite(koMs) ? formatLocalTime(new Date(koMs).toISOString()) : (g.kickoffUtc || "Today"),
+        countdownLabel: formatPreMatchBadge(g),
+        isLive: Boolean(g.isLive)
+      });
+    }
+
+    todayAll.sort((a, b) =>
+      (b.isLive ? 1 : 0) - (a.isLive ? 1 : 0) ||
+      b.comboScore - a.comboScore ||
+      a.kickoffMs - b.kickoffMs
+    );
+
+    const todayCombosCount = todayAll.filter((x) => x.isCombo).length;
+    const todayStrongHtDrawsCount = todayAll.filter((x) => x.htDrawVerdict === "STRONG" || x.htDrawVerdict === "LANDED").length;
+    const todayStrong2hCount = todayAll.filter((x) => x.shVerdict === "STRONG").length;
+    const todayLiveCount = todayAll.filter((x) => x.isLive).length;
+
     return {
-      ok: Boolean(intel.ok) || liveItems.length > 0,
+      ok: Boolean(intel.ok) || liveItems.length > 0 || todayAll.length > 0,
       generatedAt: intel.generatedAt || null,
       leaguesAnalyzed: intel.leaguesAnalyzed || 0,
       totalMatchesAnalyzed: intel.totalMatchesAnalyzed || 0,
@@ -7175,6 +7563,11 @@ window.MAMON_REALTIME = (() => {
       livePriorityPicks,
       liveHtDraws,
       live1hTraps,
+      todayAll,
+      todayCombosCount,
+      todayStrongHtDrawsCount,
+      todayStrong2hCount,
+      todayLiveCount,
       leaguesRanked: leaguesEnriched,
       teams2hScorers: teamsEnriched,
       htDrawBreakoutTeams: htDrawTeamsEnriched

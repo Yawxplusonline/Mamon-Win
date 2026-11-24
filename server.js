@@ -319,14 +319,12 @@ server.listen(PORT, HOST, () => {
   runMissionJob("onefootball", false);
   runMissionJob("bookmakers", false);
   runMissionJob("runin", false);
-  runMissionJob("secondhalf", false);
   runMissionJob("statprops", false);
 
   // Autonomous Continuous Real-Time Acquisition Loops
   setInterval(() => { runMissionJob("onefootball", true); }, 60 * 1000);
   setInterval(() => { runMissionJob("bookmakers", true); }, 90 * 1000);
   setInterval(() => { runMissionJob("runin", true); }, 10 * 60 * 1000);
-  setInterval(() => { runMissionJob("secondhalf", true); }, 20 * 60 * 1000);
   setInterval(() => { runMissionJob("statprops", true); }, 15 * 60 * 1000);
 
   // Self-Healing Watchdog + SSE Keep-Alive Heartbeat (Guaranteed Permanent Live Stream)

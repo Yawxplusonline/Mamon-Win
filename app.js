@@ -837,17 +837,14 @@
     if (h === "/drops") return "/dropping-odds";
     if (h === "/accurate-odds" || h === "/accurate-winning-odds" || h === "/banker-of-the-day") return "/sure-odds";
     if (h === "/handicap-tips" || h === "/value-bets") return "/handicap";
-    if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips") return "/special-tips";
+    if (h === "/draw-defense" || h === "/5min-draw" || h === "/no-3-in-a-row" || h === "/special-tips" || h === "/defensive-tips" || h.startsWith("/special-tips?") || h.startsWith("/5min-draw?")) {
+      return "/";
+    }
     if (h === "/ft-draw" || h === "/fulltime-draw" || h === "/full-time-draw" || h === "/draw-tips" || h.startsWith("/ft-draw?") || h.startsWith("/fulltime-draw?")) {
       return "/";
     }
     if (h === "/2h-highest" || h === "/second-half" || h === "/second-half-highest" || h.startsWith("/2h-highest?") || h.startsWith("/second-half?")) {
-      if (h.includes("?")) {
-        const q = new URLSearchParams(h.split("?")[1]);
-        if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
-        if (q.get("filter")) state.active2hFilter = q.get("filter").toUpperCase();
-      }
-      return "/2h-highest";
+      return "/";
     }
     return h;
   }
@@ -868,13 +865,9 @@
       route = "/handicap";
     }
     if (route === "/handicap-tips" || route === "/value-bets") route = "/handicap";
-    if (route.startsWith("/special-tips?") || route.startsWith("/5min-draw?") || route.startsWith("/no-3-in-a-row?") || route.startsWith("/draw-defense?")) {
-      const q = new URLSearchParams(route.split("?")[1]);
-      if (q.get("tab")) state.activeSpecialTipTab = q.get("tab").toUpperCase();
-      if (q.get("filter")) state.activeSpecialTipFilter = q.get("filter").toUpperCase();
-      route = "/special-tips";
+    if (route === "/special-tips" || route === "/5min-draw" || route === "/no-3-in-a-row" || route === "/draw-defense" || route === "/defensive-tips" || route.startsWith("/special-tips?") || route.startsWith("/5min-draw?") || route.startsWith("/no-3-in-a-row?") || route.startsWith("/draw-defense?")) {
+      route = "/";
     }
-    if (route === "/5min-draw" || route === "/no-3-in-a-row" || route === "/draw-defense" || route === "/defensive-tips") route = "/special-tips";
     if (route === "/ft-draw" || route === "/fulltime-draw" || route === "/full-time-draw" || route === "/draw-tips" || route.startsWith("/ft-draw?") || route.startsWith("/fulltime-draw?") || route.startsWith("/full-time-draw?") || route.startsWith("/draw-tips?")) {
       route = "/";
     }
@@ -890,15 +883,8 @@
     if (route === "/ou-props" && !statPropsData && !isLoadingStatProps) {
       loadStatPropsIntelligence(false);
     }
-    if (route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
-      const q = new URLSearchParams(route.split("?")[1]);
-      if (q.get("tab")) state.active2hTab = q.get("tab").toUpperCase();
-      if (q.get("filter")) state.active2hFilter = q.get("filter").toUpperCase();
-      route = "/2h-highest";
-    }
-    if (route === "/second-half" || route === "/second-half-highest") route = "/2h-highest";
-    if (route === "/2h-highest" && !secondHalfIntel && !isLoadingSecondHalf) {
-      loadSecondHalfIntelligence(false);
+    if (route === "/2h-highest" || route === "/second-half" || route === "/second-half-highest" || route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
+      route = "/";
     }
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
@@ -2802,7 +2788,6 @@
             .join("")}
         </div>
         <div class="btn-group">
-          <a class="btn-full" href="/special-tips" data-route="/special-tips" style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#042f2e;font-weight:800;border:none;">⏱️ 5-Min Draw &amp; Def Tips</a>
           <a class="btn-full" href="/sure-odds" data-route="/sure-odds">Open Sure Odds Analyzer</a>
           <a class="btn-outline" href="/dropping-odds" data-route="/dropping-odds">📉 Dropping Odds Scanner</a>
           <a class="btn-outline" href="/ppg" data-route="/ppg">📊 PPG Intelligence &amp; Table</a>
@@ -5284,11 +5269,6 @@
   }
 
   function renderWinningOnlyBanner() {
-    const shSec = RT?.buildLiveSecondHalfSectionData
-      ? RT.buildLiveSecondHalfSectionData(liveMatches, secondHalfIntel, bookmakerScan)
-      : null;
-    const shTotal = shSec?.todayAll?.length || shSec?.livePriorityPicks?.length || 0;
-    const shCombos = shSec?.todayCombosCount || 0;
     const ouTotal = Object.values(statPropsData?.counts || {}).reduce((a, b) => a + (Number(b) || 0), 0);
     const strongCount = (bookmakerScan?.strongHomeMismatch?.length || 0) + (bookmakerScan?.strongAwayMismatch?.length || 0);
     const trapCount = (bookmakerScan?.worstHomeMismatch?.length || 0) + (bookmakerScan?.worstAwayMismatch?.length || 0);
@@ -5299,14 +5279,10 @@
           <div class="flex items-center justify-between gap-2 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">🏆 WINNING-ONLY FOCUS MODE</span>
-              <span class="text-xs font-bold text-text">System focused strictly on top-performing verified sections (Goals, Shots On Target, Throw-ins, 2H Highest, Strong PPG &amp; Trap Shield)</span>
+              <span class="text-xs font-bold text-text">System focused strictly on top-performing verified sections (Goals, Shots On Target, Throw-ins, Strong PPG &amp; Trap Shield)</span>
             </div>
           </div>
           <div class="grid gap-2 mt-2.5" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-            <a class="power-preview-tile is-strong" href="/2h-highest?tab=TODAY_2H" data-route="/2h-highest?tab=TODAY_2H" style="border-left:3px solid #f97316; background: var(--bg-surface);">
-              <div class="text-xs font-extrabold" style="color:#ea580c;">🔥 Today: 1H Draw &amp; 2H (${shTotal} Games)</div>
-              <div class="text-xs text-muted mt-0.5">${shCombos} 1H Draw + 2H Combos · All Today's Tips</div>
-            </a>
             <a class="power-preview-tile is-strong" href="/ou-props?market=SHOTS_ON_TARGET" data-route="/ou-props?market=SHOTS_ON_TARGET" style="border-left:3px solid #059669; background: var(--bg-surface);">
               <div class="text-xs font-extrabold" style="color:#059669;">🎯 Winning O/U Props (${ouTotal} Verified)</div>
               <div class="text-xs text-muted mt-0.5">Goals · Shots On Target · Throw-ins</div>
@@ -5339,7 +5315,6 @@
 
     return `
       ${renderWinningOnlyBanner()}
-      ${renderHomeSecondHalfCard()}
       ${renderHomeStatPropsCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSureOddsBanner()}
@@ -6858,14 +6833,10 @@
     try {
       if (r === "/" || r === "") {
         main.innerHTML = renderHomeView();
-      } else if (r === "/2h-highest" || r === "/second-half" || r === "/second-half-highest") {
-        main.innerHTML = renderSecondHalfHighestView();
       } else if (r === "/ou-props" || r === "/stat-props") {
         main.innerHTML = renderStatPropsView();
       } else if (r === "/handicap" || r === "/handicap-tips" || r === "/value-bets") {
         main.innerHTML = renderHandicapValueBetsView();
-      } else if (r === "/special-tips" || r === "/5min-draw" || r === "/no-3-in-a-row" || r === "/draw-defense" || r === "/defensive-tips") {
-        main.innerHTML = renderDrawDefenseSpecialTipsView();
       } else if (r === "/sure-odds" || r === "/game-points") {
         main.innerHTML = renderSureOddsView();
         bindSureCalculatorEvents();
@@ -9018,7 +8989,8 @@
     if (pRoute === "/game-points") pRoute = "/sure-odds";
     if (pRoute === "/community") pRoute = "/power-picks";
     if (pRoute === "/runin" || pRoute === "/run-in-analysis") pRoute = "/run-in";
-    if (pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/2h-highest";
+    if (pRoute === "/2h-highest" || pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/";
+    if (pRoute === "/special-tips" || pRoute === "/5min-draw" || pRoute === "/no-3-in-a-row" || pRoute === "/draw-defense" || pRoute === "/defensive-tips") pRoute = "/";
     if (pRoute === "/ft-draw" || pRoute === "/fulltime-draw" || pRoute === "/full-time-draw" || pRoute === "/draw-tips") pRoute = "/";
     if (pRoute === "/stat-props") pRoute = "/ou-props";
     const qs = new URLSearchParams(window.location.search || "");
@@ -9032,10 +9004,6 @@
     if (qs.get("tier")) state.activeSureTier = qs.get("tier");
     if (qs.get("tab")) {
       state.activeIntelTab = qs.get("tab").toUpperCase();
-      if (pRoute === "/2h-highest") state.active2hTab = qs.get("tab").toUpperCase();
-    }
-    if (qs.get("filter") && pRoute === "/2h-highest") {
-      state.active2hFilter = qs.get("filter").toUpperCase();
     }
     if (qs.get("cat")) {
       const upperCat = qs.get("cat").toUpperCase();
@@ -9060,6 +9028,5 @@
   renderMissionHud();
   syncRealtimeFeed(false);
   syncBookmakerMismatchFeed(false, false);
-  loadSecondHalfIntelligence(false);
   loadStatPropsIntelligence(false);
 })();

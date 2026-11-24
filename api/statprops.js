@@ -702,8 +702,11 @@ async function fetchStatPropsIntelligence(forceRefresh = false) {
 
   propsInFlight = (async () => {
     try {
+      const todayUtcIso = new Date().toISOString().slice(0, 10);
       const bkScan = await bookmakersApi.runFullBookmakerScan(false).catch(() => null);
-      const allFootball = (bkScan?.allGames || []).filter((g) => (g.sport || "football") === "football" && !g.isCompleted);
+      const allFootball = (bkScan?.allGames || []).filter(
+        (g) => (g.sport || "football") === "football" && !g.isCompleted && (g.isLive || g.isoDate === todayUtcIso)
+      );
 
       // Prioritize fixtures in leagues where ESPN provides complete deep boxscores + Football.com exposes prop lines
       const sorted = [...allFootball].sort((a, b) => {

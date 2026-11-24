@@ -997,14 +997,14 @@ async function runFullBookmakerScan(forceRefresh = false) {
       for (const g of games) {
         if (g.isCompleted) {
           if (g.isoDate === todayUtcIso) completedToday.push(g);
-        } else {
+        } else if (g.isLive || g.isoDate === todayUtcIso) {
+          // Strict Day-by-Day: keep ONLY today's matches or currently LIVE matches (zero tomorrow/future days)
           activeRawGames.push(g);
         }
       }
 
-      // Prioritize >= 5h Pre-Match games found on BOTH Football.com & OneFootball (and upcoming before live for tips)
+      // Prioritize upcoming today games found on BOTH Football.com & OneFootball (before live)
       activeRawGames.sort((a, b) => {
-        if (a.isPreMatch5h !== b.isPreMatch5h) return a.isPreMatch5h ? -1 : 1;
         if (a.onFootballCom !== b.onFootballCom) return a.onFootballCom ? -1 : 1;
         if (a.onOneFootball !== b.onOneFootball) return a.onOneFootball ? -1 : 1;
         if (a.isLive !== b.isLive) return a.isLive ? 1 : -1;
@@ -1012,9 +1012,9 @@ async function runFullBookmakerScan(forceRefresh = false) {
         return a.estimateStartTime - b.estimateStartTime;
       });
 
-      // Hydrate team stats across >=5h Pre-Match AND live Football games
-      const footballPre5h = activeRawGames.filter((g) => g.sport === "football" && g.isPreMatch5h).slice(0, 90);
-      const footballLive = activeRawGames.filter((g) => g.sport === "football" && g.isLive).slice(0, 30);
+      // Hydrate team stats across today's scheduled & live Football games
+      const footballPre5h = activeRawGames.filter((g) => g.sport === "football" && !g.isLive).slice(0, 120);
+      const footballLive = activeRawGames.filter((g) => g.sport === "football" && g.isLive).slice(0, 40);
       const immediateGames = [...footballPre5h, ...footballLive];
       const immediateIds = new Set(immediateGames.map((g) => g.eventId));
       const deferredGames = activeRawGames.filter((g) => !immediateIds.has(g.eventId));
@@ -1051,10 +1051,10 @@ async function runFullBookmakerScan(forceRefresh = false) {
         })
         .filter(Boolean);
 
-      // Strict 5-Hour Pre-Kickoff + Football.com + Verified Sportradar Stats Gate for ALL Mistake-Odds Tips
+      // Strict Day-by-Day: Today's Active Pre-Match/Live Football.com + Verified Sportradar Stats Gate for Mistake-Odds Tips
       const preMatch5hPool = evaluated
-        .filter((g) => g.isPreMatch5h && g.onFootballCom && g.hasVerifiedStats)
-        .sort((a, b) => (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0) || a.estimateStartTime - b.estimateStartTime);
+        .filter((g) => !g.isCompleted && !g.isAbandoned && (g.isLive || g.isoDate === todayUtcIso) && g.onFootballCom && g.hasVerifiedStats)
+        .sort((a, b) => (a.isLive ? 1 : 0) - (b.isLive ? 1 : 0) || (b.onOneFootball ? 1 : 0) - (a.onOneFootball ? 1 : 0) || a.estimateStartTime - b.estimateStartTime);
 
       // 1. STRONG TEAMS/PLAYERS PLAYING HOME TODAY WITH MISTAKE BIG ODDS (WHILE OPPONENT HAS LOW ODDS)
       const strongHomeMismatch = preMatch5hPool
@@ -1424,6 +1424,7 @@ async function runFullBookmakerScan(forceRefresh = false) {
 
       const payload = {
         ok: true,
+        todayIso: todayUtcIso,
         fetchedAt: new Date().toISOString(),
         sources: [
           { name: "OneFootball", url: "https://onefootball.com/en/matches", count: ofSchedule?.totalMatches || 0 },

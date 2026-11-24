@@ -398,8 +398,10 @@
     const defaults = {
       route: "/",
       activeSport: "football", // Football Only
-      selectedDate: "UPCOMING_ALL",
+      selectedDate: DATA.todayIso || new Date().toISOString().slice(0, 10),
       matchFilter: "LIVE", // LIVE | SCHEDULED | DROPS | ALERTS | FT
+      activeTodayMode: "ALL", // ALL | LIVE | SCHEDULED | FT
+      todaySearch: "",
       activeIntelTab: "DROPS", // DROPS | ALERTS
       activeDropFilter: "ALL", // ALL | HEAVY | MODERATE | INPLAY | PREMATCH
       activePpgCategory: "ALL", // ALL | HIGH_GAP | HOME_DOMINANT | AWAY_DOMINANT | POINTS_STAKES
@@ -421,6 +423,10 @@
       activeRuninSport: "football",
       activeRuninSportLeague: "ALL",
       activeRuninFilter: "ALL", // ALL | FAVORABLE | TOUGH | STRONG_PPG_EASY | STRONG_PPG
+      activeHistoryGroupBy: "SECTION", // SECTION | LEAGUE | DATE | RESULT
+      activeHistoryOutcome: "ALL", // ALL | WON | LOST | VOID
+      activeHistoryCategory: "ALL", // ALL | BOOKIE_MISMATCH | OPTA_INTEL | GOALS_OU | HANDICAP | SURE_ODDS
+      historySearch: "",
       standingsLeague: "england-premier-league",
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
       followedLeagues: ["england-premier-league", "spain-la-liga", "uefa-champions-league"],
@@ -445,10 +451,8 @@
         merged.matchFilter = "LIVE";
       }
       delete merged.followedMatches;
-      // Ensure old past selectedDate never hides today's matches
-      if (merged.selectedDate !== "UPCOMING_ALL" && merged.selectedDate < (DATA.todayIso || "")) {
-        merged.selectedDate = "UPCOMING_ALL";
-      }
+      // Strict Day-by-Day: always lock selectedDate to today's ISO date (no tomorrow or past dates)
+      merged.selectedDate = DATA.todayIso || new Date().toISOString().slice(0, 10);
       if (!CURRENCIES[merged.stakeCurrency]) merged.stakeCurrency = "GHS";
       return merged;
     } catch {
@@ -473,6 +477,27 @@
   let isLoadingStatProps = false;
   let footyMetricsData = null;
   let isLoadingFootyMetrics = false;
+  let tipHistoryData = null;
+  let isLoadingTipHistory = false;
+
+  async function loadTipHistory(force = false) {
+    if (isLoadingTipHistory && !force) return tipHistoryData;
+    isLoadingTipHistory = true;
+    try {
+      const resp = await fetch(`/api/history${force ? "?refresh=1" : ""}`, { cache: "no-store" });
+      if (!resp.ok) return tipHistoryData;
+      const res = await resp.json();
+      if (res && res.ok) {
+        tipHistoryData = res;
+      }
+      return tipHistoryData;
+    } catch {
+      return tipHistoryData;
+    } finally {
+      isLoadingTipHistory = false;
+      scheduleRenderMainContent();
+    }
+  }
 
   async function loadFootyMetricsIntelligence(force = false) {
     if (isLoadingFootyMetrics && !force) return footyMetricsData;
@@ -872,6 +897,8 @@
     if (h === "/2h-highest" || h === "/second-half" || h === "/second-half-highest" || h.startsWith("/2h-highest?") || h.startsWith("/second-half?")) {
       return "/";
     }
+    if (h === "/results" || h === "/tip-history" || h === "/history") return "/history";
+    if (h === "/today" || h === "/todays-games" || h === "/today-games") return "/today";
     return h;
   }
 
@@ -911,6 +938,25 @@
     }
     if (route === "/2h-highest" || route === "/second-half" || route === "/second-half-highest" || route.startsWith("/2h-highest?") || route.startsWith("/second-half?") || route.startsWith("/second-half-highest?")) {
       route = "/";
+    }
+    if (route === "/results" || route === "/tip-history" || route.startsWith("/history?")) {
+      if (route.includes("?")) {
+        const q = new URLSearchParams(route.split("?")[1]);
+        if (q.get("group")) state.activeHistoryGroupBy = q.get("group").toUpperCase();
+        if (q.get("outcome")) state.activeHistoryOutcome = q.get("outcome").toUpperCase();
+        if (q.get("cat")) state.activeHistoryCategory = q.get("cat").toUpperCase();
+      }
+      route = "/history";
+    }
+    if (route === "/history" && !tipHistoryData && !isLoadingTipHistory) {
+      loadTipHistory(false);
+    }
+    if (route === "/todays-games" || route === "/today-games" || route.startsWith("/today?")) {
+      if (route.includes("?")) {
+        const q = new URLSearchParams(route.split("?")[1]);
+        if (q.get("mode")) state.activeTodayMode = q.get("mode").toUpperCase();
+      }
+      route = "/today";
     }
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
@@ -2455,11 +2501,7 @@
       const pre5Count = schedPool.filter(isMatchPre5h).length;
       const verifiedCount = schedPool.filter(isMatchVerified).length;
 
-      const byDateFilter = (arr) => (
-        state.selectedDate && state.selectedDate !== "UPCOMING_ALL"
-          ? arr.filter((m) => m.date === state.selectedDate)
-          : arr
-      );
+      const byDateFilter = (arr) => arr.filter((m) => isMatchTodayStrict(m));
 
       const finishedSportPool = finishedTodayMatches
         .filter((m) => !isNcaaOrWomenMatch(m))
@@ -2490,27 +2532,16 @@
         { id: "FT", icon: "✅", label: "Completed Today", count: finishedSportPool.length }
       ];
 
-      // Build complete Matchday pills (DATA.DATES + extra active upcoming dates, capped neatly with live counts)
-      const dateCountMap = new Map();
-      for (const m of schedPool) {
-        if (m.date) dateCountMap.set(m.date, (dateCountMap.get(m.date) || 0) + 1);
+      const todayIsoOnly = getTodayIso();
+      const baseDates = Array.isArray(DATA.DATES) && DATA.DATES.length > 0
+        ? DATA.DATES.filter((d) => d.id === todayIsoOnly)
+        : [{ id: todayIsoOnly, label: `Today · ${todayIsoOnly}` }];
+      if (baseDates.length === 0) {
+        baseDates.push({ id: todayIsoOnly, label: `Today · ${todayIsoOnly}` });
       }
-      const baseDates = Array.isArray(DATA.DATES) ? [...DATA.DATES] : [{ id: "UPCOMING_ALL", label: "All Upcoming Dates" }];
-      const knownDateIds = new Set(baseDates.map((d) => d.id));
-      const extraDateEntries = Array.from(dateCountMap.keys())
-        .filter((dIso) => !knownDateIds.has(dIso) && /^\d{4}-\d{2}-\d{2}$/.test(dIso))
-        .sort()
-        .slice(0, 3)
-        .map((dIso) => {
-          const dtObj = new Date(`${dIso}T12:00:00Z`);
-          const lbl = Number.isFinite(dtObj.getTime())
-            ? dtObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })
-            : dIso;
-          return { id: dIso, label: lbl };
-        });
-      const matchdayTabs = [...baseDates, ...extraDateEntries].map((d) => ({
+      const matchdayTabs = baseDates.map((d) => ({
         ...d,
-        count: d.id === "UPCOMING_ALL" ? schedPool.length : (dateCountMap.get(d.id) || 0)
+        count: schedPool.filter((m) => !m.date || m.date === todayIsoOnly).length
       }));
 
       toolbarHtml = showToolbar
@@ -2589,9 +2620,9 @@
           groupsHtml = `
             <div class="empty-state">
               <span style="font-size:32px;">📅</span>
-              <h3>No upcoming ${escapeHtml(spDef.label)} matches scheduled for this selection</h3>
-              <p class="text-sm">Fixtures sync continuously in real-time from SportyBet, Football.com &amp; ESPN.</p>
-              <button type="button" class="analyze-inline-btn mt-3" data-date="UPCOMING_ALL">View All Upcoming Dates &rarr;</button>
+              <h3>All upcoming ${escapeHtml(spDef.label)} fixtures for today have kicked off or completed</h3>
+              <p class="text-sm">Day-by-day mode active: Tomorrow's games will appear automatically at 00:00 when today ends.</p>
+              <a href="/today" data-route="/today" class="analyze-inline-btn mt-3">View All Today's Games (Live &amp; FT By League) &rarr;</a>
             </div>
           `;
         }
@@ -2863,25 +2894,34 @@
     `;
   }
 
+  function getTodayIso() {
+    return DATA.todayIso || new Date().toISOString().slice(0, 10);
+  }
+
+  function isMatchTodayStrict(m) {
+    if (!m) return false;
+    if (isMatchTrulyLive(m)) return true;
+    const todayIso = getTodayIso();
+    const d = m.date || m.isoDate || (m.isoDateTime ? String(m.isoDateTime).slice(0, 10) : "");
+    return !d || d === todayIso;
+  }
+
   function filteredMatchesForDate() {
     const allowed = ["football"];
+    const todayIso = getTodayIso();
     let pool = liveMatches
       .filter((m) => allowed.includes((m.sport || "football").toLowerCase()))
-      .filter((m) => !isNcaaOrWomenMatch(m));
+      .filter((m) => !isNcaaOrWomenMatch(m))
+      .filter((m) => isMatchTodayStrict(m));
     // Strict separation: Live section strictly returns live games (no abandoned / interrupted)
     if (state.matchFilter === "LIVE") {
       return pool.filter(isMatchTrulyLive);
     }
-    // Strict separation: Upcoming section strictly returns upcoming games
+    // Strict separation: Upcoming section strictly returns today's upcoming games (no tomorrow!)
     if (state.matchFilter === "SCHEDULED") {
-      const upcomingPool = pool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
-      if (state.selectedDate && state.selectedDate !== "UPCOMING_ALL") {
-        return upcomingPool.filter((m) => m.date === state.selectedDate);
-      }
-      return upcomingPool;
+      return pool.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m) && (m.date === todayIso || !m.date));
     }
-    if (state.selectedDate === "UPCOMING_ALL") return pool;
-    return pool.filter((m) => m.date === state.selectedDate);
+    return pool;
   }
 
   // ============ HOME MARKET INTELLIGENCE STRIP (DROPPING ODDS, INJURIES, SUSPENSIONS, PPG) ============
@@ -5414,11 +5454,13 @@
     const liveMatchesPool = baseSportMatches.filter(isMatchTrulyLive);
     const activeDateObj = (DATA.DATES || []).find((d) => d.id === state.selectedDate);
     const upcomingTitle = activeSportKey !== "all"
-      ? `${spDef.label} Upcoming Fixtures`
-      : (state.selectedDate === "UPCOMING_ALL" ? "📅 Upcoming Fixtures & Schedule" : `📅 Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`);
+      ? `${spDef.label} Today's Fixtures (${getTodayIso()})`
+      : `📅 Today's Fixtures · ${activeDateObj ? activeDateObj.label : getTodayIso()}`;
 
     return `
       ${renderWinningOnlyBanner()}
+      ${renderHomeTodayGamesSection()}
+      ${renderHomeHistoryCard()}
       ${renderHomeStatPropsCard()}
       ${renderHomeFootyMetricsCard()}
       ${renderHomeHandicapValueCard()}
@@ -5507,7 +5549,7 @@
           </div>
         </div>
       </div>
-      ${renderMatchesPanel(liveMatches, isSingleSport ? `${spDef.label} Upcoming Fixtures` : (state.selectedDate === "UPCOMING_ALL" ? "📅 Upcoming Schedule" : `Fixtures · ${activeDateObj ? activeDateObj.label : state.selectedDate}`), true, true, "UPCOMING")}
+      ${renderMatchesPanel(liveMatches, isSingleSport ? `${spDef.label} Today's Fixtures` : `📅 Today's Schedule · ${activeDateObj ? activeDateObj.label : getTodayIso()}`, true, true, "UPCOMING")}
     `;
   }
 
@@ -6930,6 +6972,426 @@
     `;
   }
 
+  // ============ TIP HISTORY & PLAYED RESULTS SECTION (/history) ============
+  const HISTORY_SECTION_META = {
+    BOOKIE_MISMATCH: { icon: "⚖️", label: "Mismatch & Trap Shield", color: "#d97706" },
+    OPTA_INTEL: { icon: "📈", label: "FootyMetrics Opta Intel", color: "#2563eb" },
+    GOALS_OU: { icon: "⚽", label: "Goals Over / Under", color: "#059669" },
+    HANDICAP: { icon: "🎯", label: "Winning Handicap & +EV", color: "#7c3aed" },
+    SURE_ODDS: { icon: "💎", label: "Sure Odds & Match Result", color: "#0d9488" }
+  };
+
+  function getHistoryMeta(catKey, fallbackLabel) {
+    return HISTORY_SECTION_META[catKey] || { icon: "📌", label: fallbackLabel || catKey || "System Tips", color: "#059669" };
+  }
+
+  function renderHomeHistoryCard() {
+    if (!tipHistoryData && !isLoadingTipHistory) {
+      loadTipHistory(false);
+    }
+    const sum = tipHistoryData?.summary || null;
+    const catStats = tipHistoryData?.categoryStats || [];
+
+    return `
+      <section class="panel-section" id="homeHistoryCard" style="border:1px solid rgba(16,185,129,0.35);">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(16, 185, 129, 0.22); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#0f766e;color:#fff;font-weight:800;">📜 PLAYED TIPS HISTORY &amp; RESULTS</span>
+            <span class="text-xs font-semibold text-muted">${sum ? `${sum.totalPlayed} Settled Tips · ${sum.won} Won · ${sum.lost} Lost · Win Rate ${sum.winRatePct}% (${sum.netProfitUnits >= 0 ? "+" : ""}${sum.netProfitUnits}u)` : "Grading completed matches against system tips..."}</span>
+          </div>
+          <a class="btn-subtle text-xs" href="/history" data-route="/history" style="font-weight:800;color:#0f766e;">Open History &amp; Results (${sum?.totalPlayed || 0}) &rarr;</a>
+        </div>
+        <div class="p-3">
+          ${!tipHistoryData
+            ? `<div class="text-xs text-muted p-2">Loading played matches &amp; grading settled tips...</div>`
+            : `<div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); gap: 10px;">
+                ${catStats.map((c) => {
+                  const meta = getHistoryMeta(c.key, c.label);
+                  const decided = c.won + c.lost;
+                  const wr = decided > 0 ? Math.round((c.won / decided) * 100) : 0;
+                  return `
+                    <a class="power-preview-tile is-strong" href="/history?cat=${encodeURIComponent(c.key)}" data-route="/history?cat=${encodeURIComponent(c.key)}" style="border-left:3px solid ${meta.color}; background: var(--bg-surface);">
+                      <div class="flex items-center justify-between gap-1 w-full">
+                        <span class="tile-kicker font-bold" style="color:${meta.color};">${meta.icon} ${escapeHtml(meta.label)}</span>
+                        <span class="ev-return-pill" style="background:${wr >= 60 ? "#059669" : "#d97706"};color:#fff;">${wr}% WIN</span>
+                      </div>
+                      <div class="font-bold text-xs mt-1 text-text">${c.won}W - ${c.lost}L${c.void ? ` - ${c.void}V` : ""} (${c.total} Played)</div>
+                      <div class="text-xs font-mono mt-0.5" style="color:${c.netUnits >= 0 ? "#059669" : "#dc2626"};">Net: ${c.netUnits >= 0 ? `+${c.netUnits.toFixed(2)}` : c.netUnits.toFixed(2)}u</div>
+                    </a>
+                  `;
+                }).join("")}
+              </div>`
+          }
+        </div>
+      </section>
+    `;
+  }
+
+  function renderHistoryPlayedRow(item) {
+    const meta = getHistoryMeta(item.category, item.categoryLabel);
+    const isWon = item.result === "WON";
+    const isLost = item.result === "LOST";
+    const resultColor = isWon ? "#059669" : isLost ? "#dc2626" : "#64748b";
+    const resultBg = isWon ? "rgba(16,185,129,0.14)" : isLost ? "rgba(220,38,38,0.14)" : "rgba(100,116,139,0.14)";
+    const resultBadge = isWon
+      ? `✅ WON (+${Number(item.profitUnits || 0).toFixed(2)}u)`
+      : isLost
+        ? `❌ LOST (-1.00u)`
+        : `⚪ VOID (0.00u)`;
+
+    return `
+      <article class="panel p-3" style="border-left:4px solid ${resultColor};">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap text-xs text-muted">
+            <span class="sure-pill-tag" style="background:${meta.color};color:#fff;font-weight:700;">${meta.icon} ${escapeHtml(meta.label)}</span>
+            <span class="font-semibold text-text">${escapeHtml(item.country ? `${item.country} · ${item.league}` : item.league)}</span>
+            <span class="font-mono">· ${escapeHtml(item.isoDate || "")}</span>
+            <span class="font-mono px-1.5 py-0.5 rounded" style="background:rgba(15,118,110,0.14);color:#0f766e;font-weight:700;">FT ${item.homeScore} - ${item.awayScore}</span>
+          </div>
+          <span class="sure-pill-tag font-mono" style="background:${resultBg};color:${resultColor};border:1px solid ${resultColor};font-weight:800;">${resultBadge}</span>
+        </div>
+
+        <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
+          <div class="flex items-center gap-2 font-bold text-sm text-text min-w-0">
+            ${crestImg(item.homeLogo, item.home, "#10B981", 20)}
+            <span class="truncate">${escapeHtml(item.home)}</span>
+            <span class="font-mono px-2 py-0.5 rounded text-xs" style="background:var(--ground-subtle);font-weight:800;">${item.homeScore} : ${item.awayScore}</span>
+            <span class="truncate">${escapeHtml(item.away)}</span>
+            ${crestImg(item.awayLogo, item.away, "#3B82F6", 20)}
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="ppg-chip" style="font-weight:800;">Tip: ${escapeHtml(item.market)} @ ${Number(item.odds || 1).toFixed(2)}</span>
+            ${item.fbGameId ? `<span class="font-mono text-xs text-muted">FB #${escapeHtml(String(item.fbGameId))}</span>` : ""}
+          </div>
+        </div>
+
+        ${item.reason ? `<div class="text-xs text-text-secondary mt-1.5">${escapeHtml(item.reason)}</div>` : ""}
+      </article>
+    `;
+  }
+
+  function renderHistoryView() {
+    if (!tipHistoryData && !isLoadingTipHistory) {
+      loadTipHistory(false);
+    }
+
+    const allItems = tipHistoryData?.items || [];
+    const groupBy = state.activeHistoryGroupBy || "SECTION";
+    const outcomeFilter = state.activeHistoryOutcome || "ALL";
+    const catFilter = state.activeHistoryCategory || "ALL";
+    const searchQ = (state.historySearch || "").trim().toLowerCase();
+
+    const filtered = allItems.filter((x) => {
+      if (outcomeFilter !== "ALL" && x.result !== outcomeFilter) return false;
+      if (catFilter !== "ALL" && x.category !== catFilter) return false;
+      if (searchQ) {
+        const hay = `${x.home} ${x.away} ${x.league} ${x.country} ${x.market} ${x.categoryLabel}`.toLowerCase();
+        if (!hay.includes(searchQ)) return false;
+      }
+      return true;
+    });
+
+    // Build groups dynamically based on activeHistoryGroupBy
+    const groupsMap = new Map();
+    for (const item of filtered) {
+      let gKey = "";
+      let gTitle = "";
+      let gIcon = "📂";
+      let gColor = "#0f766e";
+
+      if (groupBy === "LEAGUE") {
+        const lgLabel = item.country ? `${item.country} · ${item.league}` : (item.league || "Other Competitions");
+        gKey = lgLabel;
+        gTitle = lgLabel;
+        gIcon = "🏆";
+        gColor = "#2563eb";
+      } else if (groupBy === "DATE") {
+        const dIso = item.isoDate || "Today";
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const yestIso = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        gKey = dIso;
+        gTitle = dIso === todayIso ? `Today (${dIso})` : dIso === yestIso ? `Yesterday (${dIso})` : dIso;
+        gIcon = "📅";
+        gColor = "#0d9488";
+      } else if (groupBy === "RESULT") {
+        gKey = item.result || "WON";
+        gTitle = gKey === "WON" ? "✅ Won Tips" : gKey === "LOST" ? "❌ Lost Tips" : "⚪ Void / Push Tips";
+        gIcon = "";
+        gColor = gKey === "WON" ? "#059669" : gKey === "LOST" ? "#dc2626" : "#64748b";
+      } else {
+        const meta = getHistoryMeta(item.category, item.categoryLabel);
+        gKey = item.category || "SURE_ODDS";
+        gTitle = meta.label;
+        gIcon = meta.icon;
+        gColor = meta.color;
+      }
+
+      if (!groupsMap.has(gKey)) {
+        groupsMap.set(gKey, { key: gKey, title: gTitle, icon: gIcon, color: gColor, items: [], won: 0, lost: 0, void: 0, netUnits: 0 });
+      }
+      const grp = groupsMap.get(gKey);
+      grp.items.push(item);
+      if (item.result === "WON") grp.won++;
+      else if (item.result === "LOST") grp.lost++;
+      else grp.void++;
+      grp.netUnits = Math.round((grp.netUnits + (Number(item.profitUnits) || 0)) * 100) / 100;
+    }
+
+    const groups = Array.from(groupsMap.values()).sort((a, b) => {
+      if (groupBy === "DATE") return b.key.localeCompare(a.key);
+      if (groupBy === "RESULT") {
+        const ord = { WON: 0, LOST: 1, VOID: 2 };
+        return (ord[a.key] ?? 9) - (ord[b.key] ?? 9);
+      }
+      return b.items.length - a.items.length;
+    });
+
+    const fWon = filtered.filter((x) => x.result === "WON").length;
+    const fLost = filtered.filter((x) => x.result === "LOST").length;
+    const fVoid = filtered.filter((x) => x.result === "VOID").length;
+    const fDecided = fWon + fLost;
+    const fWr = fDecided > 0 ? Math.round((fWon / fDecided) * 1000) / 10 : 0;
+    const fNet = Math.round(filtered.reduce((acc, x) => acc + (Number(x.profitUnits) || 0), 0) * 100) / 100;
+
+    const catsPresent = tipHistoryData?.categoryStats || [];
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#0f766e;color:#fff;">📜 SETTLED TIPS LEDGER</span>
+            <span class="sure-pill-tag">${allItems.length} PLAYED MATCHES SETTLED</span>
+          </div>
+          <button type="button" class="analyze-inline-btn" data-history-refresh="1" style="background:#13A87E;color:#07100F;border-color:#7CE8C4;font-weight:700;">
+            ${isLoadingTipHistory ? "⟳ Grading Played Results..." : "↻ Sync & Settle Played Results"}
+          </button>
+        </div>
+        <h1 class="mt-2">Played Tips History &amp; Verified Results</h1>
+        <p>Every tip played by the system is automatically recorded and graded against verified Final Time (FT) scores from Football.com, OneFootball, FootyMetrics, and ESPN — grouped cleanly by Tip Section, League, Date, or Result.</p>
+
+        <div class="grid gap-2 mt-3" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+          <div class="panel p-2.5 text-center">
+            <div class="text-xs text-muted">Played Tips</div>
+            <div class="font-mono text-lg font-extrabold text-text">${filtered.length}</div>
+          </div>
+          <div class="panel p-2.5 text-center">
+            <div class="text-xs text-muted">Won ✅</div>
+            <div class="font-mono text-lg font-extrabold" style="color:#059669;">${fWon}</div>
+          </div>
+          <div class="panel p-2.5 text-center">
+            <div class="text-xs text-muted">Lost ❌</div>
+            <div class="font-mono text-lg font-extrabold" style="color:#dc2626;">${fLost}</div>
+          </div>
+          <div class="panel p-2.5 text-center">
+            <div class="text-xs text-muted">Win Rate</div>
+            <div class="font-mono text-lg font-extrabold" style="color:${fWr >= 60 ? "#059669" : "#d97706"};">${fWr}%</div>
+          </div>
+          <div class="panel p-2.5 text-center">
+            <div class="text-xs text-muted">Net Profit (1u/tip)</div>
+            <div class="font-mono text-lg font-extrabold" style="color:${fNet >= 0 ? "#059669" : "#dc2626"};">${fNet >= 0 ? `+${fNet.toFixed(2)}` : fNet.toFixed(2)}u</div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
+          <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+            <button type="button" class="filter-chip${groupBy === "SECTION" ? " is-active" : ""}" data-history-groupby="SECTION">📂 Group by Tip Section</button>
+            <button type="button" class="filter-chip${groupBy === "LEAGUE" ? " is-active" : ""}" data-history-groupby="LEAGUE">🏆 Group by League</button>
+            <button type="button" class="filter-chip${groupBy === "DATE" ? " is-active" : ""}" data-history-groupby="DATE">📅 Group by Date</button>
+            <button type="button" class="filter-chip${groupBy === "RESULT" ? " is-active" : ""}" data-history-groupby="RESULT">✅ Group by Result</button>
+          </div>
+          <input id="historySearchInput" type="search" value="${escapeHtml(state.historySearch || "")}" placeholder="Search team, league or tip..." class="px-3 py-1.5 text-xs rounded-md border" style="background:var(--ground);color:var(--text);min-width:210px;" />
+        </div>
+
+        <div class="intel-tabs mt-2" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.1);">
+          <button type="button" class="filter-chip${outcomeFilter === "ALL" ? " is-active" : ""}" data-history-outcome="ALL">All Results (${allItems.length})</button>
+          <button type="button" class="filter-chip${outcomeFilter === "WON" ? " is-active" : ""}" data-history-outcome="WON">✅ Won Only</button>
+          <button type="button" class="filter-chip${outcomeFilter === "LOST" ? " is-active" : ""}" data-history-outcome="LOST">❌ Lost Only</button>
+          <button type="button" class="filter-chip${outcomeFilter === "VOID" ? " is-active" : ""}" data-history-outcome="VOID">⚪ Void/Push</button>
+          <span class="subnav-sep" aria-hidden="true"></span>
+          <button type="button" class="filter-chip${catFilter === "ALL" ? " is-active" : ""}" data-history-cat="ALL">All Sections</button>
+          ${catsPresent.map((c) => {
+            const meta = getHistoryMeta(c.key, c.label);
+            return `<button type="button" class="filter-chip${catFilter === c.key ? " is-active" : ""}" data-history-cat="${escapeHtml(c.key)}">${meta.icon} ${escapeHtml(meta.label)} (${c.total})</button>`;
+          }).join("")}
+        </div>
+      </div>
+
+      ${!tipHistoryData
+        ? `<div class="empty-state"><h3>Grading played tips &amp; loading results...</h3></div>`
+        : groups.length === 0
+          ? `<div class="empty-state"><h3>No played tips match these filters</h3><p class="text-sm">Try switching back to All Results / All Sections or click Sync &amp; Settle Played Results.</p></div>`
+          : groups.map((grp) => {
+              const dec = grp.won + grp.lost;
+              const wr = dec > 0 ? Math.round((grp.won / dec) * 100) : 0;
+              return `
+                <section class="panel-section mb-4" style="border-top:3px solid ${grp.color};">
+                  <div class="panel-header" style="padding:12px 16px;">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="font-bold text-base">${grp.icon ? `${grp.icon} ` : ""}${escapeHtml(grp.title)}</span>
+                      <span class="count">${grp.items.length} games</span>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap text-xs font-mono">
+                      <span class="sure-pill-tag" style="background:rgba(16,185,129,0.14);color:#059669;font-weight:800;">${grp.won}W - ${grp.lost}L${grp.void ? ` - ${grp.void}V` : ""} (${wr}%)</span>
+                      <span class="sure-pill-tag" style="background:${grp.netUnits >= 0 ? "rgba(16,185,129,0.14)" : "rgba(220,38,38,0.14)"};color:${grp.netUnits >= 0 ? "#059669" : "#dc2626"};font-weight:800;">${grp.netUnits >= 0 ? `+${grp.netUnits.toFixed(2)}` : grp.netUnits.toFixed(2)}u</span>
+                    </div>
+                  </div>
+                  <div class="p-3 flex flex-col gap-2.5">
+                    ${grp.items.map(renderHistoryPlayedRow).join("")}
+                  </div>
+                </section>
+              `;
+            }).join("")
+      }
+    `;
+  }
+
+  // ============ TODAY'S GAMES ONLY — ARRANGED ACCORDING TO THEIR LEAGUES (/today) ============
+  function getAllTodayGamesPool() {
+    const todayIso = getTodayIso();
+    const combined = [
+      ...liveMatches.filter((m) => !isNcaaOrWomenMatch(m) && isMatchTodayStrict(m)),
+      ...finishedTodayMatches.filter((m) => !isNcaaOrWomenMatch(m) && (!m.date || m.date === todayIso))
+    ];
+
+    if (footyMetricsData && Array.isArray(footyMetricsData.fixtures)) {
+      for (const f of footyMetricsData.fixtures) {
+        const fIso = (f.timestamp || "").slice(0, 10);
+        if (fIso && fIso !== todayIso) continue;
+        const hName = cleanTeamDisplayNameClient(f.home?.name || "");
+        const aName = cleanTeamDisplayNameClient(f.away?.name || "");
+        if (!hName || !aName || isNcaaOrWomenMatch({ leagueName: f.league?.name, homeTeamName: hName, awayTeamName: aName })) continue;
+        const hKey = `fm-${String(f.home?.apid || hName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+        const aKey = `fm-${String(f.away?.apid || aName).toLowerCase().replace(/[^a-z0-9]/g, "-")}`;
+        if (DATA?.TEAMS) {
+          if (!DATA.TEAMS[hKey]) DATA.TEAMS[hKey] = { name: hName, short: hName, country: f.league?.country || "International", logo: f.home?.logo || "", color: "#10B981" };
+          if (!DATA.TEAMS[aKey]) DATA.TEAMS[aKey] = { name: aName, short: aName, country: f.league?.country || "International", logo: f.away?.logo || "", color: "#3B82F6" };
+        }
+        const loc = RT?.resolveCanonicalLocation
+          ? RT.resolveCanonicalLocation(f.league?.country || "International", f.league?.name || "Football", "football")
+          : { country: f.league?.country || "International", league: f.league?.name || "Football", slug: `football-${String(f.league?.name || "league").toLowerCase().replace(/[^a-z0-9]+/g, "-")}` };
+        const ts = f.timestamp ? Date.parse(f.timestamp) : Date.now();
+        const isFt = f.status === "FT";
+        const isLv = f.status === "LIVE" || f.status === "INPLAY";
+        combined.push({
+          id: `fm-${f.id}`,
+          espnId: `fm-${f.id}`,
+          sport: "football",
+          sportName: "Football",
+          leagueSlug: loc.slug,
+          leagueName: loc.league,
+          leagueCountry: loc.country,
+          leagueLogo: f.league?.logo || "",
+          date: todayIso,
+          isoDateTime: f.timestamp || new Date().toISOString(),
+          timestamp: Number.isFinite(ts) ? ts : Date.now(),
+          estimateStartTime: Number.isFinite(ts) ? ts : Date.now(),
+          status: isFt ? "FT" : isLv ? "LIVE" : "SCHEDULED",
+          isLive: isLv,
+          matchStatus: f.status || (isFt ? "FT" : "Scheduled"),
+          displayTime: isFt ? "FT" : (f.timestamp ? new Date(f.timestamp).toISOString().slice(11, 16) : "Today"),
+          home: hKey,
+          away: aKey,
+          homeTeamName: hName,
+          awayTeamName: aName,
+          homeLogo: f.home?.logo || "",
+          awayLogo: f.away?.logo || "",
+          homeScore: f.homeGoals,
+          awayScore: f.awayGoals,
+          odds: { home: f.odds?.odd1 || 1.9, draw: f.odds?.oddX || 3.4, away: f.odds?.odd2 || 3.8, over15: f.odds?.oddOver15 || 1.25 },
+          fmIntel: f,
+          analysis: { confidencePct: 75, bestPick: { label: f.odds?.odd1x ? "1X Double Chance" : "Match Odds", odds: f.odds?.odd1x || f.odds?.odd1 || 1.35 }, factors: {} }
+        });
+      }
+    }
+
+    return sortMatchesInOrder(deduplicateMatches(combined));
+  }
+
+  function renderHomeTodayGamesSection() {
+    const todayIso = getTodayIso();
+    const allToday = getAllTodayGamesPool();
+    const liveCnt = allToday.filter(isMatchTrulyLive).length;
+    const schedCnt = allToday.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m)).length;
+    const ftCnt = allToday.filter((m) => m.status === "FT" || m.isCompleted).length;
+    const previewList = allToday.slice(0, 36);
+
+    return `
+      <section class="panel-section" id="homeTodayGamesSection" style="border:1px solid rgba(14,165,233,0.35);">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(14, 165, 233, 0.22); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#0284c7;color:#fff;font-weight:800;">📅 TODAY'S GAMES ONLY · BY LEAGUE (${todayIso})</span>
+            <span class="text-xs font-semibold text-muted">${allToday.length} Total Today · ${liveCnt} Live · ${schedCnt} Upcoming · ${ftCnt} FT Played (Zero Tomorrow Games)</span>
+          </div>
+          <a class="btn-subtle text-xs" href="/today" data-route="/today" style="font-weight:800;color:#0284c7;">Open All ${allToday.length} Today Games &rarr;</a>
+        </div>
+        <div class="p-3">
+          ${allToday.length === 0
+            ? `<div class="text-xs text-muted p-2">All games for ${escapeHtml(todayIso)} will load momentarily — Day-by-Day mode strictly excludes tomorrow's games until 00:00.</div>`
+            : `${renderCountryGroupedLeagues(previewList, false)}${allToday.length > previewList.length ? `<div class="text-center pt-2"><a href="/today" data-route="/today" class="analyze-inline-btn">View All ${allToday.length} Today's Games Grouped by League &rarr;</a></div>` : ""}`
+          }
+        </div>
+      </section>
+    `;
+  }
+
+  function renderTodayGamesView() {
+    const todayIso = getTodayIso();
+    const allToday = getAllTodayGamesPool();
+    const mode = state.activeTodayMode || "ALL";
+    const q = (state.todaySearch || "").trim().toLowerCase();
+
+    const livePool = allToday.filter(isMatchTrulyLive);
+    const schedPool = allToday.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
+    const ftPool = allToday.filter((m) => m.status === "FT" || m.isCompleted);
+
+    let list = allToday;
+    if (mode === "LIVE") list = livePool;
+    else if (mode === "SCHEDULED") list = schedPool;
+    else if (mode === "FT") list = ftPool;
+
+    if (q) {
+      list = list.filter((m) => {
+        const lg = getLeagueInfo(m);
+        const hay = `${m.homeTeamName || ""} ${m.awayTeamName || ""} ${lg.name || ""} ${lg.country || ""}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    const leagueSet = new Set(list.map((m) => {
+      const lg = getLeagueInfo(m);
+      return `${lg.country}:${lg.name}`;
+    }));
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#0284c7;color:#fff;">📅 STRICT DAY-BY-DAY · TODAY ONLY (${escapeHtml(todayIso)})</span>
+            <span class="sure-pill-tag">${list.length} GAMES ACROSS ${leagueSet.size} LEAGUES</span>
+          </div>
+          <button type="button" class="analyze-inline-btn" id="refreshMatchesBtn" style="background:#13A87E;color:#07100F;border-color:#7CE8C4;font-weight:700;">↻ Sync Today's Games</button>
+        </div>
+        <h1 class="mt-2">Today's Games — Arranged by League</h1>
+        <p>Focused strictly on <strong>${escapeHtml(todayIso)}</strong> (Day-by-Day Mode). Tomorrow's fixtures do not appear here until today is finished and the new day begins at 00:00.</p>
+
+        <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
+          <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+            <button type="button" class="filter-chip${mode === "ALL" ? " is-active" : ""}" data-today-mode="ALL">📅 All Today (${allToday.length})</button>
+            <button type="button" class="filter-chip${mode === "LIVE" ? " is-active" : ""}" data-today-mode="LIVE">🔴 Live Now (${livePool.length})</button>
+            <button type="button" class="filter-chip${mode === "SCHEDULED" ? " is-active" : ""}" data-today-mode="SCHEDULED">🕒 Upcoming Today (${schedPool.length})</button>
+            <button type="button" class="filter-chip${mode === "FT" ? " is-active" : ""}" data-today-mode="FT">✅ Played FT Today (${ftPool.length})</button>
+          </div>
+          <input id="todayGamesSearchInput" type="search" value="${escapeHtml(state.todaySearch || "")}" placeholder="Search today's team or league..." class="px-3 py-1.5 text-xs rounded-md border" style="background:var(--ground);color:var(--text);min-width:210px;" />
+        </div>
+      </div>
+
+      ${list.length === 0
+        ? `<div class="empty-state"><h3>No today's games match this filter</h3><p class="text-sm">Day-by-Day filter active for ${escapeHtml(todayIso)} — zero tomorrow games shown. Tomorrow's card opens automatically at 00:00.</p></div>`
+        : renderCountryGroupedLeagues(list, mode === "FT")
+      }
+    `;
+  }
+
   function renderMainContent() {
     const main = document.getElementById("mainContent");
     if (!main) return;
@@ -6959,6 +7421,44 @@
         main.innerHTML = renderWorstTeamsView();
       } else if (r === "/odds-mismatch") {
         main.innerHTML = renderOddsMismatchView();
+      } else if (r === "/today" || r === "/todays-games" || r === "/today-games") {
+        main.innerHTML = renderTodayGamesView();
+        const todaySearchEl = document.getElementById("todayGamesSearchInput");
+        if (todaySearchEl) {
+          let tTimer = null;
+          todaySearchEl.addEventListener("input", (ev) => {
+            state.todaySearch = ev.target.value || "";
+            if (tTimer) clearTimeout(tTimer);
+            tTimer = setTimeout(() => {
+              renderMainContent();
+              const refocused = document.getElementById("todayGamesSearchInput");
+              if (refocused) {
+                refocused.focus();
+                const len = refocused.value.length;
+                refocused.setSelectionRange(len, len);
+              }
+            }, 140);
+          });
+        }
+      } else if (r === "/history" || r === "/results" || r === "/tip-history") {
+        main.innerHTML = renderHistoryView();
+        const histSearch = document.getElementById("historySearchInput");
+        if (histSearch) {
+          let hTimer = null;
+          histSearch.addEventListener("input", (ev) => {
+            state.historySearch = ev.target.value || "";
+            if (hTimer) clearTimeout(hTimer);
+            hTimer = setTimeout(() => {
+              renderMainContent();
+              const refocused = document.getElementById("historySearchInput");
+              if (refocused) {
+                refocused.focus();
+                const len = refocused.value.length;
+                refocused.setSelectionRange(len, len);
+              }
+            }, 140);
+          });
+        }
       } else if (r === "/search") {
         main.innerHTML = renderSearchView();
         const pageSearch = document.getElementById("pageSearchInput");
@@ -7743,6 +8243,11 @@
       }
       const isDeadGame = Boolean(g.isAbandoned || isMatchAbandonedOrInterrupted(g) || isMatchAbandonedOrInterrupted({ status: rawMatchStatus, matchStatus: rawMatchStatus }));
       const isGameLive = !isDeadGame && Boolean(g.isLive);
+      const todayIsoStrict = getTodayIso();
+      // Strict Day-by-Day: skip any tomorrow/future scheduled games
+      if (!isGameLive && dateStr && dateStr !== todayIsoStrict) {
+        continue;
+      }
       const clockInfo = isGameLive
         ? resolveLiveClockAndHalf({
             sport,
@@ -7760,7 +8265,7 @@
       const hoursToKickoff = Number.isFinite(Number(g.hoursToKickoff))
         ? Number(g.hoursToKickoff)
         : Math.round(((startTs - Date.now()) / 3600000) * 10) / 10;
-      const isPreMatch5h = Boolean(!isGameLive && !isDeadGame && (startTs - Date.now()) >= 5 * 3600000);
+      const isPreMatch5h = Boolean(!isGameLive && !isDeadGame && (startTs - Date.now()) >= 15 * 60000);
 
       let existing = existingById.get(matchId);
       let matchedSwappedOrientation = false;
@@ -8549,6 +9054,43 @@
       return;
     }
 
+    const histGrpBtn = e.target.closest("[data-history-groupby]");
+    if (histGrpBtn) {
+      state.activeHistoryGroupBy = histGrpBtn.getAttribute("data-history-groupby") || "SECTION";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const histOutBtn = e.target.closest("[data-history-outcome]");
+    if (histOutBtn) {
+      state.activeHistoryOutcome = histOutBtn.getAttribute("data-history-outcome") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    const histCatBtn = e.target.closest("[data-history-cat]");
+    if (histCatBtn) {
+      state.activeHistoryCategory = histCatBtn.getAttribute("data-history-cat") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
+    if (e.target.closest("[data-history-refresh]")) {
+      scheduleUiUpdate(() => loadTipHistory(true));
+      return;
+    }
+
+    const todayModeBtn = e.target.closest("[data-today-mode]");
+    if (todayModeBtn) {
+      state.activeTodayMode = todayModeBtn.getAttribute("data-today-mode") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
     // Copy SportyBet / Football.com Game ID or Tip
     const copyTipBtn = e.target.closest("[data-copy-tip]");
     if (copyTipBtn) {
@@ -8940,19 +9482,12 @@
     const curDayKey = new Date().toISOString().slice(0, 10);
     if (curDayKey === missionDayKey) return false;
     missionDayKey = curDayKey;
-    const nextDates = [{ id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" }];
-    for (let offset = 0; offset < 3; offset++) {
-      const d = new Date();
-      d.setDate(d.getDate() + offset);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      const iso = `${y}-${m}-${day}`;
-      const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      const lbl = offset === 0 ? `Today · ${monDay}` : offset === 1 ? `Tomorrow · ${monDay}` : `${d.toLocaleDateString("en-US", { weekday: "short" })}, ${monDay}`;
-      nextDates.push({ id: iso, label: lbl, short: offset === 0 ? "Today" : offset === 1 ? "Tomorrow" : monDay });
-    }
-    DATA.DATES = nextDates;
+    const d = new Date(`${curDayKey}T12:00:00Z`);
+    const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    DATA.todayIso = curDayKey;
+    DATA.DATES = [{ id: curDayKey, label: `Today · ${monDay}`, short: "Today" }];
+    state.selectedDate = curDayKey;
+    saveState();
     return true;
   }
 
@@ -9001,6 +9536,8 @@
             }
           } else if (msg.source === "footymetrics") {
             loadFootyMetricsIntelligence(false);
+          } else if (msg.source === "history") {
+            loadTipHistory(false);
           }
         } catch {}
       });
@@ -9050,7 +9587,13 @@
     }
     renderMissionHud();
     if (rolled) {
+      liveMatches = liveMatches.filter((m) => isMatchTrulyLive(m) || m.date === DATA.todayIso);
+      finishedTodayMatches = [];
       syncRealtimeFeed(false);
+      syncBookmakerMismatchFeed(true, false);
+      loadStatPropsIntelligence(true);
+      loadFootyMetricsIntelligence(true);
+      loadTipHistory(true);
       renderAll();
     }
   }, 10000);
@@ -9110,6 +9653,8 @@
     if (pRoute === "/2h-highest" || pRoute === "/second-half" || pRoute === "/second-half-highest") pRoute = "/";
     if (pRoute === "/special-tips" || pRoute === "/5min-draw" || pRoute === "/no-3-in-a-row" || pRoute === "/draw-defense" || pRoute === "/defensive-tips") pRoute = "/";
     if (pRoute === "/ft-draw" || pRoute === "/fulltime-draw" || pRoute === "/full-time-draw" || pRoute === "/draw-tips") pRoute = "/";
+    if (pRoute === "/results" || pRoute === "/tip-history") pRoute = "/history";
+    if (pRoute === "/todays-games" || pRoute === "/today-games") pRoute = "/today";
     if (pRoute === "/stat-props") pRoute = "/ou-props";
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("market") && pRoute === "/ou-props") {
@@ -9129,7 +9674,10 @@
       if (pRoute === "/odds-mismatch") state.activeMismatchCategory = upperCat;
       if (pRoute === "/strong-teams") state.activeStrongFilter = upperCat;
       if (pRoute === "/worst-teams") state.activeWorstFilter = upperCat;
+      if (pRoute === "/history") state.activeHistoryCategory = upperCat;
     }
+    if (qs.get("group") && pRoute === "/history") state.activeHistoryGroupBy = qs.get("group").toUpperCase();
+    if (qs.get("outcome") && pRoute === "/history") state.activeHistoryOutcome = qs.get("outcome").toUpperCase();
     if (qs.get("league")) state.activeRuninLeague = qs.get("league").toLowerCase();
     if (qs.get("sport")) state.activeRuninSport = qs.get("sport").toLowerCase();
     state.route = pRoute;
@@ -9148,4 +9696,5 @@
   syncBookmakerMismatchFeed(false, false);
   loadStatPropsIntelligence(false);
   loadFootyMetricsIntelligence(false);
+  loadTipHistory(false);
 })();

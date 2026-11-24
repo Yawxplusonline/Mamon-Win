@@ -24,14 +24,9 @@ window.MAMON_DATA = (() => {
 
   const now = new Date();
   const todayIso = formatIsoDate(now);
-  const tomorrowIso = formatIsoDate(addDays(now, 1));
-  const day2Iso = formatIsoDate(addDays(now, 2));
 
   const DATES = [
-    { id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" },
-    { id: todayIso, label: formatFriendlyDay(now, 0), short: "Today" },
-    { id: tomorrowIso, label: formatFriendlyDay(addDays(now, 1), 1), short: "Tomorrow" },
-    { id: day2Iso, label: formatFriendlyDay(addDays(now, 2), 2), short: formatFriendlyDay(addDays(now, 2), 2) }
+    { id: todayIso, label: formatFriendlyDay(now, 0), short: "Today" }
   ];
 
   // Featured Clubs catalog (dynamically augmented by all clubs from live ESPN feeds)

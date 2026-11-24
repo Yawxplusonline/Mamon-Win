@@ -9,6 +9,7 @@ const handleOnefootballProxy = require("./api/onefootball");
 const handleSecondHalfProxy = require("./api/secondhalf");
 const handleStatPropsProxy = require("./api/statprops");
 const handleFootyMetricsProxy = require("./api/footymetrics");
+const handleHistoryProxy = require("./api/history");
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -111,6 +112,19 @@ const missionState = {
       runCount: 0,
       errorCount: 0,
       meta: {}
+    },
+    history: {
+      intervalMs: 5 * 60 * 1000,
+      status: "WARMING",
+      inFlight: false,
+      lastOkAt: null,
+      lastOkMs: 0,
+      lastErrorAt: null,
+      lastError: null,
+      latencyMs: 0,
+      runCount: 0,
+      errorCount: 0,
+      meta: {}
     }
   }
 };
@@ -201,6 +215,12 @@ async function runMissionJob(sourceKey, forceRefresh = true) {
       slot.meta = {
         fixturesCount: result?.fixturesCount || 0,
         refereeAppointmentsCount: result?.refereeAppointmentsCount || 0
+      };
+    } else if (sourceKey === "history" && typeof handleHistoryProxy.buildTipHistory === "function") {
+      result = await handleHistoryProxy.buildTipHistory(forceRefresh);
+      slot.meta = {
+        totalPlayed: result?.summary?.totalPlayed || 0,
+        winRatePct: result?.summary?.winRatePct || 0
       };
     }
     slot.status = "ONLINE";
@@ -294,6 +314,10 @@ const server = http.createServer(async (req, res) => {
       await handleFootyMetricsProxy(req, res);
       return;
     }
+    if (reqUrl.pathname === "/api/history") {
+      await handleHistoryProxy(req, res);
+      return;
+    }
 
     let reqPath = decodeURIComponent(reqUrl.pathname);
     if (reqPath === "/") reqPath = "/index.html";
@@ -345,6 +369,7 @@ server.listen(PORT, HOST, () => {
   runMissionJob("runin", false);
   runMissionJob("statprops", false);
   runMissionJob("footymetrics", false);
+  setTimeout(() => { runMissionJob("history", false); }, 4000);
 
   // Autonomous Continuous Real-Time Acquisition Loops
   setInterval(() => { runMissionJob("onefootball", true); }, 60 * 1000);
@@ -352,6 +377,7 @@ server.listen(PORT, HOST, () => {
   setInterval(() => { runMissionJob("runin", true); }, 10 * 60 * 1000);
   setInterval(() => { runMissionJob("statprops", true); }, 15 * 60 * 1000);
   setInterval(() => { runMissionJob("footymetrics", true); }, 10 * 60 * 1000);
+  setInterval(() => { runMissionJob("history", true); }, 5 * 60 * 1000);
 
   // Self-Healing Watchdog + SSE Keep-Alive Heartbeat (Guaranteed Permanent Live Stream)
   setInterval(() => {

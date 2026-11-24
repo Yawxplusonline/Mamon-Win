@@ -254,12 +254,8 @@ async function fetchOneFootballSchedule(forceRefresh = false) {
 
   inFlightFetch = (async () => {
     try {
-      const days = [0, 1, 2].map((off) => {
-        const d = new Date(Date.now() + off * 86400000);
-        const iso = d.toISOString().slice(0, 10);
-        const url = off === 0 ? "https://onefootball.com/en/matches" : `https://onefootball.com/en/matches?date=${iso}`;
-        return { off, iso, url };
-      });
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const days = [{ off: 0, iso: todayIso, url: "https://onefootball.com/en/matches" }];
 
       const pages = await Promise.all(
         days.map(async (dy) => {
@@ -284,6 +280,8 @@ async function fetchOneFootballSchedule(forceRefresh = false) {
       const dedupMap = new Map();
       for (const list of pages) {
         for (const item of list) {
+          // Strict Day-by-Day: keep ONLY today's games or currently LIVE games (never tomorrow's fixtures)
+          if (item.isoDate !== todayIso && item.status !== "LIVE") continue;
           const prev = dedupMap.get(item.onefootballId);
           if (!prev || (item.leagueName !== "International Football" && prev.leagueName === "International Football")) {
             dedupMap.set(item.onefootballId, item);

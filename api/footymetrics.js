@@ -276,16 +276,26 @@ async function fetchFootyMetricsIntelligence(forceRefresh = false) {
       }
     }
 
-    const fixtures = Array.from(fixturesMap.values());
+    const todayUtcIso = new Date().toISOString().slice(0, 10);
+    const fixtures = Array.from(fixturesMap.values()).filter(
+      (f) => !f.timestamp || f.timestamp.slice(0, 10) === todayUtcIso
+    );
+    const todayTrends = playerTrends.filter(
+      (t) => !t.timestamp || t.timestamp.slice(0, 10) === todayUtcIso
+    );
+    const todayRefs = refereeAppointments.filter(
+      (r) => !r.timestamp || r.timestamp.slice(0, 10) === todayUtcIso
+    );
     const payload = {
       source: "footymetrics.com (Opta-Level Stats, Form & Referees)",
+      todayIso: todayUtcIso,
       fetchedAt: new Date().toISOString(),
       fixturesCount: fixtures.length,
-      refereeAppointmentsCount: refereeAppointments.length,
-      playerTrendsCount: playerTrends.length,
+      refereeAppointmentsCount: todayRefs.length,
+      playerTrendsCount: todayTrends.length,
       fixtures,
-      playerTrends,
-      refereeAppointments: refereeAppointments
+      playerTrends: todayTrends,
+      refereeAppointments: todayRefs
         .sort((a, b) => (b.cardsPg || 0) - (a.cardsPg || 0))
         .slice(0, 60),
       topReferees

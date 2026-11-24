@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css?v=speed26">
+  <link rel="stylesheet" href="/styles.css?v=speed28">
 </head>
 <body>
   <div class="flex min-h-dvh flex-col">
@@ -27,6 +27,7 @@
 
           <nav class="topbar-nav" aria-label="Main" id="topbarNav">
             <a href="/" data-route="/" aria-current="page">Home</a>
+            <a href="/today" data-route="/today" class="nav-today">📅 Today</a>
             <a href="/live" data-route="/live" class="nav-live">🔴 Live</a>
             <a href="/upcoming" data-route="/upcoming" class="nav-upcoming">📅 Upcoming</a>
             <a href="/sure-odds" data-route="/sure-odds" class="nav-sure-odds">
@@ -46,6 +47,7 @@
               <span class="mismatch-badge-icon" aria-hidden="true">⚖️</span>
               Mismatch
             </a>
+            <a href="/history" data-route="/history" class="nav-history">📜 History</a>
           </nav>
 
           <div class="topbar-actions">
@@ -125,12 +127,14 @@
             <ul>
               <li><a href="/handicap" data-route="/handicap">🎯 Winning Handicap &amp; +EV Bets</a></li>
               <li><a href="/sure-odds" data-route="/sure-odds">💎 Sure Odds Banker Slips (2x–1M)</a></li>
+              <li><a href="/history" data-route="/history">📜 Tip History &amp; Played Results</a></li>
             </ul>
           </div>
 
           <div class="footer-col">
             <h3>Football Sections</h3>
             <ul>
+              <li><a href="/today" data-route="/today">📅 Today's Games (By League)</a></li>
               <li><a href="/matches" data-route="/matches" data-sport-filter="football">⚽ All Football Matches</a></li>
               <li><a href="/live" data-route="/live">🔴 Live Football In-Play</a></li>
               <li><a href="/upcoming" data-route="/upcoming">📅 Upcoming Football Fixtures</a></li>
@@ -176,6 +180,12 @@
           </span>
           <span class="tabbar-label">Home</span>
         </a>
+        <a class="tabbar-item" href="/today" data-route="/today">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>
+          </span>
+          <span class="tabbar-label">Today</span>
+        </a>
         <a class="tabbar-item" href="/handicap" data-route="/handicap">
           <span class="tabbar-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18M6 8l6-5 6 5M6 16l6 5 6-5"/></svg>
@@ -187,6 +197,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
           </span>
           <span class="tabbar-label">Sure Odds</span>
+        </a>
+        <a class="tabbar-item" href="/history" data-route="/history">
+          <span class="tabbar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          </span>
+          <span class="tabbar-label">History</span>
         </a>
         <a class="tabbar-item" href="/dropping-odds" data-route="/dropping-odds">
           <span class="tabbar-icon">
@@ -236,9 +252,9 @@
   <!-- Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
-  <script src="/data/leagues.js?v=speed26"></script>
-  <script src="/data/footballData.js?v=speed26"></script>
-  <script src="/data/realtimeService.js?v=speed26"></script>
-  <script src="/app.js?v=speed26"></script>
+  <script src="/data/leagues.js?v=speed28"></script>
+  <script src="/data/footballData.js?v=speed28"></script>
+  <script src="/data/realtimeService.js?v=speed28"></script>
+  <script src="/app.js?v=speed28"></script>
 </body>
 </html>

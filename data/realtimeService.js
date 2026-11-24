@@ -778,8 +778,8 @@ window.MAMON_REALTIME = (() => {
     return h >>> 0;
   }
 
-  // Strictly enforce >= 5 hours before Kick Off across all Tips, Slips & Predictions
-  const MIN_PREMATCH_LEAD_MS = 5 * 3600 * 1000;
+  // Day-by-Day Pre-Match Lead: minimum 15 minutes before Kick Off for Today's remaining matches
+  const MIN_PREMATCH_LEAD_MS = 15 * 60 * 1000;
 
   function resolveKickoffMs(item) {
     if (!item) return NaN;
@@ -828,6 +828,9 @@ window.MAMON_REALTIME = (() => {
     if (!item) return false;
     if (item.isLive === true || item.status === "LIVE" || item.status === "FT" || item.status === "ABANDONED" || item.isAbandoned === true || isMatchAbandonedOrInterrupted(item)) return false;
     if (isNcaaOrWomenSoccer(item.leagueName, item.league, item.leagueSlug, item.homeTeamName, item.awayTeamName, DATA.TEAMS?.[item.home]?.name, DATA.TEAMS?.[item.away]?.name)) return false;
+    const todayIsoStr = DATA.todayIso || isoDate(new Date());
+    const itemDate = item.date || item.isoDate || "";
+    if (itemDate && itemDate !== todayIsoStr) return false;
     const ko = resolveKickoffMs(item);
     if (!Number.isFinite(ko)) return false;
     return (ko - Date.now()) >= MIN_PREMATCH_LEAD_MS;
@@ -6184,29 +6187,27 @@ window.MAMON_REALTIME = (() => {
 
   async function load(onProgress = null) {
     const now = new Date();
-    const datesToFetch = [0, 1, 2].map((off) => {
+    const todayOnlyIso = isoDate(now);
+    const datesToFetch = [0].map((off) => {
       const d = new Date(now);
       d.setDate(d.getDate() + off);
       return { offset: off, ymd: yyyymmdd(d), iso: isoDate(d) };
     });
 
-    // Update dynamic dates strip in DATA
-    DATA.DATES = [
-      { id: "UPCOMING_ALL", label: "All Upcoming Dates", short: "All Dates" },
-      ...datesToFetch.map((dt) => {
-        const d = new Date(dt.iso + "T12:00:00");
-        const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const lbl = dt.offset === 0 ? `Today · ${monDay}` : dt.offset === 1 ? `Tomorrow · ${monDay}` : `${d.toLocaleDateString("en-US", { weekday: "short" })}, ${monDay}`;
-        return { id: dt.iso, label: lbl, short: dt.offset === 0 ? "Today" : dt.offset === 1 ? "Tomorrow" : monDay };
-      })
-    ];
+    DATA.todayIso = todayOnlyIso;
+    // Update dynamic dates strip in DATA strictly Day-by-Day (Today Only)
+    DATA.DATES = datesToFetch.map((dt) => {
+      const d = new Date(dt.iso + "T12:00:00");
+      const monDay = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return { id: dt.iso, label: `Today · ${monDay}`, short: "Today" };
+    });
 
-    // Step 1: Fetch top-4 standings + today's master scoreboard + OneFootball real matches in parallel (fast-path: skip redundant multi-day/secondary ESPN floods)
+    // Step 1: Fetch top-4 standings + today's master scoreboard + OneFootball real matches in parallel
     const standingsPromise = fetchStandingsAndInjuries(true);
     const priorityPromise = Promise.resolve([]);
 
     const allScoreboardPromise = Promise.all(
-      datesToFetch.slice(0, 2).map((dt) =>
+      datesToFetch.map((dt) =>
         fetchJson(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/scoreboard?dates=${dt.ymd}`, 4500)
           .then((json) => ({ code: null, json }))
       )
@@ -6358,6 +6359,7 @@ window.MAMON_REALTIME = (() => {
     );
     const activeMatches = deduplicateMatches(
       reconciled.activeRemaining
+        .filter((m) => m.status === "LIVE" || m.date === todayOnlyIso)
         .filter((m) => !isNcaaOrWomenSoccer(m.leagueName, m.leagueSlug, m.homeTeamName, m.awayTeamName, DATA.TEAMS?.[m.home]?.name, DATA.TEAMS?.[m.away]?.name))
     ).sort((a, b) => {
       if (a.status === "LIVE" && b.status !== "LIVE") return -1;

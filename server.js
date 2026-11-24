@@ -8,6 +8,7 @@ const handleRuninProxy = require("./api/runin");
 const handleOnefootballProxy = require("./api/onefootball");
 const handleSecondHalfProxy = require("./api/secondhalf");
 const handleStatPropsProxy = require("./api/statprops");
+const handleFootyMetricsProxy = require("./api/footymetrics");
 
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -87,6 +88,19 @@ const missionState = {
     },
     statprops: {
       intervalMs: 15 * 60 * 1000,
+      status: "WARMING",
+      inFlight: false,
+      lastOkAt: null,
+      lastOkMs: 0,
+      lastErrorAt: null,
+      lastError: null,
+      latencyMs: 0,
+      runCount: 0,
+      errorCount: 0,
+      meta: {}
+    },
+    footymetrics: {
+      intervalMs: 10 * 60 * 1000,
       status: "WARMING",
       inFlight: false,
       lastOkAt: null,
@@ -182,6 +196,12 @@ async function runMissionJob(sourceKey, forceRefresh = true) {
         matchesScanned: result?.matchesScanned || 0,
         counts: result?.counts || {}
       };
+    } else if (sourceKey === "footymetrics" && typeof handleFootyMetricsProxy.fetchFootyMetricsIntelligence === "function") {
+      result = await handleFootyMetricsProxy.fetchFootyMetricsIntelligence(forceRefresh);
+      slot.meta = {
+        fixturesCount: result?.fixturesCount || 0,
+        refereeAppointmentsCount: result?.refereeAppointmentsCount || 0
+      };
     }
     slot.status = "ONLINE";
     slot.lastOkMs = Date.now();
@@ -270,6 +290,10 @@ const server = http.createServer(async (req, res) => {
       await handleStatPropsProxy(req, res);
       return;
     }
+    if (reqUrl.pathname === "/api/footymetrics") {
+      await handleFootyMetricsProxy(req, res);
+      return;
+    }
 
     let reqPath = decodeURIComponent(reqUrl.pathname);
     if (reqPath === "/") reqPath = "/index.html";
@@ -320,12 +344,14 @@ server.listen(PORT, HOST, () => {
   runMissionJob("bookmakers", false);
   runMissionJob("runin", false);
   runMissionJob("statprops", false);
+  runMissionJob("footymetrics", false);
 
   // Autonomous Continuous Real-Time Acquisition Loops
   setInterval(() => { runMissionJob("onefootball", true); }, 60 * 1000);
   setInterval(() => { runMissionJob("bookmakers", true); }, 90 * 1000);
   setInterval(() => { runMissionJob("runin", true); }, 10 * 60 * 1000);
   setInterval(() => { runMissionJob("statprops", true); }, 15 * 60 * 1000);
+  setInterval(() => { runMissionJob("footymetrics", true); }, 10 * 60 * 1000);
 
   // Self-Healing Watchdog + SSE Keep-Alive Heartbeat (Guaranteed Permanent Live Stream)
   setInterval(() => {

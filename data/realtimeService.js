@@ -7574,10 +7574,123 @@ window.MAMON_REALTIME = (() => {
     };
   }
 
+  // ============ FOOTYMETRICS OPTA-LEVEL ENRICHMENT & SIGNALS ============
+  function enrichMatchWithFootyMetrics(match, fmData) {
+    if (!match || !fmData || !Array.isArray(fmData.fixtures)) return match;
+    const hName = match.home?.name || match.homeTeam || "";
+    const aName = match.away?.name || match.awayTeam || "";
+    if (!hName || !aName) return match;
+
+    const found = fmData.fixtures.find((f) => {
+      const fh = f.home?.name || "";
+      const fa = f.away?.name || "";
+      return matchTeamsSimilar(hName, fh) && matchTeamsSimilar(aName, fa);
+    });
+    if (!found) return match;
+
+    match.fmIntel = {
+      id: found.id,
+      slug: found.slug,
+      homePos: found.homePos,
+      awayPos: found.awayPos,
+      lineupConfirmed: found.lineupConfirmed,
+      home: found.home,
+      away: found.away,
+      referee: found.referee,
+      odds: found.odds
+    };
+
+    if (found.referee && found.referee.name) {
+      match.fmReferee = found.referee;
+    }
+    return match;
+  }
+
+  function buildFootyMetricsSignals(fmData) {
+    if (!fmData || !Array.isArray(fmData.fixtures)) {
+      return { formSignals: [], goalsSignals: [], highCardReferees: [], playerTrends: [] };
+    }
+    const formSignals = [];
+    const goalsSignals = [];
+
+    for (const f of fmData.fixtures) {
+      const h = f.home || {};
+      const a = f.away || {};
+      const hWin10 = Number(h.win10 ?? 0);
+      const aWin10 = Number(a.win10 ?? 0);
+      const hO25 = Number(h.over2510 ?? 0);
+      const aO25 = Number(a.over2510 ?? 0);
+      const hBtts = Number(h.btts10 ?? 0);
+      const aBtts = Number(a.btts10 ?? 0);
+
+      // Strong Win% mismatch over last 10 games
+      if ((hWin10 >= 60 && aWin10 <= 40) || (aWin10 >= 60 && hWin10 <= 40)) {
+        const favHome = hWin10 > aWin10;
+        const gap = Math.abs(hWin10 - aWin10);
+        formSignals.push({
+          id: f.id,
+          fixture: `${h.name} vs ${a.name}`,
+          home: h.name,
+          away: a.name,
+          homeLogo: h.logo,
+          awayLogo: a.logo,
+          league: f.league?.name || "",
+          country: f.league?.country || "",
+          timestamp: f.timestamp,
+          status: f.status,
+          homePos: f.homePos,
+          awayPos: f.awayPos,
+          pick: favHome ? `${h.name} Win / 1X` : `${a.name} Win / X2`,
+          winGap: gap,
+          homeWin10: hWin10,
+          awayWin10: aWin10,
+          odd: favHome ? (f.odds?.odd1 || f.odds?.odd1x) : (f.odds?.odd2 || f.odds?.oddX2),
+          referee: f.referee
+        });
+      }
+
+      // High Over 2.5 & BTTS Opta signal
+      const avgO25 = (hO25 + aO25) / 2;
+      const avgBtts = (hBtts + aBtts) / 2;
+      if (avgO25 >= 65 || avgBtts >= 65) {
+        goalsSignals.push({
+          id: f.id,
+          fixture: `${h.name} vs ${a.name}`,
+          home: h.name,
+          away: a.name,
+          homeLogo: h.logo,
+          awayLogo: a.logo,
+          league: f.league?.name || "",
+          timestamp: f.timestamp,
+          avgO25: Math.round(avgO25),
+          avgBtts: Math.round(avgBtts),
+          pick: avgBtts >= avgO25 ? "BTTS (GG) Yes" : "Over 2.5 Goals",
+          odd: avgBtts >= avgO25 ? f.odds?.oddBtts : f.odds?.oddOver25
+        });
+      }
+    }
+
+    formSignals.sort((a, b) => b.winGap - a.winGap);
+    goalsSignals.sort((a, b) => Math.max(b.avgO25, b.avgBtts) - Math.max(a.avgO25, a.avgBtts));
+
+    const highCardReferees = (fmData.refereeAppointments || [])
+      .filter((r) => r.cardsPg >= 4.2 && r.games >= 15)
+      .slice(0, 8);
+
+    return {
+      formSignals: formSignals.slice(0, 12),
+      goalsSignals: goalsSignals.slice(0, 12),
+      highCardReferees,
+      playerTrends: fmData.playerTrends || []
+    };
+  }
+
   return {
     SURE_TIERS,
     load,
     enrichMatchDetails,
+    enrichMatchWithFootyMetrics,
+    buildFootyMetricsSignals,
     buildSureOddsSlips,
     buildMatchAnalysis,
     buildTodayPowerRankings,

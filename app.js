@@ -471,6 +471,32 @@
   let isLoadingSecondHalf = false;
   let statPropsData = null;
   let isLoadingStatProps = false;
+  let footyMetricsData = null;
+  let isLoadingFootyMetrics = false;
+
+  async function loadFootyMetricsIntelligence(force = false) {
+    if (isLoadingFootyMetrics && !force) return footyMetricsData;
+    isLoadingFootyMetrics = true;
+    try {
+      const resp = await fetch(`/api/footymetrics${force ? "?refresh=1" : ""}`, { cache: "no-store" });
+      if (!resp.ok) return footyMetricsData;
+      const res = await resp.json();
+      if (res && (Array.isArray(res.fixtures) || Array.isArray(res.refereeAppointments))) {
+        footyMetricsData = res;
+        if (RT?.enrichMatchWithFootyMetrics && Array.isArray(liveMatches)) {
+          for (const m of liveMatches) {
+            RT.enrichMatchWithFootyMetrics(m, footyMetricsData);
+          }
+        }
+      }
+      return footyMetricsData;
+    } catch {
+      return footyMetricsData;
+    } finally {
+      isLoadingFootyMetrics = false;
+      scheduleRenderMainContent();
+    }
+  }
 
   async function loadStatPropsIntelligence(force = false) {
     if (isLoadingStatProps && !force) return statPropsData;
@@ -1698,10 +1724,10 @@
         <div class="factor-tile">
           <div class="factor-tile-head">
             <span class="factor-name">15. Appointed Referee &amp; Cards</span>
-            <span class="factor-edge-pill">${escapeHtml(f.referee?.cardRisk || "MODERATE")} CARD RISK</span>
+            <span class="factor-edge-pill">${match.fmIntel?.referee?.avgYellowCards ? `${Number(match.fmIntel.referee.avgYellowCards).toFixed(2)} YC/g` : escapeHtml(f.referee?.cardRisk || "MODERATE") + " CARD RISK"}</span>
           </div>
-          <div class="text-xs font-semibold">${escapeHtml(f.referee?.name || "Match Official Panel")} <span class="text-muted font-normal">(${escapeHtml(f.referee?.cardTendency || "Balanced whistle")})</span></div>
-          <div class="text-xs text-muted mt-0.5">${escapeHtml(f.referee?.impactNote || "Normal foul & set-piece tempo expected.")}</div>
+          <div class="text-xs font-semibold">${escapeHtml(match.fmIntel?.referee?.name || f.referee?.name || "Match Official Panel")} <span class="text-muted font-normal">(${match.fmIntel?.referee?.avgFouls ? `${Number(match.fmIntel.referee.avgFouls).toFixed(1)} fouls/g` : escapeHtml(f.referee?.cardTendency || "Balanced whistle")})</span></div>
+          <div class="text-xs text-muted mt-0.5">${match.fmIntel ? `FootyMetrics Opta: ${escapeHtml(home.name)} ${match.fmIntel.home?.win10 ?? "-"}% Win (10g) · O2.5 ${match.fmIntel.home?.over2510 ?? "-"}% vs ${escapeHtml(away.name)} ${match.fmIntel.away?.win10 ?? "-"}% Win · O2.5 ${match.fmIntel.away?.over2510 ?? "-"}%` : escapeHtml(f.referee?.impactNote || "Normal foul & set-piece tempo expected.")}</div>
         </div>
 
         <!-- 16. Stadium Weather Conditions -->
@@ -4544,6 +4570,84 @@
     `;
   }
 
+  function renderHomeFootyMetricsCard() {
+    if (!footyMetricsData && !isLoadingFootyMetrics) {
+      loadFootyMetricsIntelligence(false);
+    }
+    const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData) : null;
+    const formTop = signals?.formSignals?.slice(0, 3) || [];
+    const goalsTop = signals?.goalsSignals?.slice(0, 2) || [];
+    const refTop = signals?.highCardReferees?.[0] || null;
+    const trendTop = signals?.playerTrends?.[0] || null;
+    const fxCount = footyMetricsData?.fixturesCount || 0;
+    const refCount = footyMetricsData?.refereeAppointmentsCount || 0;
+
+    return `
+      <section class="panel-section" id="homeFootyMetricsCard">
+        <div class="panel-header" style="border-bottom: 1px solid rgba(59, 130, 246, 0.25); padding: 12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#2563eb;color:#fff;font-weight:800;">📈 FOOTYMETRICS OPTA INTEL</span>
+            <span class="text-xs font-semibold text-muted">${fxCount ? `${fxCount} Fixtures · ${refCount} Referee Appointments · 5/10/15-Match Win%, O2.5%, BTTS%` : "Syncing Opta-level form, goals & referee averages..."}</span>
+          </div>
+          <button type="button" class="btn-subtle text-xs" data-fm-refresh="1" style="font-weight:700;color:#2563eb;">${isLoadingFootyMetrics ? "⏳ Syncing..." : "↻ Refresh Opta Intel"}</button>
+        </div>
+        <div class="p-3">
+          ${!footyMetricsData
+            ? `<div class="text-xs text-muted p-2">Loading FootyMetrics Opta-level stats, referee cards/fouls &amp; streaks...</div>`
+            : `<div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px;">
+                ${formTop.map((item) => `
+                  <div class="power-preview-tile is-strong" style="border-left:3px solid #2563eb; background: var(--bg-surface);">
+                    <div class="flex items-center justify-between gap-1 w-full">
+                      <span class="tile-kicker font-bold" style="color:#2563eb;">OPTA FORM EDGE (+${item.winGap}% WIN10)</span>
+                      ${item.odd ? `<span class="ev-return-pill" style="background:#2563eb;color:#fff;">@ ${Number(item.odd).toFixed(2)}</span>` : ""}
+                    </div>
+                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(item.fixture)}</div>
+                    <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#059669;">${escapeHtml(item.pick)}</div>
+                    <div class="text-xs text-muted mt-0.5 truncate w-full">${escapeHtml(item.league)} · 10g Win: ${item.homeWin10}% vs ${item.awayWin10}%${item.referee ? ` · Ref ${escapeHtml(item.referee.name)} (${item.referee.avgYellowCards} YC)` : ""}</div>
+                    <button type="button" class="btn-subtle text-xs mt-1.5" style="color:#059669;font-weight:700;padding:2px 6px;" data-copy-tip="${escapeHtml(`${item.fixture} — ${item.pick}${item.odd ? ` @ ${Number(item.odd).toFixed(2)}` : ""} [Opta Win10: ${item.homeWin10}% vs ${item.awayWin10}%]`)}">Copy Opta Tip 📋</button>
+                  </div>
+                `).join("")}
+                ${goalsTop.map((g) => `
+                  <div class="power-preview-tile is-strong" style="border-left:3px solid #059669; background: var(--bg-surface);">
+                    <div class="flex items-center justify-between gap-1 w-full">
+                      <span class="tile-kicker font-bold" style="color:#059669;">OPTA GOALS / BTTS</span>
+                      ${g.odd ? `<span class="ev-return-pill" style="background:#059669;color:#fff;">@ ${Number(g.odd).toFixed(2)}</span>` : ""}
+                    </div>
+                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(g.fixture)}</div>
+                    <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#059669;">${escapeHtml(g.pick)}</div>
+                    <div class="text-xs text-muted mt-0.5 truncate w-full">${escapeHtml(g.league)} · 10g Avg O2.5: ${g.avgO25}% · BTTS: ${g.avgBtts}%</div>
+                    <button type="button" class="btn-subtle text-xs mt-1.5" style="color:#059669;font-weight:700;padding:2px 6px;" data-copy-tip="${escapeHtml(`${g.fixture} — ${g.pick}${g.odd ? ` @ ${Number(g.odd).toFixed(2)}` : ""} [10g Avg O2.5 ${g.avgO25}% / BTTS ${g.avgBtts}%]`)}">Copy Goals Tip 📋</button>
+                  </div>
+                `).join("")}
+                ${refTop ? `
+                  <div class="power-preview-tile" style="border-left:3px solid #d97706; background: var(--bg-surface);">
+                    <div class="flex items-center justify-between gap-1 w-full">
+                      <span class="tile-kicker font-bold" style="color:#d97706;">🟨 HIGH-CARD REFEREE ALERT</span>
+                      <span class="ev-return-pill" style="background:#d97706;color:#fff;">${Number(refTop.cardsPg).toFixed(2)} Cards/g</span>
+                    </div>
+                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(refTop.refereeName)} (${escapeHtml(refTop.country)})</div>
+                    <div class="text-xs font-semibold mt-1 truncate w-full" style="color:#b45309;">${escapeHtml((refTop.fixtureSlug || "").replace(/^\d+-/, "").replace(/-/g, " "))}</div>
+                    <div class="text-xs text-muted mt-0.5 truncate w-full">${refTop.yellowPg} YC/g · ${refTop.foulsPg} Fouls/g · ${refTop.games} Games</div>
+                  </div>
+                ` : ""}
+                ${trendTop ? `
+                  <div class="power-preview-tile is-strong" style="border-left:3px solid #7c3aed; background: var(--bg-surface);">
+                    <div class="flex items-center justify-between gap-1 w-full">
+                      <span class="tile-kicker font-bold" style="color:#7c3aed;">🔥 100% OPTA PLAYER STREAK</span>
+                      <span class="ev-return-pill" style="background:#7c3aed;color:#fff;">${trendTop.bestCount}/${trendTop.bestTotal}</span>
+                    </div>
+                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(trendTop.name)} (${escapeHtml(trendTop.pos)})</div>
+                    <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#7c3aed;">${escapeHtml(trendTop.market)} ${escapeHtml(trendTop.direction)} ${escapeHtml(trendTop.line)}</div>
+                    <div class="text-xs text-muted mt-0.5 truncate w-full">${trendTop.percentage}% Hit Rate · Avg ${trendTop.avg ?? "-"} per match</div>
+                  </div>
+                ` : ""}
+              </div>`
+          }
+        </div>
+      </section>
+    `;
+  }
+
   function renderStatPropsView() {
     if (!statPropsData && !isLoadingStatProps) {
       loadStatPropsIntelligence(false);
@@ -5316,6 +5420,7 @@
     return `
       ${renderWinningOnlyBanner()}
       ${renderHomeStatPropsCard()}
+      ${renderHomeFootyMetricsCard()}
       ${renderHomeHandicapValueCard()}
       ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
@@ -7973,6 +8078,12 @@
       finishedTodayMatches = deduplicateMatches([...finishedTodayMatches, ...extraCompleted]);
     }
 
+    if (footyMetricsData && RT?.enrichMatchWithFootyMetrics) {
+      for (const m of liveMatches) {
+        RT.enrichMatchWithFootyMetrics(m, footyMetricsData);
+      }
+    }
+
     if (RT?.hydrateWeatherForMatches && RT?.isTipEligiblePreMatch5h) {
       const topWeatherCandidates = liveMatches
         .filter((m) => !m.weather?.ok && RT.isTipEligiblePreMatch5h(m))
@@ -8433,6 +8544,11 @@
       return;
     }
 
+    if (e.target.closest("[data-fm-refresh]")) {
+      scheduleUiUpdate(() => loadFootyMetricsIntelligence(true));
+      return;
+    }
+
     // Copy SportyBet / Football.com Game ID or Tip
     const copyTipBtn = e.target.closest("[data-copy-tip]");
     if (copyTipBtn) {
@@ -8883,6 +8999,8 @@
             if (state.route === "/run-in") {
               loadRuninLeague(state.activeRuninLeague || "england");
             }
+          } else if (msg.source === "footymetrics") {
+            loadFootyMetricsIntelligence(false);
           }
         } catch {}
       });
@@ -9029,4 +9147,5 @@
   syncRealtimeFeed(false);
   syncBookmakerMismatchFeed(false, false);
   loadStatPropsIntelligence(false);
+  loadFootyMetricsIntelligence(false);
 })();

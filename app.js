@@ -2146,6 +2146,7 @@
                   const away = getTeam(m.away, m.awayTeamName || "Away", m.awayLogo);
                   const lg = getLeagueInfo(m);
                   const conf = Math.round((leg.market.prob || 0.65) * 100);
+                  const sureOptaTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
                   const defaultExpanded = idx < 2 && ["2", "5", "10"].includes(slip.id);
                   const isExpanded = state.expandedLegs[m.id] !== undefined ? state.expandedLegs[m.id] : defaultExpanded;
                   return `
@@ -2162,6 +2163,10 @@
                           <span class="font-mono text-xs text-muted">${escapeHtml(m.date)} · ${escapeHtml(m.displayTime)}</span>
                         </div>
                       </div>
+                      ${sureOptaTip ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
+                        <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(sureOptaTip.tipLabel)} (${sureOptaTip.confidencePct}%)</span>
+                        <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(sureOptaTip.shortLabel)} · Fair ${Number(sureOptaTip.fairOdd || sureOptaTip.odd).toFixed(2)} (${sureOptaTip.evPct >= 0 ? "+" : ""}${sureOptaTip.evPct || 0}% EV)</span>
+                      </div>` : ""}
 
                       <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
                         <div class="flex items-center gap-2.5 min-w-0">
@@ -6427,6 +6432,13 @@
             <span class="font-mono text-xs font-bold" style="color:#10B981;margin-left:auto;">+${Number(tip.ppgGap || 0.75).toFixed(2)} PPG EDGE</span>
             ${targetSos?.trajectory === "GAIN_BLUE" ? '<span class="ppg-sos-badge is-gain-blue" style="margin-left:4px;">🔵 GAIN SURGE</span>' : ''}
           </div>
+          ${(() => {
+            const hOpta = RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch({ id: tip.id, homeTeamName: tip.homeTeam, awayTeamName: tip.awayTeam, leagueName: tip.league, odds: { home: tip.bookmakerOdds } }, footyMetricsData) : null;
+            return hOpta ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
+              <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(hOpta.tipLabel)} (${hOpta.confidencePct}%)</span>
+              <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(hOpta.shortLabel)} · Fair ${Number(hOpta.fairOdd || hOpta.odd).toFixed(2)} (${hOpta.evPct >= 0 ? "+" : ""}${hOpta.evPct || 0}% EV)</span>
+            </div>` : "";
+          })()}
 
           <!-- EXACT 4-METRIC VALUE FORMULA TABLE -->
           <table class="ev-metric-table">

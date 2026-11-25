@@ -7775,6 +7775,7 @@ window.MAMON_REALTIME = (() => {
     const bookieOdd = Math.round(Number(odd) * 100) / 100;
     const evPct = Math.round(((bookieOdd / Math.max(1.02, fairOdd)) - 1) * 1000) / 10;
     const fairOddsText = `Fair ${fairOdd.toFixed(2)} vs Bookie ${bookieOdd.toFixed(2)} (${evPct >= 0 ? "+" : ""}${evPct}% EV)`;
+    const fairOddsTip = `${tipLabel} @ ${bookieOdd.toFixed(2)} (Fair ${fairOdd.toFixed(2)} · ${evPct >= 0 ? "+" : ""}${evPct}% EV)`;
 
     return {
       tipLabel,
@@ -7784,6 +7785,7 @@ window.MAMON_REALTIME = (() => {
       evPct,
       bookieMarginPct: deepFair.bookieMarginPct,
       fairOddsText,
+      fairOddsTip,
       confidencePct,
       category,
       isDirect,

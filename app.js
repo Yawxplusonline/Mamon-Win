@@ -2265,8 +2265,11 @@
 
     const koParts = formatKickoffCompact(m);
     const optaChipTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
+    const fairBadgeStr = optaChipTip && optaChipTip.fairOdd
+      ? ` · Fair ${Number(optaChipTip.fairOdd).toFixed(2)} (${optaChipTip.evPct >= 0 ? "+" : ""}${optaChipTip.evPct}% EV)`
+      : "";
     const optaChipHtml = optaChipTip
-      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="FootyMetrics Opta Intel (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">📈 Opta: ${escapeHtml(optaChipTip.shortLabel)}</span>`
+      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="Unified Opta + Run-In + Deep Fair Odds (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">📈 Opta+Run-In: ${escapeHtml(optaChipTip.shortLabel)}${escapeHtml(fairBadgeStr)}</span>`
       : "";
     const hasValidKoTime = koParts?.timeStr && /^\d{2}:\d{2}/.test(koParts.timeStr);
     const mobileTimeHtml = isLive

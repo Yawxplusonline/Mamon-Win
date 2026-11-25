@@ -7581,6 +7581,40 @@ window.MAMON_REALTIME = (() => {
     return String(name || "").replace(/\s*\([^)]*\)/g, "").trim();
   }
 
+  function computeDeepBookieFairOdds(oddsObj = {}) {
+    const o1 = Math.max(1.02, Number(oddsObj.odd1 || oddsObj.home || 1.95));
+    const oX = Math.max(1.02, Number(oddsObj.oddX || oddsObj.draw || 3.45));
+    const o2 = Math.max(1.02, Number(oddsObj.odd2 || oddsObj.away || 3.60));
+    const sum1X2 = (1 / o1) + (1 / oX) + (1 / o2);
+    const marginPct = Math.max(0, Math.round((sum1X2 - 1) * 1000) / 10);
+    const fair1 = Math.round((sum1X2 / (1 / o1)) * 100) / 100;
+    const fairX = Math.round((sum1X2 / (1 / oX)) * 100) / 100;
+    const fair2 = Math.round((sum1X2 / (1 / o2)) * 100) / 100;
+    const fair1X = Math.round((1 / ((1 / fair1) + (1 / fairX))) * 100) / 100;
+    const fairX2 = Math.round((1 / ((1 / fairX) + (1 / fair2))) * 100) / 100;
+
+    const oO25 = Math.max(1.02, Number(oddsObj.oddOver25 || oddsObj.over25 || 1.78));
+    const oU25 = Math.max(1.02, Number(oddsObj.oddUnder25 || oddsObj.under25 || 1.98));
+    const sumOU = (1 / oO25) + (1 / oU25);
+    const fairO25 = Math.round((sumOU / (1 / oO25)) * 100) / 100;
+
+    const oBtts = Math.max(1.02, Number(oddsObj.oddBtts || oddsObj.bttsYes || 1.75));
+    const oBttsNo = Math.max(1.02, Number(oddsObj.oddBttsNo || oddsObj.bttsNo || 2.00));
+    const sumBtts = (1 / oBtts) + (1 / oBttsNo);
+    const fairBtts = Math.round((sumBtts / (1 / oBtts)) * 100) / 100;
+
+    const oO15 = Math.max(1.02, Number(oddsObj.oddOver15 || oddsObj.over15 || 1.26));
+    const oU35 = Math.max(1.02, Number(oddsObj.oddUnder35 || oddsObj.under35 || 1.32));
+    const fairO15 = Math.round((oO15 * 1.045) * 100) / 100;
+    const fairU35 = Math.round((oU35 * 1.045) * 100) / 100;
+
+    return {
+      bookieMarginPct: marginPct,
+      fair1, fairX, fair2, fair1X, fairX2,
+      fairO25, fairO15, fairU35, fairBtts
+    };
+  }
+
   function computeOptaIntelTipForMatch(match, fmData) {
     if (!match) return null;
     const hName = cleanOptaTeamName(match.homeTeamName || DATA.TEAMS?.[match.home]?.name || match.home?.name || "Home");
@@ -7712,24 +7746,62 @@ window.MAMON_REALTIME = (() => {
       ? `Ref ${ref.name} (${Number(ref.avgYellowCards || 0).toFixed(2)} YC/g · ${Number(ref.avgFouls || 0).toFixed(1)} fouls/g)`
       : "";
 
+    // Run-In Difficulty Table integration
+    const leagueSlugOrCode = match.league?.slug || match.league?.id || match.leagueCode || match.leagueName || "";
+    const homeRunin = lookupTeamRunin(hName, leagueSlugOrCode, null, null, aPpg, true);
+    const awayRunin = lookupTeamRunin(aName, leagueSlugOrCode, null, null, hPpg, false);
+    const hRuninVerdict = homeRunin?.verdict || "NEUTRAL";
+    const aRuninVerdict = awayRunin?.verdict || "NEUTRAL";
+    const runinEdge = (hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -3 : 0)
+                    - (aRuninVerdict === "GAIN_BLUE" ? 4 : aRuninVerdict === "DROP_RED" ? -3 : 0);
+    if (category === "FORM" && Math.abs(runinEdge) >= 3) {
+      confidencePct = Math.min(95, Math.max(62, confidencePct + (tipLabel.includes(hName) ? runinEdge : -runinEdge)));
+    }
+    const runinSummary = `Run-In: ${hName} ${hRuninVerdict} vs ${aName} ${aRuninVerdict}`;
+
+    // Deep Bookmaker Fair Odds integration
+    const deepFair = computeDeepBookieFairOdds(oddsObj);
+    let bookieFairOdd = deepFair.fair1X;
+    if (shortLabel.startsWith("1 @")) bookieFairOdd = deepFair.fair1;
+    else if (shortLabel.startsWith("2 @")) bookieFairOdd = deepFair.fair2;
+    else if (shortLabel.startsWith("X2 @")) bookieFairOdd = deepFair.fairX2;
+    else if (shortLabel.startsWith("GG @")) bookieFairOdd = deepFair.fairBtts;
+    else if (shortLabel.startsWith("O2.5 @")) bookieFairOdd = deepFair.fairO25;
+    else if (shortLabel.startsWith("U3.5 @")) bookieFairOdd = deepFair.fairU35;
+    else if (shortLabel.startsWith("O1.5 @")) bookieFairOdd = deepFair.fairO15;
+
+    const modelFairOdd = Math.max(1.04, 100 / Math.max(20, confidencePct));
+    const fairOdd = Math.round(((bookieFairOdd * 0.55) + (modelFairOdd * 0.45)) * 100) / 100;
+    const bookieOdd = Math.round(Number(odd) * 100) / 100;
+    const evPct = Math.round(((bookieOdd / Math.max(1.02, fairOdd)) - 1) * 1000) / 10;
+    const fairOddsText = `Fair ${fairOdd.toFixed(2)} vs Bookie ${bookieOdd.toFixed(2)} (${evPct >= 0 ? "+" : ""}${evPct}% EV)`;
+
     return {
       tipLabel,
       shortLabel,
-      odd: Math.round(Number(odd) * 100) / 100,
+      odd: bookieOdd,
+      fairOdd,
+      evPct,
+      bookieMarginPct: deepFair.bookieMarginPct,
+      fairOddsText,
       confidencePct,
       category,
       isDirect,
-      sourceBadge: isDirect ? "FootyMetrics Direct" : "Opta Model",
+      sourceBadge: isDirect ? "FootyMetrics Direct" : "Opta + Run-In + Fair Odds",
+      unifiedBadge: "Opta + Run-In + Deep Fair Odds",
       homeWin10: hWin10,
       awayWin10: aWin10,
       avgO25,
       avgBtts,
       homePos: fm?.homePos ?? null,
       awayPos: fm?.awayPos ?? null,
+      homeRuninVerdict: hRuninVerdict,
+      awayRuninVerdict: aRuninVerdict,
+      runinSummary,
       referee: ref,
       refereeNote: refNote,
       metricsSummary: `10g Win: ${hWin10}% vs ${aWin10}% · O2.5: ${avgO25}% · BTTS: ${avgBtts}%`,
-      reason: refNote ? `${reason} · ${refNote}` : reason
+      reason: `${reason} · ${runinSummary} · ${fairOddsText}${refNote ? ` · ${refNote}` : ""}`
     };
   }
 

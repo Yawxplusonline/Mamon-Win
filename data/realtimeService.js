@@ -7755,6 +7755,23 @@ window.MAMON_REALTIME = (() => {
     const runinEdge = (hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -3 : 0)
                     - (aRuninVerdict === "GAIN_BLUE" ? 4 : aRuninVerdict === "DROP_RED" ? -3 : 0);
 
+    // Squad, Star-Player Availability, Injuries & Card-Threat Adjustments
+    const hInjCount = Number(f.injuries?.homeCount ?? match.homeInjuriesCount ?? 0);
+    const aInjCount = Number(f.injuries?.awayCount ?? match.awayInjuriesCount ?? 0);
+    const hStarOut = Boolean(f.injuries?.homeStarOut || match.homeStarOut);
+    const aStarOut = Boolean(f.injuries?.awayStarOut || match.awayStarOut);
+    const lineupFullBonus = fm?.lineupConfirmed ? 3 : 0;
+    const hSquadAdj = (hInjCount === 0 && !hStarOut ? lineupFullBonus : -(Math.min(10, hInjCount * 2) + (hStarOut ? 5 : 0)));
+    const aSquadAdj = (aInjCount === 0 && !aStarOut ? lineupFullBonus : -(Math.min(10, aInjCount * 2) + (aStarOut ? 5 : 0)));
+    const refYc = Number(ref?.avgYellowCards || f.cards?.avgYellow || 0);
+    const cardThreatPen = refYc >= 4.5 ? -3 : refYc >= 3.8 ? -1 : 0;
+    const hRuninAdj = hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -4 : 0;
+    const aRuninAdj = aRuninVerdict === "GAIN_BLUE" ? 4 : aRuninVerdict === "DROP_RED" ? -4 : 0;
+
+    // True Adjusted Team Strength % (Form + Home/Away Strength + Squad/Injuries + Cards + Run-In)
+    const hAdjPct = Math.round(clamp((hWin10 * 0.55) + (hHome5 * 0.45) + hSquadAdj + hRuninAdj + cardThreatPen, 8, 96));
+    const aAdjPct = Math.round(clamp((aWin10 * 0.55) + (aAway5 * 0.45) + aSquadAdj + aRuninAdj + cardThreatPen, 8, 96));
+
     // Reconcile Opta & Run-In when they give conflicting signals
     let consensusStatus = "ALIGNED (Opta + Run-In)";
     const optaBacksHome = shortLabel.startsWith("1 @") || shortLabel.startsWith("1X @");
@@ -7832,6 +7849,8 @@ window.MAMON_REALTIME = (() => {
       unifiedBadge: "Opta + Run-In + Deep Fair Odds",
       homeWin10: hWin10,
       awayWin10: aWin10,
+      homeAdjPct: hAdjPct,
+      awayAdjPct: aAdjPct,
       avgO25,
       avgBtts,
       homePos: fm?.homePos ?? null,
@@ -7841,7 +7860,7 @@ window.MAMON_REALTIME = (() => {
       runinSummary,
       referee: ref,
       refereeNote: refNote,
-      metricsSummary: `Home5 ${hHome5}% · Away5 ${aAway5}% · 10g Win ${hWin10}% vs ${aWin10}% · O2.5 ${avgO25}% · BTTS ${avgBtts}%`,
+      metricsSummary: `Adj Strength: ${hName} ${hAdjPct}% (Home5 ${hHome5}%) vs ${aName} ${aAdjPct}% (Away5 ${aAway5}%) · O2.5 ${avgO25}% · BTTS ${avgBtts}%`,
       reason: `${reason} · ${runinSummary} · ${fairOddsText}${refNote ? ` · ${refNote}` : ""}`
     };
   }

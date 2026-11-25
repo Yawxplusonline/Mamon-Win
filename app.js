@@ -7512,29 +7512,42 @@
             </div>
             <div class="p-3" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">
               ${lg.items.map((item) => {
-                const clr = item.category === "GOALS" ? "#059669" : item.category === "DEFENSE" ? "#0284c7" : "#2563eb";
+                const isFt = item.status === "FT" || (item.homeScore !== null && item.awayScore !== null && !item.isLive);
+                const statusBadge = item.isLive
+                  ? `<span style="background:rgba(239,68,68,0.18);color:#f87171;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px;">🔴 LIVE ${item.homeScore ?? 0}-${item.awayScore ?? 0}</span>`
+                  : isFt
+                  ? `<span style="background:rgba(16,185,129,0.16);color:#34d399;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px;">FT ${item.homeScore ?? 0} - ${item.awayScore ?? 0}</span>`
+                  : `<span style="background:rgba(255,255,255,0.08);color:#94a3b8;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px;">🕒 ${escapeHtml(item.displayTime)}</span>`;
+                const fairStr = item.fairOdd ? ` · Fair ${Number(item.fairOdd).toFixed(2)} (${item.evPct >= 0 ? "+" : ""}${item.evPct || 0}% EV)` : "";
                 return `
-                  <article class="panel p-3" style="border-left:4px solid ${clr};">
+                  <article style="background:#0d1915;border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:14px;color:#f8fafc;display:flex;flex-direction:column;gap:10px;">
                     <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <span class="sure-pill-tag" style="background:rgba(37,99,235,0.12);color:${clr};font-weight:700;">${escapeHtml(item.sourceBadge)} · ${item.confidencePct}% Conf</span>
-                      <span class="font-mono text-xs text-muted">${item.isLive ? "🔴 LIVE" : escapeHtml(item.displayTime)}</span>
+                      <span style="background:#8b5cf6;color:#fff;border-radius:999px;padding:4px 12px;font-weight:800;font-size:11px;letter-spacing:0.02em;">🎯 ${escapeHtml(item.consensusStatus || "OPTA + RUN-IN & +EV")}</span>
+                      ${statusBadge}
                     </div>
-                    <div class="flex items-center gap-2 font-bold text-sm text-text mt-2">
-                      ${crestImg(item.homeLogo, item.home, "#10B981", 20)}
-                      <span class="truncate">${escapeHtml(item.home)}${item.homePos ? ` (#${item.homePos})` : ""}</span>
-                      <span class="text-xs font-mono text-muted">vs</span>
-                      <span class="truncate">${escapeHtml(item.away)}${item.awayPos ? ` (#${item.awayPos})` : ""}</span>
-                      ${crestImg(item.awayLogo, item.away, "#3B82F6", 20)}
+                    <div class="text-xs" style="color:#94a3b8;">
+                      ${escapeHtml(item.country || "International")} · ${escapeHtml(item.league || "Football")} · ${escapeHtml(getTodayIso())}
                     </div>
-                    <div class="flex items-center justify-between gap-2 mt-2 p-2 rounded" style="background:var(--ground-subtle);">
-                      <strong class="text-xs" style="color:#059669;">🎯 ${escapeHtml(item.tipLabel)}</strong>
-                      <span class="ev-return-pill" style="background:${clr};color:#fff;">@ ${Number(item.odd || 1.3).toFixed(2)}</span>
+                    <div class="flex items-center justify-between gap-2" style="padding:4px 0;">
+                      <div class="flex items-center gap-2 min-w-0" style="flex:1;">
+                        ${crestImg(item.homeLogo, item.home, "#10B981", 22)}
+                        <span class="font-bold text-sm truncate" style="color:#f8fafc;">${escapeHtml(item.home)}</span>
+                      </div>
+                      <div style="background:rgba(255,255,255,0.07);border-radius:8px;padding:4px 10px;font-family:monospace;font-weight:800;font-size:13px;color:#f8fafc;text-align:center;">
+                        ${(item.homeScore !== null && item.awayScore !== null) ? `${item.homeScore} : ${item.awayScore}` : "vs"}
+                      </div>
+                      <div class="flex items-center justify-end gap-2 min-w-0" style="flex:1;">
+                        <span class="font-bold text-sm truncate text-right" style="color:#f8fafc;">${escapeHtml(item.away)}</span>
+                        ${crestImg(item.awayLogo, item.away, "#3B82F6", 22)}
+                      </div>
                     </div>
-                    <div class="text-xs text-text-secondary mt-1.5">${escapeHtml(item.metricsSummary)}</div>
-                    <div class="text-xs text-muted mt-0.5">${escapeHtml(item.reason)}</div>
-                    <div class="flex items-center justify-between gap-2 mt-2">
-                      <button type="button" class="btn-subtle text-xs" style="color:#059669;font-weight:700;" data-copy-tip="${escapeHtml(`${item.fixture} — Opta Tip: ${item.tipLabel} @ ${Number(item.odd || 1.3).toFixed(2)} [${item.metricsSummary}]`)}">Copy Opta Tip 📋</button>
-                      ${item.matchId ? `<button type="button" class="btn-subtle text-xs" data-match-id="${escapeHtml(String(item.matchId))}">19-Factor View &rarr;</button>` : ""}
+                    <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:999px;padding:7px 14px;font-size:12px;font-weight:700;color:#e2e8f0;">
+                      Tip: ${escapeHtml(item.tipLabel)} @ ${Number(item.odd || 1.3).toFixed(2)}${escapeHtml(fairStr)}
+                    </div>
+                    <div class="text-xs" style="color:#94a3b8;">${escapeHtml(item.metricsSummary)}</div>
+                    <div class="flex items-center justify-between gap-2 pt-1">
+                      <button type="button" class="btn-subtle text-xs" style="color:#34d399;font-weight:700;" data-copy-tip="${escapeHtml(`${item.fixture} — Tip: ${item.tipLabel} @ ${Number(item.odd || 1.3).toFixed(2)}${fairStr} [${item.metricsSummary}]`)}">Copy Tip 📋</button>
+                      ${item.matchId ? `<button type="button" class="btn-subtle text-xs" style="color:#94a3b8;" data-match-id="${escapeHtml(String(item.matchId))}">19-Factor View &rarr;</button>` : ""}
                     </div>
                   </article>
                 `;

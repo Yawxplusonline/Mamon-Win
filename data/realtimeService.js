@@ -7841,7 +7841,7 @@ window.MAMON_REALTIME = (() => {
       runinSummary,
       referee: ref,
       refereeNote: refNote,
-      metricsSummary: `10g Win: ${hWin10}% vs ${aWin10}% · O2.5: ${avgO25}% · BTTS: ${avgBtts}%`,
+      metricsSummary: `Home5 ${hHome5}% · Away5 ${aAway5}% · 10g Win ${hWin10}% vs ${aWin10}% · O2.5 ${avgO25}% · BTTS ${avgBtts}%`,
       reason: `${reason} · ${runinSummary} · ${fairOddsText}${refNote ? ` · ${refNote}` : ""}`
     };
   }

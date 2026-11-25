@@ -2166,6 +2166,7 @@
                       ${sureOptaTip ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
                         <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(sureOptaTip.tipLabel)} (${sureOptaTip.confidencePct}%)</span>
                         <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(sureOptaTip.shortLabel)} · Fair ${Number(sureOptaTip.fairOdd || sureOptaTip.odd).toFixed(2)} (${sureOptaTip.evPct >= 0 ? "+" : ""}${sureOptaTip.evPct || 0}% EV)</span>
+                        <span class="w-full text-[11px] font-normal" style="color:var(--text-secondary);">📊 ${escapeHtml(sureOptaTip.metricsSummary)}</span>
                       </div>` : ""}
 
                       <div class="flex items-center justify-between gap-2 mt-2 flex-wrap">
@@ -2274,7 +2275,7 @@
       ? ` · Fair ${Number(optaChipTip.fairOdd).toFixed(2)} (${optaChipTip.evPct >= 0 ? "+" : ""}${optaChipTip.evPct}% EV)`
       : "";
     const optaChipHtml = optaChipTip
-      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="Unified Opta + Run-In + Deep Fair Odds (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.fairOddsTip || optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">🎯 Fair Odds Tip: ${escapeHtml(optaChipTip.shortLabel)}${escapeHtml(fairBadgeStr)}</span>`
+      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="Unified Opta + Run-In + Deep Fair Odds (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.fairOddsTip || optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">🎯 Fair Odds Tip: ${escapeHtml(optaChipTip.shortLabel)}${escapeHtml(fairBadgeStr)}</span><span class="ppg-chip" style="background:rgba(15,23,42,0.06);color:var(--text-secondary);border-color:rgba(148,163,184,0.3);font-weight:600;">📊 ${escapeHtml(optaChipTip.metricsSummary)}</span>`
       : "";
     const hasValidKoTime = koParts?.timeStr && /^\d{2}:\d{2}/.test(koParts.timeStr);
     const mobileTimeHtml = isLive
@@ -5619,6 +5620,7 @@
         ${powerOptaTip ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
           <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(powerOptaTip.tipLabel)} (${powerOptaTip.confidencePct}%)</span>
           <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(powerOptaTip.shortLabel)} · Fair ${Number(powerOptaTip.fairOdd || powerOptaTip.odd).toFixed(2)} (${powerOptaTip.evPct >= 0 ? "+" : ""}${powerOptaTip.evPct || 0}% EV)</span>
+          <span class="w-full text-[11px] font-normal" style="color:var(--text-secondary);">📊 ${escapeHtml(powerOptaTip.metricsSummary)}</span>
         </div>` : ""}
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
@@ -6442,6 +6444,7 @@
             return hOpta ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
               <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(hOpta.tipLabel)} (${hOpta.confidencePct}%)</span>
               <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(hOpta.shortLabel)} · Fair ${Number(hOpta.fairOdd || hOpta.odd).toFixed(2)} (${hOpta.evPct >= 0 ? "+" : ""}${hOpta.evPct || 0}% EV)</span>
+              <span class="w-full text-[11px] font-normal" style="color:var(--text-secondary);">📊 ${escapeHtml(hOpta.metricsSummary)}</span>
             </div>` : "";
           })()}
 

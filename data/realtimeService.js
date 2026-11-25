@@ -7754,8 +7754,47 @@ window.MAMON_REALTIME = (() => {
     const aRuninVerdict = awayRunin?.verdict || "NEUTRAL";
     const runinEdge = (hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -3 : 0)
                     - (aRuninVerdict === "GAIN_BLUE" ? 4 : aRuninVerdict === "DROP_RED" ? -3 : 0);
-    if (category === "FORM" && Math.abs(runinEdge) >= 3) {
-      confidencePct = Math.min(95, Math.max(62, confidencePct + (tipLabel.includes(hName) ? runinEdge : -runinEdge)));
+
+    // Reconcile Opta & Run-In when they give conflicting signals
+    let consensusStatus = "ALIGNED (Opta + Run-In)";
+    const optaBacksHome = shortLabel.startsWith("1 @") || shortLabel.startsWith("1X @");
+    const optaBacksAway = shortLabel.startsWith("2 @") || shortLabel.startsWith("X2 @");
+    const runinFavorsAway = aRuninVerdict === "GAIN_BLUE" || hRuninVerdict === "DROP_RED";
+    const runinFavorsHome = hRuninVerdict === "GAIN_BLUE" || aRuninVerdict === "DROP_RED";
+
+    if (shortLabel.startsWith("1 @") && runinFavorsAway && !runinFavorsHome) {
+      // Conflict: Opta wants Home Win (1) but Run-In favors Away -> reconcile to safer 1X or Over 1.5
+      if (avgO25 >= 54) {
+        tipLabel = "Over 1.5 Goals (Opta + Run-In Consensus)";
+        odd = oddO15;
+        shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+        category = "GOALS";
+      } else {
+        tipLabel = `1X Double Chance (${hName} or Draw)`;
+        odd = odd1x;
+        shortLabel = `1X @ ${odd.toFixed(2)}`;
+      }
+      confidencePct = Math.min(88, Math.max(66, confidencePct - 4));
+      consensusStatus = "RECONCILED (Opta + Run-In Consensus)";
+      reason = `Reconciled Opta (${hName} ${hWin10}%) + Run-In (${aName} ${aRuninVerdict}) -> Safer ${shortLabel}`;
+    } else if (shortLabel.startsWith("2 @") && runinFavorsHome && !runinFavorsAway) {
+      // Conflict: Opta wants Away Win (2) but Run-In favors Home -> reconcile to safer X2 or Over 1.5
+      if (avgO25 >= 54) {
+        tipLabel = "Over 1.5 Goals (Opta + Run-In Consensus)";
+        odd = oddO15;
+        shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+        category = "GOALS";
+      } else {
+        tipLabel = `X2 Double Chance (${aName} or Draw)`;
+        odd = oddX2;
+        shortLabel = `X2 @ ${odd.toFixed(2)}`;
+      }
+      confidencePct = Math.min(88, Math.max(66, confidencePct - 4));
+      consensusStatus = "RECONCILED (Opta + Run-In Consensus)";
+      reason = `Reconciled Opta (${aName} ${aWin10}%) + Run-In (${hName} ${hRuninVerdict}) -> Safer ${shortLabel}`;
+    } else if (category === "FORM" && ((optaBacksHome && runinEdge > 0) || (optaBacksAway && runinEdge < 0))) {
+      confidencePct = Math.min(95, confidencePct + Math.abs(runinEdge));
+      consensusStatus = "ALIGNED (Opta + Run-In Agree)";
     }
     const runinSummary = `Run-In: ${hName} ${hRuninVerdict} vs ${aName} ${aRuninVerdict}`;
 

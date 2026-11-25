@@ -7853,7 +7853,9 @@ window.MAMON_REALTIME = (() => {
       if (!hName || !aName) return;
       if (isNcaaOrWomenSoccer(m.leagueName || m.league?.name, hName, aName)) return;
       const key = `${normDedupeTeam(hName)}|${normDedupeTeam(aName)}`;
-      if (!key || key === "|" || seen.has(key)) return;
+      const keySwapped = `${normDedupeTeam(aName)}|${normDedupeTeam(hName)}`;
+      if (!key || key === "|" || seen.has(key) || seen.has(keySwapped)) return;
+      if (tips.some((t) => (matchTeamsSimilar(t.home, hName) && matchTeamsSimilar(t.away, aName)) || (matchTeamsSimilar(t.home, aName) && matchTeamsSimilar(t.away, hName)))) return;
       seen.add(key);
 
       const enriched = enrichMatchWithFootyMetrics(m, fmData);

@@ -427,6 +427,8 @@
       activeHistoryOutcome: "ALL", // ALL | WON | LOST | VOID
       activeHistoryCategory: "ALL", // ALL | BOOKIE_MISMATCH | OPTA_INTEL | GOALS_OU | HANDICAP | SURE_ODDS
       historySearch: "",
+      activeOptaCategory: "ALL", // ALL | DIRECT | FORM | GOALS | DEFENSE
+      optaSearch: "",
       standingsLeague: "england-premier-league",
       followedClubs: ["arsenal", "realmadrid", "barcelona", "liverpool"],
       followedLeagues: ["england-premier-league", "spain-la-liga", "uefa-champions-league"],
@@ -899,6 +901,7 @@
     }
     if (h === "/results" || h === "/tip-history" || h === "/history") return "/history";
     if (h === "/today" || h === "/todays-games" || h === "/today-games") return "/today";
+    if (h === "/opta-intel" || h === "/opta" || h === "/footymetrics") return "/opta-intel";
     return h;
   }
 
@@ -957,6 +960,13 @@
         if (q.get("mode")) state.activeTodayMode = q.get("mode").toUpperCase();
       }
       route = "/today";
+    }
+    if (route === "/opta" || route === "/footymetrics" || route.startsWith("/opta-intel?")) {
+      if (route.includes("?")) {
+        const q = new URLSearchParams(route.split("?")[1]);
+        if (q.get("cat")) state.activeOptaCategory = q.get("cat").toUpperCase();
+      }
+      route = "/opta-intel";
     }
     if (route.startsWith("/dropping-odds?")) {
       const q = new URLSearchParams(route.split("?")[1]);
@@ -1495,7 +1505,23 @@
         )
         .join("")}</div>`;
 
+    const optaModalTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
+
     return `
+      ${optaModalTip ? `
+        <div class="panel p-3 mb-3" style="border:1px solid rgba(37,99,235,0.4);background:linear-gradient(135deg, rgba(37,99,235,0.10), rgba(16,185,129,0.06));border-radius:var(--radius-md);">
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="sure-pill-tag" style="background:#2563eb;color:#fff;font-weight:800;">📈 FOOTYMETRICS OPTA INTEL TIP</span>
+              <span class="sure-pill-tag" style="background:rgba(37,99,235,0.15);color:#2563eb;font-weight:700;">${escapeHtml(optaModalTip.sourceBadge)} · ${optaModalTip.confidencePct}% Conf</span>
+            </div>
+            <button type="button" class="btn-subtle text-xs" style="color:#059669;font-weight:700;" data-copy-tip="${escapeHtml(`${home.name} vs ${away.name} — Opta Tip: ${optaModalTip.tipLabel} @ ${optaModalTip.odd.toFixed(2)} (${optaModalTip.metricsSummary})`)}">Copy Opta Tip 📋</button>
+          </div>
+          <div class="text-sm font-extrabold mt-1.5" style="color:#059669;">${escapeHtml(optaModalTip.tipLabel)} @ ${optaModalTip.odd.toFixed(2)}</div>
+          <div class="text-xs text-text-secondary mt-0.5">${escapeHtml(optaModalTip.metricsSummary)}${optaModalTip.refereeNote ? ` · 🟨 ${escapeHtml(optaModalTip.refereeNote)}` : ""}</div>
+          <div class="text-xs text-muted mt-0.5">${escapeHtml(optaModalTip.reason)}</div>
+        </div>
+      ` : ""}
       <div class="factors-matrix">
         <!-- 1. Head to Head -->
         <div class="factor-tile">
@@ -2238,6 +2264,10 @@
     );
 
     const koParts = formatKickoffCompact(m);
+    const optaChipTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
+    const optaChipHtml = optaChipTip
+      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="FootyMetrics Opta Intel (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">📈 Opta: ${escapeHtml(optaChipTip.shortLabel)}</span>`
+      : "";
     const hasValidKoTime = koParts?.timeStr && /^\d{2}:\d{2}/.test(koParts.timeStr);
     const mobileTimeHtml = isLive
       ? `<span class="live-label"><span class="live-dot"></span>${escapeHtml(liveClock)}</span><span class="live-half-pill is-compact">${escapeHtml(halfLabel)}</span>`
@@ -2289,6 +2319,7 @@
                     ${runinBadgeHtml}
                     ${sosBadge}
                     ${dropChipHtml}
+                    ${optaChipHtml}
                     ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">! Inj/Sus</span>` : ""}
                   </div>`
                 : ""
@@ -2329,6 +2360,7 @@
                          : ""
                      }`
                   : `${runinBadgeHtml}
+                     ${optaChipHtml}
                      ${dropChipHtml || (ppgText ? `<span class="ppg-chip">${escapeHtml(ppgText)}</span>` : "")}
                      ${hasInjSusp ? `<span class="alert-badge" title="Injury / Suspension Alert">!</span>` : ""}
                      ${!isLive && m.footballComGameId ? `<span class="ppg-chip" title="Football.com Game ID">FB #${escapeHtml(String(m.footballComGameId))}</span>` : ""}
@@ -4614,51 +4646,46 @@
     if (!footyMetricsData && !isLoadingFootyMetrics) {
       loadFootyMetricsIntelligence(false);
     }
-    const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData) : null;
-    const formTop = signals?.formSignals?.slice(0, 3) || [];
-    const goalsTop = signals?.goalsSignals?.slice(0, 2) || [];
+    const todayPool = getAllTodayGamesPool();
+    const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData, todayPool) : null;
+    const allTipsCount = signals?.counts?.total || 0;
+    const directCount = signals?.counts?.direct || 0;
+    const topTiles = (signals?.allTips || []).slice(0, 4);
     const refTop = signals?.highCardReferees?.[0] || null;
     const trendTop = signals?.playerTrends?.[0] || null;
-    const fxCount = footyMetricsData?.fixturesCount || 0;
     const refCount = footyMetricsData?.refereeAppointmentsCount || 0;
 
     return `
       <section class="panel-section" id="homeFootyMetricsCard">
         <div class="panel-header" style="border-bottom: 1px solid rgba(59, 130, 246, 0.25); padding: 12px 16px;">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="sure-pill-tag" style="background:#2563eb;color:#fff;font-weight:800;">📈 FOOTYMETRICS OPTA INTEL</span>
-            <span class="text-xs font-semibold text-muted">${fxCount ? `${fxCount} Fixtures · ${refCount} Referee Appointments · 5/10/15-Match Win%, O2.5%, BTTS%` : "Syncing Opta-level form, goals & referee averages..."}</span>
+            <span class="sure-pill-tag" style="background:#2563eb;color:#fff;font-weight:800;">📈 FOOTYMETRICS OPTA INTEL · ALL GAMES</span>
+            <span class="text-xs font-semibold text-muted">${allTipsCount ? `${allTipsCount} System Games Tipped (${directCount} Direct Opta · ${refCount} Referee Appointments)` : "Analyzing Opta-level tips across every game on the system..."}</span>
           </div>
-          <button type="button" class="btn-subtle text-xs" data-fm-refresh="1" style="font-weight:700;color:#2563eb;">${isLoadingFootyMetrics ? "⏳ Syncing..." : "↻ Refresh Opta Intel"}</button>
+          <div class="flex items-center gap-2">
+            <button type="button" class="btn-subtle text-xs" data-fm-refresh="1" style="font-weight:700;color:#2563eb;">${isLoadingFootyMetrics ? "⏳ Syncing..." : "↻ Refresh"}</button>
+            <a class="btn-subtle text-xs" href="/opta-intel" data-route="/opta-intel" style="font-weight:800;color:#2563eb;">All ${allTipsCount} Opta Tips &rarr;</a>
+          </div>
         </div>
         <div class="p-3">
-          ${!footyMetricsData
-            ? `<div class="text-xs text-muted p-2">Loading FootyMetrics Opta-level stats, referee cards/fouls &amp; streaks...</div>`
+          ${!footyMetricsData && todayPool.length === 0
+            ? `<div class="text-xs text-muted p-2">Loading FootyMetrics Opta-level tips across every game on the system...</div>`
             : `<div class="sh2-grid" style="grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px;">
-                ${formTop.map((item) => `
-                  <div class="power-preview-tile is-strong" style="border-left:3px solid #2563eb; background: var(--bg-surface);">
-                    <div class="flex items-center justify-between gap-1 w-full">
-                      <span class="tile-kicker font-bold" style="color:#2563eb;">OPTA FORM EDGE (+${item.winGap}% WIN10)</span>
-                      ${item.odd ? `<span class="ev-return-pill" style="background:#2563eb;color:#fff;">@ ${Number(item.odd).toFixed(2)}</span>` : ""}
+                ${topTiles.map((item) => {
+                  const clr = item.category === "GOALS" ? "#059669" : item.category === "DEFENSE" ? "#0284c7" : "#2563eb";
+                  return `
+                    <div class="power-preview-tile is-strong" style="border-left:3px solid ${clr}; background: var(--bg-surface);">
+                      <div class="flex items-center justify-between gap-1 w-full">
+                        <span class="tile-kicker font-bold" style="color:${clr};">${escapeHtml(item.sourceBadge)} · ${item.confidencePct}%</span>
+                        <span class="ev-return-pill" style="background:${clr};color:#fff;">@ ${Number(item.odd || 1.3).toFixed(2)}</span>
+                      </div>
+                      <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(item.fixture)}</div>
+                      <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#059669;">${escapeHtml(item.tipLabel)}</div>
+                      <div class="text-xs text-muted mt-0.5 truncate w-full">${escapeHtml(item.league)} · ${escapeHtml(item.metricsSummary)}</div>
+                      <button type="button" class="btn-subtle text-xs mt-1.5" style="color:#059669;font-weight:700;padding:2px 6px;" data-copy-tip="${escapeHtml(`${item.fixture} — ${item.tipLabel} @ ${Number(item.odd || 1.3).toFixed(2)} [${item.metricsSummary}]`)}">Copy Opta Tip 📋</button>
                     </div>
-                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(item.fixture)}</div>
-                    <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#059669;">${escapeHtml(item.pick)}</div>
-                    <div class="text-xs text-muted mt-0.5 truncate w-full">${escapeHtml(item.league)} · 10g Win: ${item.homeWin10}% vs ${item.awayWin10}%${item.referee ? ` · Ref ${escapeHtml(item.referee.name)} (${item.referee.avgYellowCards} YC)` : ""}</div>
-                    <button type="button" class="btn-subtle text-xs mt-1.5" style="color:#059669;font-weight:700;padding:2px 6px;" data-copy-tip="${escapeHtml(`${item.fixture} — ${item.pick}${item.odd ? ` @ ${Number(item.odd).toFixed(2)}` : ""} [Opta Win10: ${item.homeWin10}% vs ${item.awayWin10}%]`)}">Copy Opta Tip 📋</button>
-                  </div>
-                `).join("")}
-                ${goalsTop.map((g) => `
-                  <div class="power-preview-tile is-strong" style="border-left:3px solid #059669; background: var(--bg-surface);">
-                    <div class="flex items-center justify-between gap-1 w-full">
-                      <span class="tile-kicker font-bold" style="color:#059669;">OPTA GOALS / BTTS</span>
-                      ${g.odd ? `<span class="ev-return-pill" style="background:#059669;color:#fff;">@ ${Number(g.odd).toFixed(2)}</span>` : ""}
-                    </div>
-                    <div class="font-bold text-xs truncate mt-1 w-full">${escapeHtml(g.fixture)}</div>
-                    <div class="text-xs font-extrabold mt-1 truncate w-full" style="color:#059669;">${escapeHtml(g.pick)}</div>
-                    <div class="text-xs text-muted mt-0.5 truncate w-full">${escapeHtml(g.league)} · 10g Avg O2.5: ${g.avgO25}% · BTTS: ${g.avgBtts}%</div>
-                    <button type="button" class="btn-subtle text-xs mt-1.5" style="color:#059669;font-weight:700;padding:2px 6px;" data-copy-tip="${escapeHtml(`${g.fixture} — ${g.pick}${g.odd ? ` @ ${Number(g.odd).toFixed(2)}` : ""} [10g Avg O2.5 ${g.avgO25}% / BTTS ${g.avgBtts}%]`)}">Copy Goals Tip 📋</button>
-                  </div>
-                `).join("")}
+                  `;
+                }).join("")}
                 ${refTop ? `
                   <div class="power-preview-tile" style="border-left:3px solid #d97706; background: var(--bg-surface);">
                     <div class="flex items-center justify-between gap-1 w-full">
@@ -7392,6 +7419,113 @@
     `;
   }
 
+  function renderOptaIntelView() {
+    if (!footyMetricsData && !isLoadingFootyMetrics) {
+      loadFootyMetricsIntelligence(false);
+    }
+    const todayPool = getAllTodayGamesPool();
+    const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData, todayPool) : null;
+    const allTips = signals?.allTips || [];
+    const counts = signals?.counts || { total: 0, direct: 0, form: 0, goals: 0, defense: 0 };
+    const activeCat = state.activeOptaCategory || "ALL";
+    const q = (state.optaSearch || "").trim().toLowerCase();
+
+    const filtered = allTips.filter((t) => {
+      if (activeCat === "DIRECT" && !t.isDirect) return false;
+      if (activeCat === "FORM" && t.category !== "FORM") return false;
+      if (activeCat === "GOALS" && t.category !== "GOALS") return false;
+      if (activeCat === "DEFENSE" && t.category !== "DEFENSE") return false;
+      if (q) {
+        const hay = `${t.fixture} ${t.league} ${t.country} ${t.tipLabel} ${t.reason}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    // Arrange Opta Tips by League cleanly
+    const byLeague = new Map();
+    for (const item of filtered) {
+      const key = `${item.country || "International"} · ${item.league || "Football"}`;
+      if (!byLeague.has(key)) {
+        byLeague.set(key, { key, country: item.country, league: item.league, flag: item.flag, items: [] });
+      }
+      byLeague.get(key).items.push(item);
+    }
+    const leagueGroups = Array.from(byLeague.values()).sort((a, b) => b.items.length - a.items.length);
+
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#2563eb;color:#fff;">📈 FOOTYMETRICS OPTA INTEL ENGINE</span>
+            <span class="sure-pill-tag">${counts.total} SYSTEM GAMES TIPPED (${counts.direct} DIRECT OPTA)</span>
+          </div>
+          <button type="button" class="analyze-inline-btn" data-fm-refresh="1" style="background:#13A87E;color:#07100F;border-color:#7CE8C4;font-weight:700;">
+            ${isLoadingFootyMetrics ? "⟳ Syncing Opta Feeds..." : "↻ Refresh Opta Tips"}
+          </button>
+        </div>
+        <h1 class="mt-2">FootyMetrics Opta Intel — Tips for Every Game Today</h1>
+        <p>Applies FootyMetrics Opta 5/10/15-game Win%, Over 2.5%, BTTS%, League Position, and Referee Yellow-Card/Foul averages across <strong>every game on the system today</strong> (${escapeHtml(getTodayIso())}), arranged by League.</p>
+
+        <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
+          <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
+            <button type="button" class="filter-chip${activeCat === "ALL" ? " is-active" : ""}" data-opta-cat="ALL">All Games (${counts.total})</button>
+            <button type="button" class="filter-chip${activeCat === "DIRECT" ? " is-active" : ""}" data-opta-cat="DIRECT">🔥 Direct FootyMetrics (${counts.direct})</button>
+            <button type="button" class="filter-chip${activeCat === "FORM" ? " is-active" : ""}" data-opta-cat="FORM">💪 Form &amp; Win Tips (${counts.form})</button>
+            <button type="button" class="filter-chip${activeCat === "GOALS" ? " is-active" : ""}" data-opta-cat="GOALS">⚽ Goals &amp; BTTS (${counts.goals})</button>
+            <button type="button" class="filter-chip${activeCat === "DEFENSE" ? " is-active" : ""}" data-opta-cat="DEFENSE">🛡️ Under / Defense (${counts.defense})</button>
+          </div>
+          <input id="optaSearchInput" type="search" value="${escapeHtml(state.optaSearch || "")}" placeholder="Search team, league or Opta tip..." class="px-3 py-1.5 text-xs rounded-md border" style="background:var(--ground);color:var(--text);min-width:210px;" />
+        </div>
+      </div>
+
+      ${leagueGroups.length === 0
+        ? `<div class="empty-state"><h3>No Opta Intel tips match this filter</h3><p class="text-sm">Try selecting All Games or click Refresh Opta Tips.</p></div>`
+        : leagueGroups.map((lg) => `
+          <section class="panel-section mb-4" style="border-top:3px solid #2563eb;">
+            <div class="panel-header" style="padding:12px 16px;">
+              <div class="flex items-center gap-2">
+                <span>${lg.flag || "🌍"}</span>
+                <span class="font-bold text-base">${escapeHtml(lg.key)}</span>
+                <span class="count">${lg.items.length} games</span>
+              </div>
+            </div>
+            <div class="p-3" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">
+              ${lg.items.map((item) => {
+                const clr = item.category === "GOALS" ? "#059669" : item.category === "DEFENSE" ? "#0284c7" : "#2563eb";
+                return `
+                  <article class="panel p-3" style="border-left:4px solid ${clr};">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <span class="sure-pill-tag" style="background:rgba(37,99,235,0.12);color:${clr};font-weight:700;">${escapeHtml(item.sourceBadge)} · ${item.confidencePct}% Conf</span>
+                      <span class="font-mono text-xs text-muted">${item.isLive ? "🔴 LIVE" : escapeHtml(item.displayTime)}</span>
+                    </div>
+                    <div class="flex items-center gap-2 font-bold text-sm text-text mt-2">
+                      ${crestImg(item.homeLogo, item.home, "#10B981", 20)}
+                      <span class="truncate">${escapeHtml(item.home)}${item.homePos ? ` (#${item.homePos})` : ""}</span>
+                      <span class="text-xs font-mono text-muted">vs</span>
+                      <span class="truncate">${escapeHtml(item.away)}${item.awayPos ? ` (#${item.awayPos})` : ""}</span>
+                      ${crestImg(item.awayLogo, item.away, "#3B82F6", 20)}
+                    </div>
+                    <div class="flex items-center justify-between gap-2 mt-2 p-2 rounded" style="background:var(--ground-subtle);">
+                      <strong class="text-xs" style="color:#059669;">🎯 ${escapeHtml(item.tipLabel)}</strong>
+                      <span class="ev-return-pill" style="background:${clr};color:#fff;">@ ${Number(item.odd || 1.3).toFixed(2)}</span>
+                    </div>
+                    <div class="text-xs text-text-secondary mt-1.5">${escapeHtml(item.metricsSummary)}</div>
+                    <div class="text-xs text-muted mt-0.5">${escapeHtml(item.reason)}</div>
+                    <div class="flex items-center justify-between gap-2 mt-2">
+                      <button type="button" class="btn-subtle text-xs" style="color:#059669;font-weight:700;" data-copy-tip="${escapeHtml(`${item.fixture} — Opta Tip: ${item.tipLabel} @ ${Number(item.odd || 1.3).toFixed(2)} [${item.metricsSummary}]`)}">Copy Opta Tip 📋</button>
+                      ${item.matchId ? `<button type="button" class="btn-subtle text-xs" data-match-id="${escapeHtml(String(item.matchId))}">19-Factor View &rarr;</button>` : ""}
+                    </div>
+                  </article>
+                `;
+              }).join("")}
+            </div>
+          </section>
+        `).join("")
+      }
+    `;
+  }
+
   function renderMainContent() {
     const main = document.getElementById("mainContent");
     if (!main) return;
@@ -7421,6 +7555,25 @@
         main.innerHTML = renderWorstTeamsView();
       } else if (r === "/odds-mismatch") {
         main.innerHTML = renderOddsMismatchView();
+      } else if (r === "/opta-intel" || r === "/opta" || r === "/footymetrics") {
+        main.innerHTML = renderOptaIntelView();
+        const optaSearchEl = document.getElementById("optaSearchInput");
+        if (optaSearchEl) {
+          let oTimer = null;
+          optaSearchEl.addEventListener("input", (ev) => {
+            state.optaSearch = ev.target.value || "";
+            if (oTimer) clearTimeout(oTimer);
+            oTimer = setTimeout(() => {
+              renderMainContent();
+              const refocused = document.getElementById("optaSearchInput");
+              if (refocused) {
+                refocused.focus();
+                const len = refocused.value.length;
+                refocused.setSelectionRange(len, len);
+              }
+            }, 140);
+          });
+        }
       } else if (r === "/today" || r === "/todays-games" || r === "/today-games") {
         main.innerHTML = renderTodayGamesView();
         const todaySearchEl = document.getElementById("todayGamesSearchInput");
@@ -9091,6 +9244,14 @@
       return;
     }
 
+    const optaCatBtn = e.target.closest("[data-opta-cat]");
+    if (optaCatBtn) {
+      state.activeOptaCategory = optaCatBtn.getAttribute("data-opta-cat") || "ALL";
+      saveState();
+      scheduleRenderMainContent();
+      return;
+    }
+
     // Copy SportyBet / Football.com Game ID or Tip
     const copyTipBtn = e.target.closest("[data-copy-tip]");
     if (copyTipBtn) {
@@ -9655,6 +9816,7 @@
     if (pRoute === "/ft-draw" || pRoute === "/fulltime-draw" || pRoute === "/full-time-draw" || pRoute === "/draw-tips") pRoute = "/";
     if (pRoute === "/results" || pRoute === "/tip-history") pRoute = "/history";
     if (pRoute === "/todays-games" || pRoute === "/today-games") pRoute = "/today";
+    if (pRoute === "/opta" || pRoute === "/footymetrics") pRoute = "/opta-intel";
     if (pRoute === "/stat-props") pRoute = "/ou-props";
     const qs = new URLSearchParams(window.location.search || "");
     if (qs.get("market") && pRoute === "/ou-props") {

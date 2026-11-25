@@ -104,8 +104,6 @@ window.MAMON_DATA = (() => {
   return {
     DATES,
     todayIso,
-    tomorrowIso,
-    day2Iso,
     TEAMS,
     STANDINGS,
     TOP_SCORERS,

@@ -1088,7 +1088,7 @@ window.MAMON_REALTIME = (() => {
 
     const t1 = Number(m1.timestamp || m1.estimateStartTime || 0);
     const t2 = Number(m2.timestamp || m2.estimateStartTime || 0);
-    if (t1 > 0 && t2 > 0 && Math.abs(t1 - t2) > 8 * 3600000) {
+    if (t1 > 0 && t2 > 0 && Math.abs(t1 - t2) > 24 * 3600000) {
       return false;
     }
     return true;

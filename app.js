@@ -5599,6 +5599,7 @@
       : `Vulnerable ${entry.isHome ? "Home" : "Away"} Side · Safe Fade: Back ${entry.opponent.name} ${entry.isHome ? "X2" : "1X"} Double Chance (${Math.min(96, entry.loseProbPct + 24)}% DC / ${entry.loseProbPct}% Win @ ${entry.oppOdd.toFixed(2)})`;
 
     const formBadges = `<div class="form-dots">${(c.form.formArr || []).map((x) => `<span class="form-dot ${x}">${x}</span>`).join("")}</div>`;
+    const powerOptaTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
 
     return `
       <article class="power-team-card" data-match-id="${m.id}">
@@ -5615,6 +5616,10 @@
             <span class="power-score-pill${isStrong ? " is-strong" : " is-worst"}">${scoreLbl}</span>
           </div>
         </div>
+        ${powerOptaTip ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
+          <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(powerOptaTip.tipLabel)} (${powerOptaTip.confidencePct}%)</span>
+          <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(powerOptaTip.shortLabel)} · Fair ${Number(powerOptaTip.fairOdd || powerOptaTip.odd).toFixed(2)} (${powerOptaTip.evPct >= 0 ? "+" : ""}${powerOptaTip.evPct || 0}% EV)</span>
+        </div>` : ""}
 
         <div class="flex items-center justify-between gap-3 flex-wrap mt-2">
           <div class="flex items-center gap-2.5 min-w-0">

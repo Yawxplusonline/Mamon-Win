@@ -296,7 +296,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (reqUrl.pathname === "/api/my-tips") {
       try {
-        const fmData = await handleFootymetricsProxy.getFootyMetricsData?.().catch(() => null);
+        const fmData = await handleFootyMetricsProxy.fetchFootyMetricsIntelligence?.().catch(() => null);
         const tips = [];
         for (const f of fmData?.fixtures || []) {
           const hName = f.home?.name || "Home";

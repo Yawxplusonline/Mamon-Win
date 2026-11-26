@@ -735,15 +735,24 @@ async function buildTipHistory(forceRefresh = false) {
       })
       .sort((a, b) => b.won - a.won || b.winRatePct - a.winRatePct);
 
-    // Exclude removed sections AND restrict displayed played games strictly to TODAY ONLY
-    const filteredPlayed = settledPlayed.filter(
-      (x) =>
-        x.categoryLabel !== "Sure Odds & Match Result" &&
-        x.categoryLabel !== "Goals Over / Under" &&
-        String(x.isoDate || (x.settledAt || "").slice(0, 10)) === todayIso
-    );
+    // Exclude removed sections AND restrict displayed played games strictly to TODAY ONLY, 1 entry per unique game
+    const catPriority = { "FootyMetrics Opta Intel": 1, "Winning Handicap & +EV": 2, "Mismatch & Trap Shield": 3 };
+    const filteredPlayed = settledPlayed
+      .filter(
+        (x) =>
+          x.categoryLabel !== "Sure Odds & Match Result" &&
+          x.categoryLabel !== "Goals Over / Under" &&
+          String(x.isoDate || (x.settledAt || "").slice(0, 10)) === todayIso
+      )
+      .sort((a, b) => (catPriority[a.categoryLabel] || 9) - (catPriority[b.categoryLabel] || 9));
+
+    const dedupedPlayed = [];
+    for (const item of filteredPlayed) {
+      const dup = dedupedPlayed.some((e) => teamsSimilar(e.home, item.home) && teamsSimilar(e.away, item.away));
+      if (!dup) dedupedPlayed.push(item);
+    }
     settledPlayed.length = 0;
-    settledPlayed.push(...filteredPlayed);
+    settledPlayed.push(...dedupedPlayed);
 
     settledPlayed.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
 

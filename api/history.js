@@ -694,6 +694,13 @@ async function buildTipHistory(forceRefresh = false) {
 
     writeStore(allItems);
 
+    // Exclude removed sections (Sure Odds & Match Result, Goals Over / Under)
+    const filteredPlayed = settledPlayed.filter(
+      (x) => x.categoryLabel !== "Sure Odds & Match Result" && x.categoryLabel !== "Goals Over / Under"
+    );
+    settledPlayed.length = 0;
+    settledPlayed.push(...filteredPlayed);
+
     settledPlayed.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
 
     const wonCount = settledPlayed.filter((x) => x.result === "WON").length;

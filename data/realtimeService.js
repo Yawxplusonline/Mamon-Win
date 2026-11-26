@@ -7749,34 +7749,21 @@ window.MAMON_REALTIME = (() => {
       confidencePct = Math.min(93, Math.round(70 + winGap * 0.35));
       category = "FORM";
       reason = `Opta 10g Form Edge: ${hName} ${hWin10}% vs ${aName} ${aWin10}%`;
-    } else if (avgBtts >= 68 && avgBtts >= avgO25) {
-      tipLabel = "BTTS (Both Teams To Score) Yes";
-      odd = oddBtts;
-      shortLabel = `GG @ ${odd.toFixed(2)}`;
-      confidencePct = Math.min(89, Math.round(55 + avgBtts * 0.38));
-      category = "GOALS";
-      reason = `Opta 10g BTTS Rate Avg ${avgBtts}% (${hName} ${hBtts}% · ${aName} ${aBtts}%)`;
-    } else if (avgO25 >= 65) {
-      tipLabel = "Over 2.5 Goals";
-      odd = oddO25;
-      shortLabel = `O2.5 @ ${odd.toFixed(2)}`;
-      confidencePct = Math.min(89, Math.round(55 + avgO25 * 0.38));
-      category = "GOALS";
-      reason = `Opta 10g Over 2.5 Avg ${avgO25}% (${hName} ${hO25}% · ${aName} ${aO25}%)`;
-    } else if (avgO25 <= 42) {
-      tipLabel = "Under 3.5 Goals";
-      odd = oddU35;
-      shortLabel = `U3.5 @ ${odd.toFixed(2)}`;
-      confidencePct = Math.min(90, Math.round(88 - avgO25 * 0.25));
-      category = "DEFENSE";
-      reason = `Opta Low-Scoring Trend: 10g O2.5 Avg only ${avgO25}%`;
-    } else if (avgO25 >= 52) {
+    } else if ((avgBtts >= 68 && avgBtts >= avgO25) || avgO25 >= 52) {
       tipLabel = "Over 1.5 Goals";
       odd = oddO15;
       shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
-      confidencePct = Math.min(88, Math.round(62 + avgO25 * 0.28));
+      confidencePct = Math.min(90, Math.round(64 + Math.max(avgO25, avgBtts) * 0.28));
       category = "GOALS";
-      reason = `Opta Steady Scoring: 10g O2.5 ${avgO25}% · BTTS ${avgBtts}%`;
+      reason = `Opta 10g High-Scoring -> Safe Over 1.5 Goals (O2.5 ${avgO25}% · BTTS ${avgBtts}%)`;
+    } else if (avgO25 <= 42) {
+      const leanHome = hWin10 >= aWin10 || (hPpg + 0.15 >= aPpg);
+      tipLabel = leanHome ? `1X Double Chance (${hName} or Draw)` : `X2 Double Chance (${aName} or Draw)`;
+      odd = leanHome ? odd1x : oddX2;
+      shortLabel = `${leanHome ? "1X" : "X2"} @ ${odd.toFixed(2)}`;
+      confidencePct = Math.min(88, Math.round(70 + Math.abs(hWin10 - aWin10) * 0.3));
+      category = "FORM";
+      reason = `Opta Tight/Low-Scoring Trend (${avgO25}% O2.5) -> Safe Double Chance ${shortLabel}`;
     } else {
       const leanHome = hWin10 >= aWin10 || (hPpg + 0.15 >= aPpg);
       tipLabel = leanHome ? `1X Double Chance (${hName} or Draw)` : `X2 Double Chance (${aName} or Draw)`;

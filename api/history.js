@@ -423,10 +423,6 @@ function collectPendingTipsFromActiveFeeds(bmData, fmData, statPropsData) {
       pickLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
       odd = f.odds?.oddOver15 || 1.26;
       pickSide = null;
-    } else if (winGap < 15 && avgO25 <= 42) {
-      pickLabel = "Under 3.5 Goals";
-      odd = f.odds?.oddUnder35 || 1.32;
-      pickSide = null;
     }
     candidates.push({
       id: `opta-form::${makeMatchKey(h.name, a.name, isoDate)}`,

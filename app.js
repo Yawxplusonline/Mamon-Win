@@ -3173,7 +3173,7 @@
   }
   // ============ DEDICATED /ppg INTELLIGENCE & TABLE MECHANICS VIEW ============
   function renderPpgIntelligenceView() {
-    const active = filteredMatchesForDate().filter((m) => m.status !== "FT");
+    const active = filteredMatchesForDate().filter((m) => m.status !== "FT" && !m.isCompleted && !isMatchTrulyLive(m));
     const activeCat = state.activePpgCategory || "ALL";
 
     const ppgListAll = [...active].sort(
@@ -6260,8 +6260,9 @@
 
     const sportFilter = (list) => {
       if (!Array.isArray(list)) return [];
-      if (!state.activeSport || state.activeSport === "ALL") return list;
-      return list.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
+      const preMatchOnly = list.filter((m) => !m.isLive && !isMatchTrulyLive(m) && m.status !== "FT" && !m.isCompleted);
+      if (!state.activeSport || state.activeSport === "ALL") return preMatchOnly;
+      return preMatchOnly.filter((m) => (m.sport || "football").toLowerCase() === state.activeSport.toLowerCase());
     };
     const sh = sportFilter(sc?.strongHomeMismatch || []);
     const sa = sportFilter(sc?.strongAwayMismatch || []);
@@ -7483,7 +7484,7 @@
     const todayPool = getAllTodayGamesPool();
     const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData, todayPool) : null;
     const isFinishedOptaTip = (t) => t.status === "FT" || t.status === "AET" || t.status === "PEN" || (!t.isLive && t.homeScore !== null && t.awayScore !== null);
-    const allTips = (signals?.allTips || []).filter((t) => !isFinishedOptaTip(t));
+    const allTips = (signals?.allTips || []).filter((t) => !t.isLive && !isFinishedOptaTip(t));
     const counts = {
       total: allTips.length,
       direct: allTips.filter((t) => t.isDirect).length,

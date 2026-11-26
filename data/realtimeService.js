@@ -7801,9 +7801,38 @@ window.MAMON_REALTIME = (() => {
     const hRuninAdj = hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -4 : 0;
     const aRuninAdj = aRuninVerdict === "GAIN_BLUE" ? 4 : aRuninVerdict === "DROP_RED" ? -4 : 0;
 
-    // True Adjusted Team Strength % (Form + Home/Away Strength + Squad/Injuries + Cards + Run-In)
-    const hAdjPct = Math.round(clamp((hWin10 * 0.55) + (hHome5 * 0.45) + hSquadAdj + hRuninAdj + cardThreatPen, 8, 96));
-    const aAdjPct = Math.round(clamp((aWin10 * 0.55) + (aAway5 * 0.45) + aSquadAdj + aRuninAdj + cardThreatPen, 8, 96));
+    // Context-Aware Strength: Domestic League Strength vs International Level Strength
+    const lgNameLow = String(match.leagueName || match.league?.name || oddsObj.leagueName || "").toLowerCase();
+    const isIntlClubComp = /\b(champions league|europa league|conference league|libertadores|sudamericana|concacaf|afc|caf|uefa|world cup|nations league|euro|copa america|afcon|international|friendly)\b/i.test(lgNameLow);
+    const strengthContext = isIntlClubComp ? "International Level Strength" : "Domestic League Strength";
+
+    let hAdjPct, aAdjPct;
+    if (isIntlClubComp) {
+      // International match (e.g. Viktoria Plzen vs Benfica): evaluate at International Level (continental market + UEFA/intl form + squad/cards)
+      const inv1 = 1 / Math.max(1.05, odd1);
+      const inv2 = 1 / Math.max(1.05, odd2);
+      const mktIntlH = (inv1 / (inv1 + inv2)) * 100;
+      const mktIntlA = (inv2 / (inv1 + inv2)) * 100;
+      const optaRawH = (hWin10 * 0.55) + (hHome5 * 0.45);
+      const optaRawA = (aWin10 * 0.55) + (aAway5 * 0.45);
+      hAdjPct = Math.round(clamp((mktIntlH * 0.60) + (optaRawH * 0.40) + hSquadAdj + cardThreatPen, 8, 96));
+      aAdjPct = Math.round(clamp((mktIntlA * 0.60) + (optaRawA * 0.40) + aSquadAdj + cardThreatPen, 8, 96));
+
+      // Align tip direction with true International Level Strength if raw domestic Opta picked the wrong side
+      const intlDiff = hAdjPct - aAdjPct;
+      if (Math.abs(intlDiff) >= 14 && (shortLabel.startsWith("1X @") || shortLabel.startsWith("X2 @") || shortLabel.startsWith("1 @") || shortLabel.startsWith("2 @"))) {
+        const intlHomeFav = intlDiff > 0;
+        tipLabel = intlHomeFav ? `1X Double Chance (${hName} or Draw)` : `X2 Double Chance (${aName} or Draw)`;
+        odd = intlHomeFav ? odd1x : oddX2;
+        shortLabel = `${intlHomeFav ? "1X" : "X2"} @ ${odd.toFixed(2)}`;
+        category = "DOUBLE_CHANCE";
+        reason = `International Level Strength: ${hName} ${hAdjPct}% vs ${aName} ${aAdjPct}% (O2.5 ${avgO25}%)`;
+      }
+    } else {
+      // Domestic league match (e.g. Milan vs Inter): use full Domestic League Strength + Run-In + Squad/Cards
+      hAdjPct = Math.round(clamp((hWin10 * 0.55) + (hHome5 * 0.45) + hSquadAdj + hRuninAdj + cardThreatPen, 8, 96));
+      aAdjPct = Math.round(clamp((aWin10 * 0.55) + (aAway5 * 0.45) + aSquadAdj + aRuninAdj + cardThreatPen, 8, 96));
+    }
 
     // Reconcile Opta & Run-In when they give conflicting signals
     let consensusStatus = "ALIGNED (Opta + Run-In)";
@@ -8026,6 +8055,7 @@ window.MAMON_REALTIME = (() => {
       awayWin10: aWin10,
       homeAdjPct: hAdjPct,
       awayAdjPct: aAdjPct,
+      strengthContext,
       avgO25,
       avgBtts,
       homePos: fm?.homePos ?? null,
@@ -8035,7 +8065,7 @@ window.MAMON_REALTIME = (() => {
       runinSummary,
       referee: ref,
       refereeNote: refNote,
-      metricsSummary: `Adj Strength: ${hName} ${hAdjPct}% (Home5 ${hHome5}%) vs ${aName} ${aAdjPct}% (Away5 ${aAway5}%) · O2.5 ${avgO25}% · BTTS ${avgBtts}%`,
+      metricsSummary: `${strengthContext}: ${hName} ${hAdjPct}% (Home5 ${hHome5}%) vs ${aName} ${aAdjPct}% (Away5 ${aAway5}%) · O2.5 ${avgO25}%`,
       reason: `${reason} · ${runinSummary} · ${fairOddsText}${refNote ? ` · ${refNote}` : ""}`
     };
   }

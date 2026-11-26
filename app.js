@@ -2274,9 +2274,13 @@
     const fairBadgeStr = optaChipTip && optaChipTip.fairOdd
       ? ` · Fair ${Number(optaChipTip.fairOdd).toFixed(2)} (${optaChipTip.evPct >= 0 ? "+" : ""}${optaChipTip.evPct}% EV)`
       : "";
-    const optaChipHtml = optaChipTip
-      ? `<span class="ppg-chip" style="background:rgba(37,99,235,0.12);color:#2563eb;border-color:rgba(37,99,235,0.3);font-weight:700;" title="Unified Opta + Run-In + Deep Fair Odds (${escapeHtml(optaChipTip.sourceBadge)} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.fairOddsTip || optaChipTip.tipLabel)} — ${escapeHtml(optaChipTip.reason)}">🎯 Fair Odds Tip: ${escapeHtml(optaChipTip.shortLabel)}${escapeHtml(fairBadgeStr)}</span><span class="ppg-chip" style="background:rgba(15,23,42,0.06);color:var(--text-secondary);border-color:rgba(148,163,184,0.3);font-weight:600;">📊 ${escapeHtml(optaChipTip.metricsSummary)}</span>`
+    const optaStripHtml = optaChipTip
+      ? `<div class="match-intel-strip" title="5-Engine Consensus + Fair Odds (${escapeHtml(optaChipTip.sourceBadge || "Opta")} · ${optaChipTip.confidencePct}%): ${escapeHtml(optaChipTip.reason)}">
+          <span class="intel-tip-pill">🎯 Fair Odds Tip: ${escapeHtml(optaChipTip.shortLabel)}${escapeHtml(fairBadgeStr)}</span>
+          <span class="intel-stats-text">📊 ${escapeHtml(optaChipTip.metricsSummary)}</span>
+        </div>`
       : "";
+    const optaChipHtml = "";
     const hasValidKoTime = koParts?.timeStr && /^\d{2}:\d{2}/.test(koParts.timeStr);
     const mobileTimeHtml = isLive
       ? `<span class="live-label"><span class="live-dot"></span>${escapeHtml(liveClock)}</span><span class="live-half-pill is-compact">${escapeHtml(halfLabel)}</span>`
@@ -2387,6 +2391,7 @@
             </div>
           </div>
         </div>
+        ${optaStripHtml}
       </div>
     `;
   }

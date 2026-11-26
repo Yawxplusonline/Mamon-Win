@@ -3682,7 +3682,7 @@ window.MAMON_REALTIME = (() => {
       aPpg: awayOverallPpg
     });
 
-    // Switch system-wide primary tip to FootyMetrics Opta Intel (87% win-rate 6-engine consensus)
+    // Switch system-wide primary tip to FootyMetrics Opta Intel (87% win-rate 5-engine consensus)
     const optaOverride = match.optaTip || computeOptaIntelTipForMatch(match, null);
     if (optaOverride && optaOverride.tipLabel) {
       bestPick.label = optaOverride.tipLabel;
@@ -7600,36 +7600,63 @@ window.MAMON_REALTIME = (() => {
   }
 
   function computeDeepBookieFairOdds(oddsObj = {}) {
-    const o1 = Math.max(1.02, Number(oddsObj.odd1 || oddsObj.home || 1.95));
-    const oX = Math.max(1.02, Number(oddsObj.oddX || oddsObj.draw || 3.45));
-    const o2 = Math.max(1.02, Number(oddsObj.odd2 || oddsObj.away || 3.60));
-    const sum1X2 = (1 / o1) + (1 / oX) + (1 / o2);
-    const marginPct = Math.max(0, Math.round((sum1X2 - 1) * 1000) / 10);
-    const fair1 = Math.round((sum1X2 / (1 / o1)) * 100) / 100;
-    const fairX = Math.round((sum1X2 / (1 / oX)) * 100) / 100;
-    const fair2 = Math.round((sum1X2 / (1 / o2)) * 100) / 100;
-    const fair1X = Math.round((1 / ((1 / fair1) + (1 / fairX))) * 100) / 100;
-    const fairX2 = Math.round((1 / ((1 / fairX) + (1 / fair2))) * 100) / 100;
+    const clean = (v, fallback) => {
+      const n = Number(v || fallback);
+      return Number.isFinite(n) && n > 1.01 ? n : fallback;
+    };
 
-    const oO25 = Math.max(1.02, Number(oddsObj.oddOver25 || oddsObj.over25 || 1.78));
-    const oU25 = Math.max(1.02, Number(oddsObj.oddUnder25 || oddsObj.under25 || 1.98));
-    const sumOU = (1 / oO25) + (1 / oU25);
-    const fairO25 = Math.round((sumOU / (1 / oO25)) * 100) / 100;
+    const stripMargin2Way = (oA, oB) => {
+      const sum = (1 / oA) + (1 / oB);
+      return {
+        fairA: Math.round((sum / (1 / oA)) * 100) / 100,
+        fairB: Math.round((sum / (1 / oB)) * 100) / 100,
+        marginPct: Math.round((sum - 1) * 1000) / 10
+      };
+    };
 
-    const oBtts = Math.max(1.02, Number(oddsObj.oddBtts || oddsObj.bttsYes || 1.75));
-    const oBttsNo = Math.max(1.02, Number(oddsObj.oddBttsNo || oddsObj.bttsNo || 2.00));
-    const sumBtts = (1 / oBtts) + (1 / oBttsNo);
-    const fairBtts = Math.round((sumBtts / (1 / oBtts)) * 100) / 100;
+    const stripMargin3Way = (o1, oX, o2) => {
+      const sum = (1 / o1) + (1 / oX) + (1 / o2);
+      return {
+        fair1: Math.round((sum / (1 / o1)) * 100) / 100,
+        fairX: Math.round((sum / (1 / oX)) * 100) / 100,
+        fair2: Math.round((sum / (1 / o2)) * 100) / 100,
+        marginPct: Math.round((sum - 1) * 1000) / 10
+      };
+    };
 
-    const oO15 = Math.max(1.02, Number(oddsObj.oddOver15 || oddsObj.over15 || 1.26));
-    const oU35 = Math.max(1.02, Number(oddsObj.oddUnder35 || oddsObj.under35 || 1.32));
-    const fairO15 = Math.round((oO15 * 1.045) * 100) / 100;
-    const fairU35 = Math.round((oU35 * 1.045) * 100) / 100;
+    const o1 = clean(oddsObj.odd1 || oddsObj.home, 1.95);
+    const oX = clean(oddsObj.oddX || oddsObj.draw, 3.45);
+    const o2 = clean(oddsObj.odd2 || oddsObj.away, 3.60);
+    const m1X2 = stripMargin3Way(o1, oX, o2);
+
+    const fair1X = Math.round((1 / ((1 / m1X2.fair1) + (1 / m1X2.fairX))) * 100) / 100;
+    const fairX2 = Math.round((1 / ((1 / m1X2.fairX) + (1 / m1X2.fair2))) * 100) / 100;
+    const fair12 = Math.round((1 / ((1 / m1X2.fair1) + (1 / m1X2.fair2))) * 100) / 100;
+
+    const oO15 = clean(oddsObj.oddOver15 || oddsObj.over15, 1.26);
+    const oU15 = clean(oddsObj.oddUnder15 || oddsObj.under15, 3.80);
+    const m15 = stripMargin2Way(oO15, oU15);
+
+    const oO25 = clean(oddsObj.oddOver25 || oddsObj.over25, 1.78);
+    const oU25 = clean(oddsObj.oddUnder25 || oddsObj.under25, 1.98);
+    const m25 = stripMargin2Way(oO25, oU25);
+
+    const oO35 = clean(oddsObj.oddOver35 || oddsObj.over35, 2.80);
+    const oU35 = clean(oddsObj.oddUnder35 || oddsObj.under35, 1.32);
+    const m35 = stripMargin2Way(oO35, oU35);
+
+    const oBtts = clean(oddsObj.oddBtts || oddsObj.bttsYes, 1.75);
+    const oBttsNo = clean(oddsObj.oddBttsNo || oddsObj.bttsNo, 2.00);
+    const mBtts = stripMargin2Way(oBtts, oBttsNo);
 
     return {
-      bookieMarginPct: marginPct,
-      fair1, fairX, fair2, fair1X, fairX2,
-      fairO25, fairO15, fairU35, fairBtts
+      bookieMarginPct: m1X2.marginPct,
+      fair1: m1X2.fair1, fairX: m1X2.fairX, fair2: m1X2.fair2,
+      fair1X, fairX2, fair12,
+      fairO15: m15.fairA, fairU15: m15.fairB,
+      fairO25: m25.fairA, fairU25: m25.fairB,
+      fairO35: m35.fairA, fairU35: m35.fairB,
+      fairBtts: mBtts.fairA, fairBttsNo: mBtts.fairB
     };
   }
 
@@ -7834,18 +7861,53 @@ window.MAMON_REALTIME = (() => {
     }
     const runinSummary = `Run-In: ${hName} ${hRuninVerdict} vs ${aName} ${aRuninVerdict}`;
 
-    // 5-Engine Consensus Voting (Opta + Run-In + PPG + Bookmaker/Dropping Odds + Handicap/+EV)
+    // 5-Engine Consensus Voting (Opta + Run-In + PPG + Bookmaker Trap + Dropping Odds)
     const ppgFavorsHome = hPpg >= aPpg + 0.25;
     const ppgFavorsAway = aPpg >= hPpg + 0.25;
     const bookieFavorsHome = odd1 < odd2 - 0.25;
     const bookieFavorsAway = odd2 < odd1 - 0.25;
-    const homeVotes = (hAdjPct >= aAdjPct + 10 ? 1 : 0) + (runinFavorsHome ? 1 : 0) + (ppgFavorsHome ? 1 : 0) + (bookieFavorsHome ? 1 : 0);
-    const awayVotes = (aAdjPct >= hAdjPct + 10 ? 1 : 0) + (runinFavorsAway ? 1 : 0) + (ppgFavorsAway ? 1 : 0) + (bookieFavorsAway ? 1 : 0);
 
-    // Safety-First Rule: Only allow straight Win (1 or 2) if >=3 engines agree AND Adj Strength gap >= 22%
-    if (shortLabel.startsWith("1 @") && (homeVotes < 3 || (hAdjPct - aAdjPct) < 22)) {
+    // E5: Dropping Odds from api/bookmakers.js trackLiveLineMovement
+    let droppingFavorsHome = false;
+    let droppingFavorsAway = false;
+    const leagueLow = String(oddsObj.leagueName || match.leagueName || match.league?.name || "").toLowerCase();
+    const isFastLane = leagueLow.includes("esportsbattle") || leagueLow.includes("fast lane");
+    if (!isFastLane) {
+      const lm = oddsObj.lineMovement || match.droppingOdds;
+      if (lm?.hasData && Array.isArray(lm.allMoves)) {
+        for (const move of lm.allMoves) {
+          if (move.code === "HOME" && move.impliedShiftPct >= 3.0) droppingFavorsHome = true;
+          if (move.code === "AWAY" && move.impliedShiftPct >= 3.0) droppingFavorsAway = true;
+        }
+      } else if (oddsObj.openOdd1 && oddsObj.openOdd2) {
+        const ageMins = (Date.now() - (oddsObj.firstSeenAt || Date.now())) / 60000;
+        if (ageMins > 30) {
+          const homeShift = (1 / odd1 - 1 / Number(oddsObj.openOdd1)) * 100;
+          const awayShift = (1 / odd2 - 1 / Number(oddsObj.openOdd2)) * 100;
+          droppingFavorsHome = homeShift >= 3.0;
+          droppingFavorsAway = awayShift >= 3.0;
+        }
+      }
+    }
+
+    const homeVotes =
+      (hAdjPct >= aAdjPct + 10 ? 1 : 0) +
+      (runinFavorsHome ? 1 : 0) +
+      (ppgFavorsHome ? 1 : 0) +
+      (bookieFavorsHome ? 1 : 0) +
+      (droppingFavorsHome ? 1 : 0);
+
+    const awayVotes =
+      (aAdjPct >= hAdjPct + 10 ? 1 : 0) +
+      (runinFavorsAway ? 1 : 0) +
+      (ppgFavorsAway ? 1 : 0) +
+      (bookieFavorsAway ? 1 : 0) +
+      (droppingFavorsAway ? 1 : 0);
+
+    // Safety-First Rule: Straight Win needs >=4/5 AND Adj Gap >=22%
+    if (shortLabel.startsWith("1 @") && (homeVotes < 4 || (hAdjPct - aAdjPct) < 22)) {
       if (avgO25 >= 58) {
-        tipLabel = "Over 1.5 Goals (6-Engine Safe Consensus)";
+        tipLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
         odd = oddO15;
         shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
         category = "GOALS";
@@ -7853,11 +7915,12 @@ window.MAMON_REALTIME = (() => {
         tipLabel = `1X Double Chance (${hName} or Draw)`;
         odd = odd1x;
         shortLabel = `1X @ ${odd.toFixed(2)}`;
+        category = "DOUBLE_CHANCE";
       }
-      consensusStatus = `RECONCILED (${homeVotes}/4 Engines -> Safe ${shortLabel})`;
-    } else if (shortLabel.startsWith("2 @") && (awayVotes < 3 || (aAdjPct - hAdjPct) < 22)) {
+      consensusStatus = `RECONCILED (${homeVotes}/5 Engines -> Safe ${shortLabel})`;
+    } else if (shortLabel.startsWith("2 @") && (awayVotes < 4 || (aAdjPct - hAdjPct) < 22)) {
       if (avgO25 >= 58) {
-        tipLabel = "Over 1.5 Goals (6-Engine Safe Consensus)";
+        tipLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
         odd = oddO15;
         shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
         category = "GOALS";
@@ -7865,29 +7928,64 @@ window.MAMON_REALTIME = (() => {
         tipLabel = `X2 Double Chance (${aName} or Draw)`;
         odd = oddX2;
         shortLabel = `X2 @ ${odd.toFixed(2)}`;
+        category = "DOUBLE_CHANCE";
       }
-      consensusStatus = `RECONCILED (${awayVotes}/4 Engines -> Safe ${shortLabel})`;
-    } else if (homeVotes >= 3 || awayVotes >= 3) {
-      consensusStatus = `UNANIMOUS (${Math.max(homeVotes, awayVotes)}/4 Engines + Opta Agree)`;
+      consensusStatus = `RECONCILED (${awayVotes}/5 Engines -> Safe ${shortLabel})`;
+    } else if (homeVotes >= 4 || awayVotes >= 4) {
+      consensusStatus = `UNANIMOUS (${Math.max(homeVotes, awayVotes)}/5 Engines Agree)`;
+    } else {
+      consensusStatus = `SPLIT (${homeVotes}/5 vs ${awayVotes}/5)`;
     }
 
-    // Deep Bookmaker Fair Odds integration
+    // Market Fair Odds (display only)
     const deepFair = computeDeepBookieFairOdds(oddsObj);
     let bookieFairOdd = deepFair.fair1X;
     if (shortLabel.startsWith("1 @")) bookieFairOdd = deepFair.fair1;
     else if (shortLabel.startsWith("2 @")) bookieFairOdd = deepFair.fair2;
     else if (shortLabel.startsWith("X2 @")) bookieFairOdd = deepFair.fairX2;
+    else if (shortLabel.startsWith("1X @")) bookieFairOdd = deepFair.fair1X;
     else if (shortLabel.startsWith("GG @")) bookieFairOdd = deepFair.fairBtts;
     else if (shortLabel.startsWith("O2.5 @")) bookieFairOdd = deepFair.fairO25;
     else if (shortLabel.startsWith("U3.5 @")) bookieFairOdd = deepFair.fairU35;
     else if (shortLabel.startsWith("O1.5 @")) bookieFairOdd = deepFair.fairO15;
 
-    const modelFairOdd = Math.max(1.04, 100 / Math.max(20, confidencePct));
-    const fairOdd = Math.round(((bookieFairOdd * 0.55) + (modelFairOdd * 0.45)) * 100) / 100;
+    // TRUE +EV (SAME 5-Engine Model)
+    const totalAdj = Math.max(1, hAdjPct + aAdjPct);
+    let baseProb = 0.50;
+    let votesForPick = 0;
+    let votesAgainstPick = 0;
+
+    if (shortLabel.startsWith("1 @")) {
+      baseProb = hAdjPct / totalAdj;
+      votesForPick = homeVotes; votesAgainstPick = awayVotes;
+    } else if (shortLabel.startsWith("2 @")) {
+      baseProb = aAdjPct / totalAdj;
+      votesForPick = awayVotes; votesAgainstPick = homeVotes;
+    } else if (shortLabel.startsWith("1X @")) {
+      baseProb = 1 - (aAdjPct / totalAdj) * 0.85;
+      votesForPick = homeVotes; votesAgainstPick = awayVotes;
+    } else if (shortLabel.startsWith("X2 @")) {
+      baseProb = 1 - (hAdjPct / totalAdj) * 0.85;
+      votesForPick = awayVotes; votesAgainstPick = homeVotes;
+    } else if (shortLabel.startsWith("O1.5 @") || shortLabel.startsWith("O2.5 @")) {
+      baseProb = Math.max(0.30, Math.min(0.85, avgO25 / 100));
+      votesForPick = Math.max(homeVotes, awayVotes); votesAgainstPick = 5 - votesForPick;
+    } else if (shortLabel.startsWith("GG @")) {
+      baseProb = Math.max(0.30, Math.min(0.80, avgBtts / 100));
+      votesForPick = Math.max(homeVotes, awayVotes); votesAgainstPick = 5 - votesForPick;
+    }
+
+    const voteMargin = votesForPick - votesAgainstPick;
+    let modelProb = baseProb + (voteMargin * 0.02);
+    modelProb = Math.max(0.20, Math.min(0.90, modelProb));
+
+    const fairOdd = Math.round((1 / modelProb) * 100) / 100;
     const bookieOdd = Math.round(Number(odd) * 100) / 100;
-    const evPct = Math.round(((bookieOdd / Math.max(1.02, fairOdd)) - 1) * 1000) / 10;
+    const evPct = Math.round(((modelProb * bookieOdd) - 1) * 1000) / 10;
+    const isValuePick = evPct >= 0;
+    confidencePct = Math.round(modelProb * 100);
     const fairOddsText = `Fair ${fairOdd.toFixed(2)} vs Bookie ${bookieOdd.toFixed(2)} (${evPct >= 0 ? "+" : ""}${evPct}% EV)`;
-    const fairOddsTip = `${tipLabel} @ ${bookieOdd.toFixed(2)} (Fair ${fairOdd.toFixed(2)} · ${evPct >= 0 ? "+" : ""}${evPct}% EV)`;
+    const fairOddsTip = `${tipLabel} @ ${bookieOdd.toFixed(2)} (Fair ${fairOdd.toFixed(2)} · ${evPct >= 0 ? "+" : ""}${evPct}% EV · ${votesForPick}/5 Engines)`;
 
     return {
       tipLabel,

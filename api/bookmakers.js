@@ -959,9 +959,20 @@ async function runFullBookmakerScan(forceRefresh = false) {
 
         const moveKey = String(fbGameId || sbGameId || g.eventId || `${g.sport}:${g.homeNorm}:${g.awayNorm}`);
         const droppingOdds = trackLiveLineMovement(moveKey, bH, bD, bA, bO25, g.homeTeamName, g.awayTeamName);
+        const openBaseline = openOddsTracker.get(moveKey);
+        const enrichedOdds = {
+          ...(g.odds || {}),
+          openOdd1: openBaseline?.home || bH?.odd || null,
+          openOddX: openBaseline?.draw || bD?.odd || null,
+          openOdd2: openBaseline?.away || bA?.odd || null,
+          firstSeenAt: openBaseline?.recordedAt || null,
+          lineMovement: droppingOdds,
+          leagueName: mergedLoc.league || g.leagueName || ""
+        };
 
         return {
           ...g,
+          odds: enrichedOdds,
           country: mergedLoc.country,
           league: mergedLoc.league,
           onFootballCom: Boolean(fbGameId),

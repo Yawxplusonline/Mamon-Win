@@ -6073,6 +6073,26 @@
       `;
     }
 
+    const renderMismatchLeagueGroups = (items) => {
+      const byLeague = new Map();
+      for (const item of items) {
+        const key = `${item.country || "International"} · ${item.league || "Football"}`;
+        if (!byLeague.has(key)) byLeague.set(key, []);
+        byLeague.get(key).push(item);
+      }
+      return Array.from(byLeague.entries())
+        .sort((a, b) => b[1].length - a[1].length)
+        .map(([lgKey, lgItems]) => `
+          <div class="border-b">
+            <div class="px-4 py-2 text-xs font-bold flex items-center justify-between" style="background:var(--ground-subtle);color:var(--text);">
+              <span>🏆 ${escapeHtml(lgKey)}</span>
+              <span class="count">${lgItems.length} game${lgItems.length === 1 ? "" : "s"}</span>
+            </div>
+            <div>${lgItems.map((item, idx) => renderMismatchCard(item, idx, isStrong)).join("")}</div>
+          </div>
+        `).join("");
+    };
+
     const activeSportKey = (state.activeSport || "ALL").toLowerCase();
     const spDef = ALLOWED_SPORTS.find((s) => s.key.toLowerCase() === activeSportKey);
 

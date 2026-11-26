@@ -7577,6 +7577,13 @@ window.MAMON_REALTIME = (() => {
   }
 
   // ============ FOOTYMETRICS OPTA-LEVEL ENRICHMENT & SIGNALS ============
+  function isYouthOrFriendlyMatch(matchOrName, leagueName = "") {
+    const hay = typeof matchOrName === "string"
+      ? `${matchOrName} ${leagueName}`
+      : `${matchOrName?.leagueName || matchOrName?.league?.name || ""} ${matchOrName?.homeTeamName || matchOrName?.home?.name || ""} ${matchOrName?.awayTeamName || matchOrName?.away?.name || ""}`;
+    return /\b(u17|u18|u19|u20|u21|u23|under\s*1[789]|under\s*2[013]|youth|junior|friendl|club\s*friendl)\b/i.test(hay);
+  }
+
   function cleanOptaTeamName(name) {
     return String(name || "").replace(/\s*\([^)]*\)/g, "").trim();
   }
@@ -7746,10 +7753,11 @@ window.MAMON_REALTIME = (() => {
       ? `Ref ${ref.name} (${Number(ref.avgYellowCards || 0).toFixed(2)} YC/g · ${Number(ref.avgFouls || 0).toFixed(1)} fouls/g)`
       : "";
 
-    // Run-In Difficulty Table integration
+    // Run-In Difficulty Table integration (skip for Youth/U17/Friendly games so senior club stats never leak)
+    const isYouthFriendly = isYouthOrFriendlyMatch(match);
     const leagueSlugOrCode = match.league?.slug || match.league?.id || match.leagueCode || match.leagueName || "";
-    const homeRunin = lookupTeamRunin(hName, leagueSlugOrCode, null, null, aPpg, true);
-    const awayRunin = lookupTeamRunin(aName, leagueSlugOrCode, null, null, hPpg, false);
+    const homeRunin = isYouthFriendly ? null : lookupTeamRunin(hName, leagueSlugOrCode, null, null, aPpg, true);
+    const awayRunin = isYouthFriendly ? null : lookupTeamRunin(aName, leagueSlugOrCode, null, null, hPpg, false);
     const hRuninVerdict = homeRunin?.verdict || "NEUTRAL";
     const aRuninVerdict = awayRunin?.verdict || "NEUTRAL";
     const runinEdge = (hRuninVerdict === "GAIN_BLUE" ? 4 : hRuninVerdict === "DROP_RED" ? -3 : 0)
@@ -7845,7 +7853,7 @@ window.MAMON_REALTIME = (() => {
       confidencePct,
       category,
       isDirect,
-      sourceBadge: isDirect ? "FootyMetrics Direct" : "Opta + Run-In + Fair Odds",
+      sourceBadge: isYouthFriendly && !isDirect ? "Youth/Intl Fair Odds" : (isDirect ? "FootyMetrics Direct" : "Opta + Run-In + Fair Odds"),
       unifiedBadge: "Opta + Run-In + Deep Fair Odds",
       homeWin10: hWin10,
       awayWin10: aWin10,

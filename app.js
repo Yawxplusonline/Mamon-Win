@@ -5506,7 +5506,6 @@
       ${renderHomeStatPropsCard()}
       ${renderHomeFootyMetricsCard()}
       ${renderHomeHandicapValueCard()}
-      ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
       ${renderMatchesPanel(liveMatches.filter((m) => !isMatchTrulyLive(m)), upcomingTitle, true, true, "UPCOMING")}
       ${renderStandingsPanel()}

@@ -5509,7 +5509,7 @@
       ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
       ${liveMatchesPool.length > 0 ? renderHomeLiveCard(liveMatchesPool, spDef) : ""}
-      ${renderMatchesPanel(liveMatches, upcomingTitle, true, true, "UPCOMING")}
+      ${renderMatchesPanel(liveMatches.filter((m) => !isMatchTrulyLive(m)), upcomingTitle, true, true, "UPCOMING")}
       ${renderStandingsPanel()}
     `;
   }

@@ -21,19 +21,24 @@ function normTeam(name) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(fc|cf|sc|ac|as|afc|fk|sk|bk|ik|nk|cd|ca|ud|rc|sd|us|ss|vfb|vfl|tsg|rb|sv|bsc|fsv|u19|u21|u23|ii|b)\b/g, " ")
+    .replace(/\b(fc|cf|sc|ac|as|afc|fk|sk|bk|ik|nk|cd|ca|ud|rc|sd|us|ss|vfb|vfl|tsg|rb|sv|bsc|fsv)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
+
+const GENERIC_TEAM_WORDS = new Set(["real", "al", "el", "la", "de", "san", "saint", "city", "united", "utd", "town", "rovers", "wanderers", "athletic", "atletico", "sporting", "dynamo", "dinamo", "olympic", "olympique", "inter", "club", "youth", "reserves"]);
 
 function teamsSimilar(a, b) {
   const na = normTeam(a);
   const nb = normTeam(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  if (na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na))) return true;
-  const wa = na.split(" ").filter((w) => w.length >= 3);
-  const wb = new Set(nb.split(" ").filter((w) => w.length >= 3));
+  // Never match a youth/reserve team (u17..u23, ii, b) with a senior team
+  const tagRegex = /\b(u17|u18|u19|u20|u21|u23|ii|b|women)\b/;
+  if (tagRegex.test(na) !== tagRegex.test(nb)) return false;
+  if (na.length >= 5 && nb.length >= 5 && (na.includes(nb) || nb.includes(na))) return true;
+  const wa = na.split(" ").filter((w) => w.length >= 3 && !GENERIC_TEAM_WORDS.has(w));
+  const wb = new Set(nb.split(" ").filter((w) => w.length >= 3 && !GENERIC_TEAM_WORDS.has(w)));
   if (wa.length === 0 || wb.size === 0) return false;
   let hits = 0;
   for (const w of wa) if (wb.has(w)) hits++;
@@ -72,7 +77,7 @@ function writeStore(items) {
  * Grade a betting market tip strictly from verified FT homeScore & awayScore.
  * Returns { result: "WON" | "LOST" | "VOID" | "UNVERIFIED", profitUnits: number }
  */
-function gradeTipByScore(tipMarket, sideHint, homeName, awayName, homeScore, awayScore, odds) {
+function gradeTipByScore(tipMarket, sideHint, homeName, awayName, homeScore, awayScore, odds, verifiedStats = null) {
   const h = Number(homeScore);
   const a = Number(awayScore);
   if (!Number.isFinite(h) || !Number.isFinite(a)) {
@@ -80,7 +85,10 @@ function gradeTipByScore(tipMarket, sideHint, homeName, awayName, homeScore, awa
   }
   const total = h + a;
   const diff = h - a;
-  const m = String(tipMarket || "").toLowerCase();
+  const m = String(tipMarket || "")
+    .replace(/\(Fair[^)]*\)/gi, "")
+    .replace(/@\s*\d+(?:\.\d+)?/g, "")
+    .toLowerCase();
   const oddNum = Number(odds);
   const decOdd = Number.isFinite(oddNum) && oddNum > 1.01 ? oddNum : 1.50;
 
@@ -98,19 +106,21 @@ function gradeTipByScore(tipMarket, sideHint, homeName, awayName, homeScore, awa
     }
   }
 
-  // 1b. Shots on Target & Throw-Ins (Over / Under)
+  // 1b. Shots on Target & Throw-Ins (ONLY grade from real verified match stats — never estimate from goals)
   if (won === null && !isVoid && (m.includes("shot") || m.includes("throw"))) {
     const stMatch = m.match(/\b(over|under)\s+(\d+(?:\.\d+)?)/i);
-    if (stMatch) {
+    const actualStat = m.includes("shot")
+      ? (Number.isFinite(Number(verifiedStats?.shotsOnTarget)) ? Number(verifiedStats.shotsOnTarget) : null)
+      : (Number.isFinite(Number(verifiedStats?.throwIns)) ? Number(verifiedStats.throwIns) : null);
+    if (stMatch && actualStat !== null) {
       const dir = stMatch[1].toLowerCase();
       const line = parseFloat(stMatch[2]);
       if (Number.isFinite(line)) {
-        const statVal = m.includes("shot")
-          ? Math.max(h + a + 4, Math.round((h + a) * 2.6 + 3.5))
-          : Math.round(36 + total * 1.5);
-        if (statVal === line) isVoid = true;
-        else won = dir === "over" ? statVal > line : statVal < line;
+        if (actualStat === line) isVoid = true;
+        else won = dir === "over" ? actualStat > line : actualStat < line;
       }
+    } else {
+      return { result: "UNVERIFIED", profitUnits: 0 };
     }
   }
 
@@ -245,6 +255,31 @@ function buildScoreIndex(ofData, bmData, fmData, espnFtList) {
     }
   }
 
+  // Priority 1: Official ESPN FT Scores
+  for (const e of espnFtList || []) {
+    upsertFt({ ...e, source: "espn" });
+  }
+
+  // Priority 2: Official OneFootball FT Scores
+  for (const ofm of ofData?.matches || []) {
+    if (ofm.status === "FT" && Number.isFinite(Number(ofm.homeScore)) && Number.isFinite(Number(ofm.awayScore))) {
+      upsertFt({
+        home: ofm.homeTeamName,
+        away: ofm.awayTeamName,
+        homeLogo: ofm.homeLogo || "",
+        awayLogo: ofm.awayLogo || "",
+        homeScore: Number(ofm.homeScore),
+        awayScore: Number(ofm.awayScore),
+        league: ofm.leagueName || "Football",
+        country: ofm.country || "",
+        isoDate: ofm.isoDate || new Date().toISOString().slice(0, 10),
+        timestamp: Number(ofm.kickoffMs) || Date.now(),
+        source: "onefootball"
+      });
+    }
+  }
+
+  // Priority 3: FootyMetrics Verified FT Scores
   for (const f of fmData?.fixtures || []) {
     if (f.status === "FT" && Number.isFinite(f.homeGoals) && Number.isFinite(f.awayGoals)) {
       upsertFt({
@@ -265,8 +300,10 @@ function buildScoreIndex(ofData, bmData, fmData, espnFtList) {
     }
   }
 
+  // Priority 4: Bookmakers Completed FT Scores (only when explicitly marked FT/Ended)
   for (const cg of bmData?.completedToday || []) {
-    if (cg.score && typeof cg.score === "string") {
+    const stStr = String(cg.status || cg.matchStatus || "").toUpperCase();
+    if (cg.score && typeof cg.score === "string" && (stStr === "FT" || stStr === "ENDED" || stStr === "COMPLETED" || cg.completed === true)) {
       const parts = cg.score.split(/[:\-–—]/).map((s) => parseInt(s.trim(), 10));
       if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
         upsertFt({
@@ -285,28 +322,6 @@ function buildScoreIndex(ofData, bmData, fmData, espnFtList) {
         });
       }
     }
-  }
-
-  for (const ofm of ofData?.matches || []) {
-    if (ofm.status === "FT" && Number.isFinite(Number(ofm.homeScore)) && Number.isFinite(Number(ofm.awayScore))) {
-      upsertFt({
-        home: ofm.homeTeamName,
-        away: ofm.awayTeamName,
-        homeLogo: ofm.homeLogo || "",
-        awayLogo: ofm.awayLogo || "",
-        homeScore: Number(ofm.homeScore),
-        awayScore: Number(ofm.awayScore),
-        league: ofm.leagueName || "Football",
-        country: ofm.country || "",
-        isoDate: ofm.isoDate || new Date().toISOString().slice(0, 10),
-        timestamp: Number(ofm.kickoffMs) || Date.now(),
-        source: "onefootball"
-      });
-    }
-  }
-
-  for (const e of espnFtList || []) {
-    upsertFt({ ...e, source: "espn" });
   }
 
   return ftMap;
@@ -676,24 +691,29 @@ async function buildTipHistory(forceRefresh = false) {
     const allItems = Array.from(byId.values());
 
     for (const item of allItems) {
-      if (item.result === "WON" || item.result === "LOST" || item.result === "VOID") {
-        settledPlayed.push(item);
-        continue;
-      }
       const ft = findMatchingFtScore(item, ftMap);
       if (ft) {
-        const grade = gradeTipByScore(item.market, item.side, item.home, item.away, ft.homeScore, ft.awayScore, item.odds);
+        const grade = gradeTipByScore(item.market, item.side, item.home, item.away, ft.homeScore, ft.awayScore, item.odds, ft.stats || null);
         if (grade.result !== "UNVERIFIED") {
           item.status = "FT";
           item.homeScore = ft.homeScore;
           item.awayScore = ft.awayScore;
+          item.scoreSource = ft.source || item.scoreSource;
           if (ft.homeLogo && !item.homeLogo) item.homeLogo = ft.homeLogo;
           if (ft.awayLogo && !item.awayLogo) item.awayLogo = ft.awayLogo;
           if (ft.country && !item.country) item.country = ft.country;
           if (ft.flag && !item.flag) item.flag = ft.flag;
           item.result = grade.result;
           item.profitUnits = grade.profitUnits;
-          item.settledAt = new Date().toISOString();
+          item.settledAt = item.settledAt || new Date().toISOString();
+          settledPlayed.push(item);
+        }
+        continue;
+      }
+      if (item.result === "WON" || item.result === "LOST" || item.result === "VOID") {
+        // Keep previously verified goal-based outcomes, but drop any fake Shots/Throw-Ins grades without real stats
+        const mLow = String(item.market || "").toLowerCase();
+        if (!mLow.includes("shot") && !mLow.includes("throw")) {
           settledPlayed.push(item);
         }
       }

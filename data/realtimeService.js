@@ -3682,6 +3682,17 @@ window.MAMON_REALTIME = (() => {
       aPpg: awayOverallPpg
     });
 
+    // Switch system-wide primary tip to FootyMetrics Opta Intel (87% win-rate 6-engine consensus)
+    const optaOverride = match.optaTip || computeOptaIntelTipForMatch(match, null);
+    if (optaOverride && optaOverride.tipLabel) {
+      bestPick.label = optaOverride.tipLabel;
+      bestPick.odds = optaOverride.odd || bestPick.odds;
+      bestPick.prob = Math.max(0.55, Math.min(0.95, (optaOverride.confidencePct || 75) / 100));
+      bestPick.optaOnly = true;
+      bestPick.fairOdd = optaOverride.fairOdd;
+      bestPick.evPct = optaOverride.evPct;
+    }
+
     const backedAbsencePenalty = strongSide === "HOME" ? hAbsenceLoad * 10 - aAbsenceLoad * 4 : aAbsenceLoad * 10 - hAbsenceLoad * 4;
     const pitchConfShift = pitchMod >= 0.015 ? 2 : pitchMod <= -0.04 ? -4 : pitchMod <= -0.02 ? -2 : 0;
     const situConfShift = (refProfile.confShift || 0) + pitchConfShift - Math.round(clamp(backedAbsencePenalty, -4, 6));

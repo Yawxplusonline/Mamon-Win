@@ -720,7 +720,6 @@ async function buildTipHistory(forceRefresh = false) {
       .sort((a, b) => b.won - a.won || b.winRatePct - a.winRatePct);
 
     // Exclude removed sections AND restrict displayed played games strictly to TODAY ONLY
-    const todayIso = new Date().toISOString().slice(0, 10);
     const filteredPlayed = settledPlayed.filter(
       (x) =>
         x.categoryLabel !== "Sure Odds & Match Result" &&

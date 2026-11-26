@@ -7461,8 +7461,6 @@
         <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
           <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
             <button type="button" class="filter-chip${mode === "ALL" ? " is-active" : ""}" data-today-mode="ALL">📅 All Today (${allToday.length})</button>
-            <button type="button" class="filter-chip${mode === "LIVE" ? " is-active" : ""}" data-today-mode="LIVE">🔴 Live Now (${livePool.length})</button>
-            <button type="button" class="filter-chip${mode === "SCHEDULED" ? " is-active" : ""}" data-today-mode="SCHEDULED">🕒 Upcoming Today (${schedPool.length})</button>
             <button type="button" class="filter-chip${mode === "FT" ? " is-active" : ""}" data-today-mode="FT">✅ Played FT Today (${ftPool.length})</button>
           </div>
           <input id="todayGamesSearchInput" type="search" value="${escapeHtml(state.todaySearch || "")}" placeholder="Search today's team or league..." class="px-3 py-1.5 text-xs rounded-md border" style="background:var(--ground);color:var(--text);min-width:210px;" />

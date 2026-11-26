@@ -7402,23 +7402,23 @@
   function renderHomeTodayGamesSection() {
     const todayIso = getTodayIso();
     const allToday = getAllTodayGamesPool().filter((m) => !isMatchTrulyLive(m));
-    const schedCnt = allToday.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m)).length;
+    const upcomingToday = allToday.filter((m) => m.status !== "FT" && !m.isCompleted && !isMatchAbandonedOrInterrupted(m));
     const ftCnt = allToday.filter((m) => m.status === "FT" || m.isCompleted).length;
-    const previewList = allToday.slice(0, 36);
+    const previewList = upcomingToday.slice(0, 36);
 
     return `
       <section class="panel-section" id="homeTodayGamesSection" style="border:1px solid rgba(14,165,233,0.35);">
         <div class="panel-header" style="border-bottom: 1px solid rgba(14, 165, 233, 0.22); padding: 12px 16px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#0284c7;color:#fff;font-weight:800;">📅 TODAY'S GAMES ONLY · BY LEAGUE (${todayIso})</span>
-            <span class="text-xs font-semibold text-muted">${allToday.length} Total Today · ${schedCnt} Upcoming · ${ftCnt} FT Played (Zero Live &amp; Zero Tomorrow Games)</span>
+            <span class="text-xs font-semibold text-muted">${upcomingToday.length} Upcoming Today · ${ftCnt} Played Full Today (Zero Live &amp; Zero Tomorrow Games)</span>
           </div>
-          <a class="btn-subtle text-xs" href="/today" data-route="/today" style="font-weight:800;color:#0284c7;">Open All ${allToday.length} Today Games &rarr;</a>
+          <a class="btn-subtle text-xs" href="/today" data-route="/today" style="font-weight:800;color:#0284c7;">Open All ${upcomingToday.length} Today Games &rarr;</a>
         </div>
         <div class="p-3">
-          ${allToday.length === 0
-            ? `<div class="text-xs text-muted p-2">All games for ${escapeHtml(todayIso)} will load momentarily — Day-by-Day mode strictly excludes tomorrow's games until 00:00.</div>`
-            : `${renderCountryGroupedLeagues(previewList, false)}${allToday.length > previewList.length ? `<div class="text-center pt-2"><a href="/today" data-route="/today" class="analyze-inline-btn">View All ${allToday.length} Today's Games Grouped by League &rarr;</a></div>` : ""}`
+          ${upcomingToday.length === 0
+            ? `<div class="text-xs text-muted p-2">No upcoming games remaining for ${escapeHtml(todayIso)} — check Played Full Today or tomorrow's card at 00:00.</div>`
+            : `${renderCountryGroupedLeagues(previewList, false)}${upcomingToday.length > previewList.length ? `<div class="text-center pt-2"><a href="/today" data-route="/today" class="analyze-inline-btn">View All ${upcomingToday.length} Upcoming Today's Games &rarr;</a></div>` : ""}`
           }
         </div>
       </section>
@@ -7431,10 +7431,10 @@
     const mode = state.activeTodayMode || "ALL";
     const q = (state.todaySearch || "").trim().toLowerCase();
 
+    const upcomingTodayPool = allToday.filter((m) => m.status !== "FT" && !m.isCompleted && !isMatchAbandonedOrInterrupted(m));
     const ftPool = allToday.filter((m) => m.status === "FT" || m.isCompleted);
 
-    let list = allToday;
-    if (mode === "FT") list = ftPool;
+    let list = mode === "FT" ? ftPool : upcomingTodayPool;
 
     if (q) {
       list = list.filter((m) => {
@@ -7463,8 +7463,8 @@
 
         <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
           <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">
-            <button type="button" class="filter-chip${mode === "ALL" ? " is-active" : ""}" data-today-mode="ALL">📅 All Today (${allToday.length})</button>
-            <button type="button" class="filter-chip${mode === "FT" ? " is-active" : ""}" data-today-mode="FT">✅ Played FT Today (${ftPool.length})</button>
+            <button type="button" class="filter-chip${mode === "ALL" ? " is-active" : ""}" data-today-mode="ALL">📅 All Today (${upcomingTodayPool.length})</button>
+            <button type="button" class="filter-chip${mode === "FT" ? " is-active" : ""}" data-today-mode="FT">✅ Played Full Today (${ftPool.length})</button>
           </div>
           <input id="todayGamesSearchInput" type="search" value="${escapeHtml(state.todaySearch || "")}" placeholder="Search today's team or league..." class="px-3 py-1.5 text-xs rounded-md border" style="background:var(--ground);color:var(--text);min-width:210px;" />
         </div>

@@ -7153,7 +7153,13 @@
 
     const filtered = allItems.filter((x) => {
       if (outcomeFilter !== "ALL" && x.result !== outcomeFilter) return false;
-      if (catFilter !== "ALL" && x.category !== catFilter) return false;
+      if (catFilter === "SHOTS_ON_TARGET") {
+        if (!String(x.market || "").toLowerCase().includes("shot")) return false;
+      } else if (catFilter === "THROW_INS") {
+        if (!String(x.market || "").toLowerCase().includes("throw")) return false;
+      } else if (catFilter !== "ALL" && x.category !== catFilter) {
+        return false;
+      }
       if (searchQ) {
         const hay = `${x.home} ${x.away} ${x.league} ${x.country} ${x.market} ${x.categoryLabel}`.toLowerCase();
         if (!hay.includes(searchQ)) return false;
@@ -7279,6 +7285,8 @@
           <button type="button" class="filter-chip${outcomeFilter === "VOID" ? " is-active" : ""}" data-history-outcome="VOID">⚪ Void/Push</button>
           <span class="subnav-sep" aria-hidden="true"></span>
           <button type="button" class="filter-chip${catFilter === "ALL" ? " is-active" : ""}" data-history-cat="ALL">All Sections</button>
+          <button type="button" class="filter-chip${catFilter === "SHOTS_ON_TARGET" ? " is-active" : ""}" data-history-cat="SHOTS_ON_TARGET">🎯 Shots on Target (${allItems.filter((x) => String(x.market || "").toLowerCase().includes("shot")).length})</button>
+          <button type="button" class="filter-chip${catFilter === "THROW_INS" ? " is-active" : ""}" data-history-cat="THROW_INS">🤾 Throw-Ins (${allItems.filter((x) => String(x.market || "").toLowerCase().includes("throw")).length})</button>
           ${catsPresent.map((c) => {
             const meta = getHistoryMeta(c.key, c.label);
             return `<button type="button" class="filter-chip${catFilter === c.key ? " is-active" : ""}" data-history-cat="${escapeHtml(c.key)}">${meta.icon} ${escapeHtml(meta.label)} (${c.total})</button>`;

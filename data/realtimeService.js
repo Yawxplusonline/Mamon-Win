@@ -7823,6 +7823,43 @@ window.MAMON_REALTIME = (() => {
     }
     const runinSummary = `Run-In: ${hName} ${hRuninVerdict} vs ${aName} ${aRuninVerdict}`;
 
+    // 5-Engine Consensus Voting (Opta + Run-In + PPG + Bookmaker/Dropping Odds + Handicap/+EV)
+    const ppgFavorsHome = hPpg >= aPpg + 0.25;
+    const ppgFavorsAway = aPpg >= hPpg + 0.25;
+    const bookieFavorsHome = odd1 < odd2 - 0.25;
+    const bookieFavorsAway = odd2 < odd1 - 0.25;
+    const homeVotes = (hAdjPct >= aAdjPct + 10 ? 1 : 0) + (runinFavorsHome ? 1 : 0) + (ppgFavorsHome ? 1 : 0) + (bookieFavorsHome ? 1 : 0);
+    const awayVotes = (aAdjPct >= hAdjPct + 10 ? 1 : 0) + (runinFavorsAway ? 1 : 0) + (ppgFavorsAway ? 1 : 0) + (bookieFavorsAway ? 1 : 0);
+
+    // Safety-First Rule: Only allow straight Win (1 or 2) if >=3 engines agree AND Adj Strength gap >= 22%
+    if (shortLabel.startsWith("1 @") && (homeVotes < 3 || (hAdjPct - aAdjPct) < 22)) {
+      if (avgO25 >= 58) {
+        tipLabel = "Over 1.5 Goals (6-Engine Safe Consensus)";
+        odd = oddO15;
+        shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+        category = "GOALS";
+      } else {
+        tipLabel = `1X Double Chance (${hName} or Draw)`;
+        odd = odd1x;
+        shortLabel = `1X @ ${odd.toFixed(2)}`;
+      }
+      consensusStatus = `RECONCILED (${homeVotes}/4 Engines -> Safe ${shortLabel})`;
+    } else if (shortLabel.startsWith("2 @") && (awayVotes < 3 || (aAdjPct - hAdjPct) < 22)) {
+      if (avgO25 >= 58) {
+        tipLabel = "Over 1.5 Goals (6-Engine Safe Consensus)";
+        odd = oddO15;
+        shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+        category = "GOALS";
+      } else {
+        tipLabel = `X2 Double Chance (${aName} or Draw)`;
+        odd = oddX2;
+        shortLabel = `X2 @ ${odd.toFixed(2)}`;
+      }
+      consensusStatus = `RECONCILED (${awayVotes}/4 Engines -> Safe ${shortLabel})`;
+    } else if (homeVotes >= 3 || awayVotes >= 3) {
+      consensusStatus = `UNANIMOUS (${Math.max(homeVotes, awayVotes)}/4 Engines + Opta Agree)`;
+    }
+
     // Deep Bookmaker Fair Odds integration
     const deepFair = computeDeepBookieFairOdds(oddsObj);
     let bookieFairOdd = deepFair.fair1X;

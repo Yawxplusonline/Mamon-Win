@@ -408,7 +408,7 @@ const server = http.createServer(async (req, res) => {
     const mime = MIME_TYPES[ext] || "application/octet-stream";
     res.writeHead(200, {
       "Content-Type": mime,
-      "Cache-Control": "no-cache"
+      "Cache-Control": "no-store, no-cache, must-revalidate"
     });
     fs.createReadStream(filePath).pipe(res);
   } catch (err) {

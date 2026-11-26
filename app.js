@@ -5508,7 +5508,6 @@
       ${renderHomeHandicapValueCard()}
       ${renderHomeSureOddsBanner()}
       ${renderHomeBookmakerMismatchCard()}
-      ${liveMatchesPool.length > 0 ? renderHomeLiveCard(liveMatchesPool, spDef) : ""}
       ${renderMatchesPanel(liveMatches.filter((m) => !isMatchTrulyLive(m)), upcomingTitle, true, true, "UPCOMING")}
       ${renderStandingsPanel()}
     `;

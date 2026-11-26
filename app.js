@@ -7393,8 +7393,7 @@
 
   function renderHomeTodayGamesSection() {
     const todayIso = getTodayIso();
-    const allToday = getAllTodayGamesPool();
-    const liveCnt = allToday.filter(isMatchTrulyLive).length;
+    const allToday = getAllTodayGamesPool().filter((m) => !isMatchTrulyLive(m));
     const schedCnt = allToday.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m)).length;
     const ftCnt = allToday.filter((m) => m.status === "FT" || m.isCompleted).length;
     const previewList = allToday.slice(0, 36);
@@ -7404,7 +7403,7 @@
         <div class="panel-header" style="border-bottom: 1px solid rgba(14, 165, 233, 0.22); padding: 12px 16px;">
           <div class="flex items-center gap-2 flex-wrap">
             <span class="sure-pill-tag" style="background:#0284c7;color:#fff;font-weight:800;">📅 TODAY'S GAMES ONLY · BY LEAGUE (${todayIso})</span>
-            <span class="text-xs font-semibold text-muted">${allToday.length} Total Today · ${liveCnt} Live · ${schedCnt} Upcoming · ${ftCnt} FT Played (Zero Tomorrow Games)</span>
+            <span class="text-xs font-semibold text-muted">${allToday.length} Total Today · ${schedCnt} Upcoming · ${ftCnt} FT Played (Zero Live &amp; Zero Tomorrow Games)</span>
           </div>
           <a class="btn-subtle text-xs" href="/today" data-route="/today" style="font-weight:800;color:#0284c7;">Open All ${allToday.length} Today Games &rarr;</a>
         </div>
@@ -7420,18 +7419,14 @@
 
   function renderTodayGamesView() {
     const todayIso = getTodayIso();
-    const allToday = getAllTodayGamesPool();
+    const allToday = getAllTodayGamesPool().filter((m) => !isMatchTrulyLive(m));
     const mode = state.activeTodayMode || "ALL";
     const q = (state.todaySearch || "").trim().toLowerCase();
 
-    const livePool = allToday.filter(isMatchTrulyLive);
-    const schedPool = allToday.filter((m) => m.status === "SCHEDULED" && !isMatchAbandonedOrInterrupted(m));
     const ftPool = allToday.filter((m) => m.status === "FT" || m.isCompleted);
 
     let list = allToday;
-    if (mode === "LIVE") list = livePool;
-    else if (mode === "SCHEDULED") list = schedPool;
-    else if (mode === "FT") list = ftPool;
+    if (mode === "FT") list = ftPool;
 
     if (q) {
       list = list.filter((m) => {

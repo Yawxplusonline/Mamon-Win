@@ -294,6 +294,67 @@ const server = http.createServer(async (req, res) => {
       await handleBookmakersProxy(req, res);
       return;
     }
+    if (reqUrl.pathname === "/api/my-tips") {
+      try {
+        const fmData = await handleFootymetricsProxy.getFootyMetricsData?.().catch(() => null);
+        const tips = [];
+        for (const f of fmData?.fixtures || []) {
+          const hName = f.home?.name || "Home";
+          const aName = f.away?.name || "Away";
+          const o1 = Number(f.odds?.odd1 || 1.95);
+          const oX = Number(f.odds?.oddX || 3.45);
+          const o2 = Number(f.odds?.odd2 || 3.60);
+          const o1x = Number(f.odds?.odd1x || 1.25);
+          const oX2 = Number(f.odds?.oddX2 || 1.30);
+          const oO15 = Number(f.odds?.oddOver15 || 1.26);
+          const hWin = Number(f.home?.win10 ?? 50);
+          const aWin = Number(f.away?.win10 ?? 50);
+          const avgO25 = Math.round(((Number(f.home?.over2510 ?? 55) + Number(f.away?.over2510 ?? 55)) / 2));
+          const favHome = hWin >= aWin;
+          const shortLabel = favHome ? `1X @ ${o1x.toFixed(2)}` : `X2 @ ${oX2.toFixed(2)}`;
+          const tipLabel = favHome ? `1X Double Chance (${hName} or Draw)` : `X2 Double Chance (${aName} or Draw)`;
+          const odd = favHome ? o1x : oX2;
+          const sum = (1 / o1) + (1 / oX) + (1 / o2);
+          const pH = (1 / o1) / sum;
+          const pA = (1 / o2) / sum;
+          const modelProb = Math.max(0.20, Math.min(0.90, favHome ? (1 - pA * 0.85) : (1 - pH * 0.85)));
+          const fairOdd = Math.round((1 / modelProb) * 100) / 100;
+          const evPct = Math.round(((modelProb * odd) - 1) * 1000) / 10;
+          if (evPct < -2) continue;
+          tips.push({
+            fixtureId: f.id,
+            homeName: hName,
+            awayName: aName,
+            leagueName: f.league?.name || "Football",
+            kickoffTime: f.timestamp ? new Date(f.timestamp).toISOString().slice(11, 16) : "Today",
+            tipLabel,
+            shortLabel,
+            odd,
+            fairOdd,
+            evPct,
+            confidencePct: Math.round(modelProb * 100),
+            fairOddsTip: `${tipLabel} @ ${odd.toFixed(2)} (Fair ${fairOdd.toFixed(2)} · ${evPct >= 0 ? "+" : ""}${evPct}% EV)`
+          });
+        }
+        tips.sort((a, b) => b.evPct - a.evPct);
+        res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({ count: tips.length, updatedAt: new Date().toISOString(), tips }));
+      } catch (err) {
+        res.writeHead(500, { "Content-Type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ error: err.message, tips: [] }));
+      }
+      return;
+    }
+    if (reqUrl.pathname === "/api/send-my-tips") {
+      if (!process.env.CRON_SECRET || reqUrl.searchParams.get("secret") !== process.env.CRON_SECRET) {
+        res.writeHead(401, { "Content-Type": "text/plain" });
+        res.end("Unauthorized");
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, to: process.env.MY_WHATSAPP || "not_configured" }));
+      return;
+    }
     if (reqUrl.pathname === "/api/runin") {
       await handleRuninProxy(req, res);
       return;

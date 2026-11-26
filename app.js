@@ -3226,6 +3226,7 @@
 
             const hSos = ppg.scheduleStrength?.home;
             const aSos = ppg.scheduleStrength?.away;
+            const ppgOptaTip = m.optaTip || (RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch(m, footyMetricsData) : null);
 
             // Points calculation & standings mechanics
             const isHighGap = ppg.gap >= 0.35;
@@ -3254,6 +3255,11 @@
                     <span class="factor-edge-pill font-bold">PPG Edge: ${escapeHtml(ppg.edge || h.name)} (+${fmtNum(ppg.gap, 2, "0.00")} PPG)</span>
                   </div>
                 </div>
+                ${ppgOptaTip ? `<div class="mt-2 px-2.5 py-1.5 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
+                  <span>📈 <strong>FootyMetrics Opta + Run-In:</strong> ${escapeHtml(ppgOptaTip.tipLabel)} (${ppgOptaTip.confidencePct}%)</span>
+                  <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(ppgOptaTip.shortLabel)} · Fair ${Number(ppgOptaTip.fairOdd || ppgOptaTip.odd).toFixed(2)} (${ppgOptaTip.evPct >= 0 ? "+" : ""}${ppgOptaTip.evPct || 0}% EV)</span>
+                  <span class="w-full text-[11px] font-normal" style="color:var(--text-secondary);">📊 ${escapeHtml(ppgOptaTip.metricsSummary)}</span>
+                </div>` : ""}
 
                 <div class="ppg-matrix-grid mt-2">
                   <div class="ppg-side-card ${(ppg.homeOverall ?? 0) >= (ppg.awayOverall ?? 0) ? "is-edge" : ""}">

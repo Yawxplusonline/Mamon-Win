@@ -7924,6 +7924,30 @@ window.MAMON_REALTIME = (() => {
       consensusStatus = `SPLIT (${homeVotes}/5 vs ${awayVotes}/5)`;
     }
 
+    // Longshot Trap Shield & Weak-Gap Guard:
+    // Never back 1X/X2 >= 1.75 against heavy bookmaker favorites; switch coin-flip gaps (<18%) with goals to Over 1.5
+    if ((shortLabel.startsWith("1X @") || shortLabel.startsWith("X2 @")) && odd >= 1.75) {
+      if (avgO25 >= 54) {
+        tipLabel = "Over 1.5 Goals (Trap-Avoided Safe Pick)";
+        odd = oddO15;
+        shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+        category = "GOALS";
+      } else {
+        const bookieFavHome = odd1x <= oddX2;
+        tipLabel = bookieFavHome ? `1X Double Chance (${hName} or Draw)` : `X2 Double Chance (${aName} or Draw)`;
+        odd = bookieFavHome ? odd1x : oddX2;
+        shortLabel = `${bookieFavHome ? "1X" : "X2"} @ ${odd.toFixed(2)}`;
+        category = "DOUBLE_CHANCE";
+      }
+      consensusStatus = `TRAP SHIELD -> ${shortLabel}`;
+    } else if ((shortLabel.startsWith("1X @") || shortLabel.startsWith("X2 @")) && Math.abs(hAdjPct - aAdjPct) < 18 && avgO25 >= 56) {
+      tipLabel = "Over 1.5 Goals (Weak-Gap Safe Switch)";
+      odd = oddO15;
+      shortLabel = `O1.5 @ ${odd.toFixed(2)}`;
+      category = "GOALS";
+      consensusStatus = `SAFE GOAL SWITCH -> ${shortLabel}`;
+    }
+
     // Market Fair Odds (display only)
     const deepFair = computeDeepBookieFairOdds(oddsObj);
     let bookieFairOdd = deepFair.fair1X;

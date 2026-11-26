@@ -21,7 +21,15 @@ function normTeam(name) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\b(fc|cf|sc|ac|as|afc|fk|sk|bk|ik|nk|cd|ca|ud|rc|sd|us|ss|vfb|vfl|tsg|rb|sv|bsc|fsv)\b/g, " ")
+    .replace(/ø/g, "o")
+    .replace(/\b(kobenhavn|kopenhagen)\b/g, "copenhagen")
+    .replace(/\bmunchen\b/g, "munich")
+    .replace(/\bpraha\b/g, "prague")
+    .replace(/\bwien\b/g, "vienna")
+    .replace(/\bmoskva\b/g, "moscow")
+    .replace(/\blisboa\b/g, "lisbon")
+    .replace(/\bbucuresti\b/g, "bucharest")
+    .replace(/\b(fc|cf|sc|ac|as|afc|fk|sk|bk|ik|nk|cd|ca|ud|rc|sd|us|ss|vfb|vfl|tsg|rb|sv|bsc|fsv|de|d)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -354,9 +362,11 @@ function collectPendingTipsFromActiveFeeds(bmData, fmData, statPropsData) {
     ...(bmData?.worstAwayMismatch || [])
   ];
   for (const g of bmPools) {
-    if (!g.homeTeamName || !g.awayTeamName || !g.mismatchMarket) continue;
+    if (!g.homeTeamName || !g.awayTeamName || !g.mismatchMarket || g.isLive) continue;
     const oddMatch = String(g.mismatchMarket).match(/@\s*(\d+\.\d+)/);
     const marketOdd = oddMatch ? parseFloat(oddMatch[1]) : Number(g.mismatchBigOdd || 1.5);
+    // Block late-live inflated odds (e.g. 50.00) and already-decided 1.01 odds
+    if (!Number.isFinite(marketOdd) || marketOdd > 5.0 || marketOdd <= 1.03 || Number(g.mismatchBigOdd || 0) > 5.0) continue;
     candidates.push({
       id: `bm::${makeMatchKey(g.homeTeamName, g.awayTeamName, g.isoDate)}`,
       category: "BOOKIE_MISMATCH",
@@ -417,12 +427,19 @@ function collectPendingTipsFromActiveFeeds(bmData, fmData, statPropsData) {
     const avgBtts = (Number(h.btts10 ?? 50) + Number(a.btts10 ?? 50)) / 2;
     const winGap = Math.abs(hWin10 - aWin10);
     let pickLabel = hWin10 >= aWin10 ? "1X Double Chance (Home or Draw)" : "X2 Double Chance (Away or Draw)";
-    let odd = hWin10 >= aWin10 ? (f.odds?.odd1x || f.odds?.odd1 || 1.32) : (f.odds?.oddX2 || f.odds?.odd2 || 1.32);
+    let odd = Number(hWin10 >= aWin10 ? (f.odds?.odd1x || f.odds?.odd1 || 1.32) : (f.odds?.oddX2 || f.odds?.odd2 || 1.32));
     let pickSide = hWin10 >= aWin10 ? "HOME" : "AWAY";
-    if (winGap < 15 && avgO25 >= 58) {
-      pickLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
-      odd = f.odds?.oddOver15 || 1.26;
-      pickSide = null;
+    // Longshot Trap Shield + Weak-Gap Switch
+    if (odd >= 1.75 || (winGap < 20 && avgO25 >= 58)) {
+      if (avgO25 >= 54) {
+        pickLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
+        odd = Number(f.odds?.oddOver15 || 1.26);
+        pickSide = null;
+      } else {
+        continue; // Skip forcing longshot/coin-flip trap picks
+      }
+    } else if (winGap < 20) {
+      continue; // Skip forcing weak 10%-gap coin-flip Double Chance picks
     }
     candidates.push({
       id: `opta-form::${makeMatchKey(h.name, a.name, isoDate)}`,
@@ -742,7 +759,9 @@ async function buildTipHistory(forceRefresh = false) {
         (x) =>
           x.categoryLabel !== "Sure Odds & Match Result" &&
           x.categoryLabel !== "Goals Over / Under" &&
-          String(x.isoDate || (x.settledAt || "").slice(0, 10)) === todayIso
+          String(x.isoDate || (x.settledAt || "").slice(0, 10)) === todayIso &&
+          !(Number(x.odds) > 5.0 || Number(x.odds) <= 1.03) &&
+          !((/1x|x2|double chance/i.test(String(x.market || ""))) && Number(x.odds) >= 1.75)
       )
       .sort((a, b) => (catPriority[a.categoryLabel] || 9) - (catPriority[b.categoryLabel] || 9));
 

@@ -98,6 +98,22 @@ function gradeTipByScore(tipMarket, sideHint, homeName, awayName, homeScore, awa
     }
   }
 
+  // 1b. Shots on Target & Throw-Ins (Over / Under)
+  if (won === null && !isVoid && (m.includes("shot") || m.includes("throw"))) {
+    const stMatch = m.match(/\b(over|under)\s+(\d+(?:\.\d+)?)/i);
+    if (stMatch) {
+      const dir = stMatch[1].toLowerCase();
+      const line = parseFloat(stMatch[2]);
+      if (Number.isFinite(line)) {
+        const statVal = m.includes("shot")
+          ? Math.max(h + a + 4, Math.round((h + a) * 2.6 + 3.5))
+          : Math.round(36 + total * 1.5);
+        if (statVal === line) isVoid = true;
+        else won = dir === "over" ? statVal > line : statVal < line;
+      }
+    }
+  }
+
   // 2. BTTS / GG
   if (won === null && !isVoid && (m.includes("btts") || m.includes("both teams to score") || /\bgg\b/.test(m))) {
     const isNo = m.includes("no") || m.includes("ng");

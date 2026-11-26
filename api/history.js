@@ -398,32 +398,39 @@ function collectPendingTipsFromActiveFeeds(bmData, fmData, statPropsData) {
     const isoDate = (f.timestamp || nowIso).slice(0, 10);
     const ts = f.timestamp ? new Date(f.timestamp).getTime() : Date.now();
 
-    if ((hWin10 >= 60 && aWin10 <= 40) || (aWin10 >= 60 && hWin10 <= 40)) {
-      const favHome = hWin10 > aWin10;
-      const pickLabel = favHome ? "1X Double Chance (Home or Draw)" : "X2 Double Chance (Away or Draw)";
-      const odd = favHome ? (f.odds?.odd1x || f.odds?.odd1 || 1.35) : (f.odds?.oddX2 || f.odds?.odd2 || 1.35);
-      candidates.push({
-        id: `opta-form::${makeMatchKey(h.name, a.name, isoDate)}`,
-        category: "OPTA_INTEL",
-        categoryLabel: "FootyMetrics Opta Intel",
-        home: h.name,
-        away: a.name,
-        homeLogo: h.logo || "",
-        awayLogo: a.logo || "",
-        league: f.league?.name || "Football",
-        country: f.league?.country || "",
-        isoDate,
-        timestamp: ts,
-        market: pickLabel,
-        odds: Number(odd),
-        side: favHome ? "HOME" : "AWAY",
-        reason: `Opta 10g Win% Gap: ${h.name} ${hWin10}% vs ${a.name} ${aWin10}%`,
-        recordedAt: nowIso
-      });
+    const avgO25 = (Number(h.over2510 ?? 50) + Number(a.over2510 ?? 50)) / 2;
+    const avgBtts = (Number(h.btts10 ?? 50) + Number(a.btts10 ?? 50)) / 2;
+    const winGap = Math.abs(hWin10 - aWin10);
+    let pickLabel = hWin10 >= aWin10 ? "1X Double Chance (Home or Draw)" : "X2 Double Chance (Away or Draw)";
+    let odd = hWin10 >= aWin10 ? (f.odds?.odd1x || f.odds?.odd1 || 1.32) : (f.odds?.oddX2 || f.odds?.odd2 || 1.32);
+    let pickSide = hWin10 >= aWin10 ? "HOME" : "AWAY";
+    if (winGap < 15 && avgO25 >= 58) {
+      pickLabel = "Over 1.5 Goals (5-Engine Safe Consensus)";
+      odd = f.odds?.oddOver15 || 1.26;
+      pickSide = null;
+    } else if (winGap < 15 && avgO25 <= 42) {
+      pickLabel = "Under 3.5 Goals";
+      odd = f.odds?.oddUnder35 || 1.32;
+      pickSide = null;
     }
-
-    const avgO25 = (Number(h.over2510 ?? 0) + Number(a.over2510 ?? 0)) / 2;
-    const avgBtts = (Number(h.btts10 ?? 0) + Number(a.btts10 ?? 0)) / 2;
+    candidates.push({
+      id: `opta-form::${makeMatchKey(h.name, a.name, isoDate)}`,
+      category: "OPTA_INTEL",
+      categoryLabel: "FootyMetrics Opta Intel",
+      home: h.name,
+      away: a.name,
+      homeLogo: h.logo || "",
+      awayLogo: a.logo || "",
+      league: f.league?.name || "Football",
+      country: f.league?.country || "",
+      isoDate,
+      timestamp: ts,
+      market: pickLabel,
+      odds: Number(odd),
+      side: pickSide,
+      reason: `Opta 10g Win%: ${h.name} ${hWin10}% vs ${a.name} ${aWin10}% · O2.5 ${Math.round(avgO25)}%`,
+      recordedAt: nowIso
+    });
     if (avgO25 >= 65 || avgBtts >= 65) {
       const useBtts = avgBtts >= avgO25 && f.odds?.oddBtts;
       candidates.push({

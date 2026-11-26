@@ -7475,8 +7475,15 @@
     }
     const todayPool = getAllTodayGamesPool();
     const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData, todayPool) : null;
-    const allTips = signals?.allTips || [];
-    const counts = signals?.counts || { total: 0, direct: 0, form: 0, goals: 0, defense: 0 };
+    const isFinishedOptaTip = (t) => t.status === "FT" || t.status === "AET" || t.status === "PEN" || (!t.isLive && t.homeScore !== null && t.awayScore !== null);
+    const allTips = (signals?.allTips || []).filter((t) => !isFinishedOptaTip(t));
+    const counts = {
+      total: allTips.length,
+      direct: allTips.filter((t) => t.isDirect).length,
+      form: allTips.filter((t) => t.category === "FORM" || t.category === "DOUBLE_CHANCE").length,
+      goals: allTips.filter((t) => t.category === "GOALS").length,
+      defense: allTips.filter((t) => t.category === "DEFENSE").length
+    };
     const activeCat = state.activeOptaCategory || "ALL";
     const q = (state.optaSearch || "").trim().toLowerCase();
 

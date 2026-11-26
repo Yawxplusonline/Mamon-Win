@@ -370,6 +370,7 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, options = {}
   const pillars = options.pillars || [];
   const dataQuality = options.dataQuality || "ESPN_VERIFIED";
   const valid = [];
+  const allowUnder = !(category === "GOALS" || category === "SHOTS_ON_TARGET" || category === "THROW_INS");
 
   for (const c of candidates) {
     if (!Number.isFinite(c.line) || !Number.isFinite(c.lam) || c.lam <= 0) continue;
@@ -412,8 +413,8 @@ function pickBestOuFromLines(candidates, category, g, logicSummary, options = {}
       }
     }
 
-    // Check UNDER
-    if (Number.isFinite(c.oddUnder) && c.oddUnder >= 1.25 && c.oddUnder <= 3.60) {
+    // Check UNDER (disabled for Goals, Shots on Target & Throw-Ins -> Overs tips only)
+    if (allowUnder && Number.isFinite(c.oddUnder) && c.oddUnder >= 1.25 && c.oddUnder <= 3.60) {
       const marketRef = pMktU !== null ? pMktU : clamp((1 / c.oddUnder) * 0.93, 0.10, 0.90);
       const divergence = pModelU - marketRef;
       if (divergence <= 0.21 && divergence >= -0.05) {

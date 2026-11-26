@@ -701,9 +701,31 @@ async function buildTipHistory(forceRefresh = false) {
 
     writeStore(allItems);
 
-    // Exclude removed sections (Sure Odds & Match Result, Goals Over / Under)
+    // Build Daily Win Comparison across all settled dates (to see which day had more wins)
+    const byDateMap = {};
+    for (const x of settledPlayed) {
+      if (x.categoryLabel === "Sure Odds & Match Result" || x.categoryLabel === "Goals Over / Under") continue;
+      const dKey = String(x.isoDate || (x.settledAt || "").slice(0, 10) || "Unknown");
+      if (!byDateMap[dKey]) byDateMap[dKey] = { date: dKey, total: 0, won: 0, lost: 0, void: 0, winRatePct: 0 };
+      byDateMap[dKey].total++;
+      if (x.result === "WON") byDateMap[dKey].won++;
+      else if (x.result === "LOST") byDateMap[dKey].lost++;
+      else byDateMap[dKey].void++;
+    }
+    const byDate = Object.values(byDateMap)
+      .map((d) => {
+        const dec = d.won + d.lost;
+        return { ...d, winRatePct: dec > 0 ? Math.round((d.won / dec) * 1000) / 10 : 0 };
+      })
+      .sort((a, b) => b.won - a.won || b.winRatePct - a.winRatePct);
+
+    // Exclude removed sections AND restrict displayed played games strictly to TODAY ONLY
+    const todayIso = new Date().toISOString().slice(0, 10);
     const filteredPlayed = settledPlayed.filter(
-      (x) => x.categoryLabel !== "Sure Odds & Match Result" && x.categoryLabel !== "Goals Over / Under"
+      (x) =>
+        x.categoryLabel !== "Sure Odds & Match Result" &&
+        x.categoryLabel !== "Goals Over / Under" &&
+        String(x.isoDate || (x.settledAt || "").slice(0, 10)) === todayIso
     );
     settledPlayed.length = 0;
     settledPlayed.push(...filteredPlayed);
@@ -742,7 +764,9 @@ async function buildTipHistory(forceRefresh = false) {
         lost: lostCount,
         void: voidCount,
         winRatePct,
-        netProfitUnits
+        netProfitUnits,
+        byDate,
+        todayIso
       },
       categoryStats: Object.values(byCategory),
       items: settledPlayed

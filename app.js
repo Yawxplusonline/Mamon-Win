@@ -7151,7 +7151,9 @@
       loadTipHistory(false);
     }
 
-    const allItems = tipHistoryData?.items || [];
+    const todayIso = getTodayIso();
+    const allItems = (tipHistoryData?.items || []).filter((x) => !x.isoDate || x.isoDate === todayIso);
+    const dailyLeaderboard = tipHistoryData?.summary?.byDate || [];
     const groupBy = state.activeHistoryGroupBy || "SECTION";
     const outcomeFilter = state.activeHistoryOutcome || "ALL";
     const catFilter = state.activeHistoryCategory || "ALL";
@@ -7273,6 +7275,12 @@
             <div class="font-mono text-lg font-extrabold" style="color:${fNet >= 0 ? "#059669" : "#dc2626"};">${fNet >= 0 ? `+${fNet.toFixed(2)}` : fNet.toFixed(2)}u</div>
           </div>
         </div>
+        ${dailyLeaderboard.length > 0 ? `
+          <div class="mt-2.5 p-2.5 rounded-md flex items-center gap-2 flex-wrap text-xs" style="background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);">
+            <strong style="color:#059669;">🏆 Daily Win Comparison (Best Days):</strong>
+            ${dailyLeaderboard.slice(0, 7).map((d, idx) => `<span class="px-2 py-0.5 rounded font-mono font-semibold" style="background:${d.date === todayIso ? "rgba(37,99,235,0.16)" : "rgba(255,255,255,0.08)"};border:1px solid rgba(148,163,184,0.25);">${idx === 0 ? "🥇 " : ""}${escapeHtml(d.date)}: <strong style="color:#10b981;">${d.won}W</strong>-${d.lost}L (${d.winRatePct}%)</span>`).join("")}
+          </div>
+        ` : ""}
 
         <div class="flex items-center justify-between gap-2 flex-wrap mt-3">
           <div class="intel-tabs" style="border-radius:var(--radius-md);background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.14);">

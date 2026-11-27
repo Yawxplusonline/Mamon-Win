@@ -5506,6 +5506,7 @@
 
     return `
       ${renderWinningOnlyBanner()}
+      ${renderHomeBestAndSafeTipsCard()}
       ${renderHomeTodayGamesSection()}
       ${renderHomeHistoryCard()}
       ${renderHomeStatPropsCard()}
@@ -7608,6 +7609,172 @@
     `;
   }
 
+  function getBestAndSafeTipsToday() {
+    const todayPool = getAllTodayGamesPool().filter((m) => !isMatchTrulyLive(m) && m.status !== "FT" && !m.isCompleted);
+    const signals = RT?.buildFootyMetricsSignals ? RT.buildFootyMetricsSignals(footyMetricsData, todayPool) : null;
+    const unplayed = (signals?.allTips || []).filter((t) => {
+      const isFin = t.status === "FT" || t.status === "AET" || t.status === "PEN" || (!t.isLive && t.homeScore !== null && t.awayScore !== null);
+      return !t.isLive && !isFin;
+    });
+
+    const bestTips = unplayed
+      .filter((t) => {
+        const odd = Number(t.odd || 0);
+        const votes = Number(t.votesForPick || 0);
+        const gap = Math.abs(Number(t.homeAdjPct || 50) - Number(t.awayAdjPct || 50));
+        return odd >= 1.15 && odd < 1.75 && Number(t.evPct ?? 0) >= -1 && (votes >= 3 || (t.confidencePct >= 76 && gap >= 16));
+      })
+      .sort((a, b) => (Number(b.evPct || 0) - Number(a.evPct || 0)) || (Number(b.votesForPick || 0) - Number(a.votesForPick || 0)) || (b.confidencePct - a.confidencePct));
+
+    const safeTips = unplayed
+      .filter((t) => {
+        const odd = Number(t.odd || 0);
+        const s = String(t.shortLabel || "");
+        const isSafeMarket = s.startsWith("1X @") || s.startsWith("X2 @") || s.startsWith("O1.5 @");
+        return isSafeMarket && odd >= 1.12 && odd <= 1.50 && Number(t.confidencePct || 0) >= 75;
+      })
+      .sort((a, b) => (b.confidencePct - a.confidencePct) || (Number(a.odd || 9) - Number(b.odd || 9)));
+
+    return { bestTips, safeTips, totalEvaluated: unplayed.length };
+  }
+
+  function renderCuratedTipCardsGrid(items, badgeText, badgeBg) {
+    const byLeague = new Map();
+    for (const item of items) {
+      const key = `${item.country || "International"} · ${item.league || "Football"}`;
+      if (!byLeague.has(key)) byLeague.set(key, { key, flag: item.flag, items: [] });
+      byLeague.get(key).items.push(item);
+    }
+    return Array.from(byLeague.values()).map((lg) => `
+      <section class="panel-section mb-4" style="border-top:3px solid ${badgeBg};">
+        <div class="panel-header" style="padding:12px 16px;">
+          <div class="flex items-center gap-2">
+            <span>${lg.flag || "🌍"}</span>
+            <span class="font-bold text-base">${escapeHtml(lg.key)}</span>
+            <span class="count">${lg.items.length} ${lg.items.length === 1 ? "game" : "games"}</span>
+          </div>
+        </div>
+        <div class="p-3" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;">
+          ${lg.items.map((item) => {
+            const fairStr = item.fairOdd ? ` · Fair ${Number(item.fairOdd).toFixed(2)} (${item.evPct >= 0 ? "+" : ""}${item.evPct || 0}% EV)` : "";
+            return `
+              <article style="background:#0d1915;border:1px solid rgba(255,255,255,0.12);border-radius:14px;padding:14px;color:#f8fafc;display:flex;flex-direction:column;gap:10px;">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <span style="background:${badgeBg};color:#fff;border-radius:999px;padding:4px 12px;font-weight:800;font-size:11px;">${escapeHtml(badgeText)} · ${item.confidencePct}%</span>
+                  <span style="background:rgba(255,255,255,0.08);color:#94a3b8;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px;">🕒 ${escapeHtml(item.displayTime)}</span>
+                </div>
+                <div class="text-xs" style="color:#94a3b8;">
+                  ${escapeHtml(item.country || "International")} · ${escapeHtml(item.league || "Football")} · ${escapeHtml(getTodayIso())}
+                </div>
+                <div class="flex items-center justify-between gap-2" style="padding:4px 0;">
+                  <div class="flex items-center gap-2 min-w-0" style="flex:1;">
+                    ${crestImg(item.homeLogo, item.home, "#10B981", 22)}
+                    <span class="font-bold text-sm truncate" style="color:#f8fafc;">${escapeHtml(item.home)}</span>
+                  </div>
+                  <div style="background:rgba(255,255,255,0.07);border-radius:8px;padding:4px 10px;font-family:monospace;font-weight:800;font-size:13px;color:#f8fafc;">vs</div>
+                  <div class="flex items-center justify-end gap-2 min-w-0" style="flex:1;">
+                    <span class="font-bold text-sm truncate text-right" style="color:#f8fafc;">${escapeHtml(item.away)}</span>
+                    ${crestImg(item.awayLogo, item.away, "#3B82F6", 22)}
+                  </div>
+                </div>
+                <div style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);border-radius:999px;padding:7px 14px;font-size:12px;font-weight:700;color:#e2e8f0;">
+                  Tip: ${escapeHtml(item.tipLabel)} @ ${Number(item.odd || 1.3).toFixed(2)}${escapeHtml(fairStr)}
+                </div>
+                <div class="text-xs" style="color:#94a3b8;">${escapeHtml(item.metricsSummary)}</div>
+                <div class="flex items-center justify-between gap-2 pt-1">
+                  <button type="button" class="btn-subtle text-xs" style="color:#34d399;font-weight:700;" data-copy-tip="${escapeHtml(`${item.fixture} — ${item.tipLabel} @ ${Number(item.odd || 1.3).toFixed(2)}${fairStr}`)}">Copy Tip 📋</button>
+                  ${item.matchId ? `<button type="button" class="btn-subtle text-xs" style="color:#94a3b8;" data-match-id="${escapeHtml(String(item.matchId))}">19-Factor View &rarr;</button>` : ""}
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </section>
+    `).join("");
+  }
+
+  function renderHomeBestAndSafeTipsCard() {
+    const { bestTips, safeTips } = getBestAndSafeTipsToday();
+    return `
+      <section class="panel-section" style="border:1px solid rgba(16,185,129,0.35);">
+        <div class="panel-header" style="border-bottom:1px solid rgba(16,185,129,0.2);padding:12px 16px;">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="sure-pill-tag" style="background:#059669;color:#fff;font-weight:800;">🔥 BEST TIPS (${bestTips.length}) &amp; 🛡️ SAFE TIPS (${safeTips.length}) TODAY</span>
+            <span class="text-xs text-muted">Filtered strictly by 5-Engine Consensus, Context Strength &amp; +EV Trap Shield</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a class="btn-subtle text-xs" href="/best-tips" data-route="/best-tips" style="font-weight:800;color:#d97706;">Open Best Tips (${bestTips.length}) &rarr;</a>
+            <a class="btn-subtle text-xs" href="/safe-tips" data-route="/safe-tips" style="font-weight:800;color:#059669;">Open Safe Tips (${safeTips.length}) &rarr;</a>
+          </div>
+        </div>
+        <div class="p-3" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;">
+          <div class="p-3 rounded-lg" style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.28);">
+            <div class="flex items-center justify-between mb-2">
+              <strong class="text-sm" style="color:#d97706;">🔥 Best Tips Today (${bestTips.length})</strong>
+              <a class="text-xs font-bold" href="/best-tips" data-route="/best-tips" style="color:#d97706;">See All &rarr;</a>
+            </div>
+            ${bestTips.length === 0 ? `<div class="text-xs text-muted">No unplayed Best Tips pass all 5-Engine +EV filters right now.</div>` : bestTips.slice(0, 4).map((t) => `
+              <div class="flex items-center justify-between gap-2 py-1.5 border-b text-xs">
+                <span class="font-semibold truncate">${escapeHtml(t.fixture)}</span>
+                <span class="font-mono font-bold" style="color:#d97706;white-space:nowrap;">${escapeHtml(t.shortLabel)} (${t.evPct >= 0 ? "+" : ""}${t.evPct || 0}% EV)</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="p-3 rounded-lg" style="background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.28);">
+            <div class="flex items-center justify-between mb-2">
+              <strong class="text-sm" style="color:#059669;">🛡️ Safe Tips Today (${safeTips.length})</strong>
+              <a class="text-xs font-bold" href="/safe-tips" data-route="/safe-tips" style="color:#059669;">See All &rarr;</a>
+            </div>
+            ${safeTips.length === 0 ? `<div class="text-xs text-muted">No unplayed Safe Tips pass &ge;75% Safety Lock filters right now.</div>` : safeTips.slice(0, 4).map((t) => `
+              <div class="flex items-center justify-between gap-2 py-1.5 border-b text-xs">
+                <span class="font-semibold truncate">${escapeHtml(t.fixture)}</span>
+                <span class="font-mono font-bold" style="color:#059669;white-space:nowrap;">${escapeHtml(t.shortLabel)} (${t.confidencePct}%)</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderBestTipsView() {
+    if (!footyMetricsData && !isLoadingFootyMetrics) loadFootyMetricsIntelligence(false);
+    const { bestTips, totalEvaluated } = getBestAndSafeTipsToday();
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="sure-pill-tag" style="background:#d97706;color:#fff;">🔥 BEST TIPS TODAY · 5-ENGINE +EV</span>
+          <span class="sure-pill-tag">${bestTips.length} BEST PICKS FROM ${totalEvaluated} UPCOMING GAMES</span>
+        </div>
+        <h1 class="mt-2">Best Tips Today (${escapeHtml(getTodayIso())})</h1>
+        <p>Only unplayed games today passing all 5-Engine Consensus, Domestic/International Strength, +EV Fair Odds, and Longshot Trap Shield filters.</p>
+      </div>
+      ${bestTips.length === 0
+        ? `<div class="empty-state"><h3>No Best Tips qualify right now</h3><p class="text-sm">Rather than forcing risky picks, only strict +EV &amp; high-consensus upcoming games appear here.</p></div>`
+        : renderCuratedTipCardsGrid(bestTips, "🔥 BEST TIP", "#d97706")
+      }
+    `;
+  }
+
+  function renderSafeTipsView() {
+    if (!footyMetricsData && !isLoadingFootyMetrics) loadFootyMetricsIntelligence(false);
+    const { safeTips, totalEvaluated } = getBestAndSafeTipsToday();
+    return `
+      <div class="hero-banner">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="sure-pill-tag" style="background:#059669;color:#fff;">🛡️ SAFE TIPS TODAY · HIGH PROBABILITY LOCKS</span>
+          <span class="sure-pill-tag">${safeTips.length} SAFE PICKS FROM ${totalEvaluated} UPCOMING GAMES</span>
+        </div>
+        <h1 class="mt-2">Safe Tips Today (${escapeHtml(getTodayIso())})</h1>
+        <p>Strictly unplayed Double Chance (1X / X2) and Over 1.5 Goals locks (&ge;75% model confidence, odds 1.12–1.50, zero longshot traps).</p>
+      </div>
+      ${safeTips.length === 0
+        ? `<div class="empty-state"><h3>No Safe Tips qualify right now</h3><p class="text-sm">Only verified low-risk upcoming Double Chance and Over 1.5 Goals games appear here.</p></div>`
+        : renderCuratedTipCardsGrid(safeTips, "🛡️ SAFE TIP", "#059669")
+      }
+    `;
+  }
+
   function renderMainContent() {
     const main = document.getElementById("mainContent");
     if (!main) return;
@@ -7637,6 +7804,10 @@
         main.innerHTML = renderWorstTeamsView();
       } else if (r === "/odds-mismatch") {
         main.innerHTML = renderOddsMismatchView();
+      } else if (r === "/best-tips") {
+        main.innerHTML = renderBestTipsView();
+      } else if (r === "/safe-tips") {
+        main.innerHTML = renderSafeTipsView();
       } else if (r === "/opta-intel" || r === "/opta" || r === "/footymetrics") {
         main.innerHTML = renderOptaIntelView();
         const optaSearchEl = document.getElementById("optaSearchInput");

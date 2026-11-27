@@ -5971,6 +5971,20 @@
         </div>
 
         ${trapComparisonHtml}
+        ${(() => {
+          const mmOptaTip = RT?.computeOptaIntelTipForMatch ? RT.computeOptaIntelTipForMatch({
+            id: item.eventId || item.id,
+            homeTeamName: item.homeTeamName,
+            awayTeamName: item.awayTeamName,
+            leagueName: item.league || "",
+            odds: item.bestOdds || {}
+          }, footyMetricsData) : null;
+          return mmOptaTip ? `<div class="mt-2 px-3 py-2 rounded-md text-xs font-semibold flex items-center justify-between gap-2 flex-wrap" style="background:rgba(37,99,235,0.09);border:1px solid rgba(37,99,235,0.28);color:#1d4ed8;">
+            <span>📈 <strong>FootyMetrics Opta + 5-Engine Consensus:</strong> ${escapeHtml(mmOptaTip.tipLabel)} (${mmOptaTip.confidencePct}%)</span>
+            <span class="font-mono">🎯 Fair Odds Tip: ${escapeHtml(mmOptaTip.shortLabel)} · Fair ${Number(mmOptaTip.fairOdd || mmOptaTip.odd).toFixed(2)} (${mmOptaTip.evPct >= 0 ? "+" : ""}${mmOptaTip.evPct || 0}% EV)</span>
+            <span class="w-full text-[11px] font-normal" style="color:var(--text-secondary);">📊 ${escapeHtml(mmOptaTip.metricsSummary)}</span>
+          </div>` : "";
+        })()}
 
         <!-- Winning Action & Reality Callout -->
         <div class="sure-pick-box mt-2">
